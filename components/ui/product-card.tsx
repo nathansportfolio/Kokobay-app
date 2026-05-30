@@ -12,7 +12,7 @@ import Animated, {
 import { QuickAddToBag } from '@/components/cart/quick-add-to-bag';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LuxuryCardActionSurface } from '@/components/ui/luxury-card-action-surface';
-import { useShopLists } from '@/contexts/shop-lists-context';
+import { useWishlist } from '@/contexts/wishlist-context';
 import { palette } from '@/constants/theme';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useProductHref } from '@/hooks/use-product-href';
@@ -75,7 +75,7 @@ function ProductCardInner({
     });
   }, [product.handle, sourceImage, tileWidth]);
   const priceLabel = formatMoney(product.priceRange.minVariantPrice);
-  const { wishlistHandles, toggleWishlist } = useShopLists();
+  const { wishlistHandles, toggleWishlist } = useWishlist();
   const wishlisted = wishlistHandles.includes(product.handle);
   const soldOut = isProductFullySoldOut(product);
   const heartPressed = useSharedValue(0);

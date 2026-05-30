@@ -5,7 +5,8 @@ import { AppGlobalShell } from '@/components/providers/app-global-shell';
 import { AppErrorRouteTracker } from '@/components/providers/app-error-route-tracker';
 import { GtmRouteTracker } from '@/components/providers/gtm-route-tracker';
 import { ScrollToTopProvider } from '@/contexts/scroll-to-top-context';
-import { ShopListsProvider } from '@/contexts/shop-lists-context';
+import { BagProvider } from '@/contexts/bag-context';
+import { WishlistProvider } from '@/contexts/wishlist-context';
 import { getQueryClient } from '@/hooks/use-query-client';
 import { registerAppErrorUserIdReader } from '@/lib/app-error-context';
 import { registerCartCustomerEmailReader } from '@/services/kokobay-web/cart-customer';
@@ -37,11 +38,13 @@ export function AppProviders({ children }: PropsWithChildren) {
     <QueryClientProvider client={getQueryClient()}>
       <AppErrorRouteTracker />
       <GtmRouteTracker />
-      <ShopListsProvider>
-        <ScrollToTopProvider>
-          <AppGlobalShell>{children}</AppGlobalShell>
-        </ScrollToTopProvider>
-      </ShopListsProvider>
+      <WishlistProvider>
+        <BagProvider>
+          <ScrollToTopProvider>
+            <AppGlobalShell>{children}</AppGlobalShell>
+          </ScrollToTopProvider>
+        </BagProvider>
+      </WishlistProvider>
     </QueryClientProvider>
   );
 }

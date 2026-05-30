@@ -24,7 +24,8 @@ import { PdpProductInfoSections } from '@/components/pdp/pdp-product-info-sectio
 import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useShopLists } from '@/contexts/shop-lists-context';
+import { useBagActions } from '@/contexts/bag-context';
+import { useWishlist } from '@/contexts/wishlist-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
@@ -79,7 +80,8 @@ export default function ProductScreen() {
   const { width: screenWidth } = useWindowDimensions();
   const tabBarOverlay = useOptionalBottomTabBarHeight();
   const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const { addToBag, toggleWishlist, isWishlisted } = useShopLists();
+  const { addToBag } = useBagActions();
+  const { toggleWishlist, isWishlisted } = useWishlist();
   const safeHandle = typeof handle === 'string' ? handle : '';
   const marketKey = useMarketQueryKey();
   useProductQueryCleanup();

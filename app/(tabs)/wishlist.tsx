@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Text } from '@/components/ui/text';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useShopLists } from '@/contexts/shop-lists-context';
+import { useWishlist } from '@/contexts/wishlist-context';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { getProduct } from '@/services/shopify';
@@ -56,7 +56,7 @@ export default function WishlistScreen() {
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const marketKey = useMarketQueryKey();
   const { tileW, imageH, itemHeight } = useWishlistGridMetrics();
-  const { wishlistHandles, wishlistHydrated, toggleWishlist } = useShopLists();
+  const { wishlistHandles, wishlistHydrated, toggleWishlist } = useWishlist();
   const listRef = useRef<FlashListRef<string>>(null);
 
   const scrollToTop = useCallback(() => {

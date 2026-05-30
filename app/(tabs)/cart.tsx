@@ -19,6 +19,7 @@ import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-b
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewCart } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
+import { useCartBagUnitCount } from '@/hooks/use-cart-selectors';
 import { useCartStore } from '@/store';
 import { useMarketStore } from '@/store/market-preference';
 import type { CartLine } from '@/types/cart';
@@ -73,7 +74,7 @@ export default function CartScreen() {
     ],
   );
 
-  const bagUnitCount = useMemo(() => lines.reduce((n, line) => n + line.qty, 0), [lines]);
+  const bagUnitCount = useCartBagUnitCount();
 
   const viewCartTrackedRef = useRef<string | null>(null);
   useFocusEffect(

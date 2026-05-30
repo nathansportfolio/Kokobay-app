@@ -5,7 +5,8 @@ import { Platform, StyleSheet, type TextStyle, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { LuxuryTabHeader } from '@/components/navigation/luxury-tab-header';
-import { useShopLists } from '@/contexts/shop-lists-context';
+import { useBagState } from '@/contexts/bag-context';
+import { useWishlist } from '@/contexts/wishlist-context';
 import { LUXURY_SYMBOL } from '@/constants/luxury-icons';
 import { palette } from '@/constants/theme';
 
@@ -36,7 +37,8 @@ const cartBadgeStyle: TextStyle = {
 };
 
 export default function TabLayout() {
-  const { bagUnitCount, wishlistCount } = useShopLists();
+  const { bagUnitCount } = useBagState();
+  const { wishlistCount } = useWishlist();
 
   const cartBadge = useMemo(() => {
     if (bagUnitCount <= 0) return undefined;

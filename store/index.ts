@@ -11,6 +11,7 @@ export {
   flushCartSync,
   ensureCartSyncedForCheckout,
   isCartSettledForCheckout,
+  getCartNetworkSyncMetrics,
   type AddToCartInput,
   type CartLine,
 } from './cart';

@@ -21,7 +21,7 @@ import {
   LuxuryCardActionSurface,
 } from '@/components/ui/luxury-card-action-surface';
 import { Text } from '@/components/ui/text';
-import { useShopLists } from '@/contexts/shop-lists-context';
+import { useBagActions } from '@/contexts/bag-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
@@ -59,7 +59,7 @@ export type QuickAddToBagProps = {
 function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBagProps) {
   const insets = useSafeAreaInsets();
   const marketKey = useMarketQueryKey();
-  const { addToBag } = useShopLists();
+  const { addToBag } = useBagActions();
   const prefetchProduct = usePrefetchProduct();
   const [open, setOpen] = useState(false);
   const [addingToBag, setAddingToBag] = useState(false);

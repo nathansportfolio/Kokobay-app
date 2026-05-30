@@ -4,7 +4,7 @@ import { cartPerfLog } from '@/lib/cart-perf-log';
 
 import type { AppLifecycle } from './cart-app-lifecycle';
 
-export const CART_SYNC_DEBOUNCE_MS = 400;
+export const CART_SYNC_DEBOUNCE_MS = 500;
 /** Let the UI paint after foreground resume before hitting the network. */
 const RESUME_SYNC_DEFER_MS = 120;
 

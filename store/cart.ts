@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 
 import { isRemoteCartConfigured, usesKokobayCartProxy } from '@/services/cart/remote-cart';
 import { patchCartQuantityFast, syncLocalCartToRemote } from '@/services/cart/sync';
+import { cartCoalesceLog } from '@/lib/cart-coalesce-log';
 import { cartPerfLog } from '@/lib/cart-perf-log';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { trackRemoveFromCart } from '@/lib/gtm';
@@ -19,7 +20,7 @@ import { hasCartLinePricing } from '@/utils/cart-line-pricing';
 import { cartSyncErrorToast } from '@/utils/cart-sync-messages';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
-import { createCartSyncScheduler } from './cart-sync-scheduler';
+import { CART_SYNC_DEBOUNCE_MS, createCartSyncScheduler } from './cart-sync-scheduler';
 import {
   loadCartGuestId,
   loadPersistedCart,
@@ -169,11 +170,106 @@ let activeSyncGeneration = 0;
 const pendingFastQuantityVariantIds = new Set<string>();
 
 let cartNetworkChain: Promise<void> = Promise.resolve();
+let cartNetworkQueueDepth = 0;
+let cartNetworkMaxQueueDepth = 0;
+let cartSyncRunnerInFlight = false;
+let cartSyncFollowUpPending = false;
+let debounceRevisionBaseline = 0;
+let debounceCoalescedUpdates = 0;
+let cartSyncCount = 0;
+let cartSyncTotalDurationMs = 0;
 
 function enqueueCartNetwork(task: () => Promise<void>): Promise<void> {
-  const run = cartNetworkChain.then(task);
+  cartNetworkQueueDepth += 1;
+  cartNetworkMaxQueueDepth = Math.max(cartNetworkMaxQueueDepth, cartNetworkQueueDepth);
+  const run = cartNetworkChain
+    .then(async () => {
+      try {
+        await task();
+      } finally {
+        cartNetworkQueueDepth = Math.max(0, cartNetworkQueueDepth - 1);
+      }
+    });
   cartNetworkChain = run.catch(() => {});
   return run;
+}
+
+function noteSyncScheduled(): void {
+  if (cartSyncScheduler.isDebouncePending() || fastQuantityScheduler.isDebouncePending()) {
+    const delta = cartRevision - debounceRevisionBaseline;
+    if (delta > 0) {
+      debounceCoalescedUpdates += delta;
+    }
+  } else {
+    debounceRevisionBaseline = cartRevision;
+    debounceCoalescedUpdates = 0;
+  }
+}
+
+async function runCartNetworkSync(
+  kind: 'full' | 'fast',
+  customerEmail?: string,
+): Promise<void> {
+  if (cartSyncRunnerInFlight) {
+    cartSyncFollowUpPending = true;
+    cartCoalesceLog('pending sync detected');
+    return;
+  }
+
+  cartSyncRunnerInFlight = true;
+  let passes = 0;
+
+  try {
+    do {
+      passes += 1;
+      if (passes > 2) break;
+
+      if (debounceCoalescedUpdates > 0) {
+        cartCoalesceLog(`coalesced ${debounceCoalescedUpdates} updates`);
+        debounceCoalescedUpdates = 0;
+        debounceRevisionBaseline = cartRevision;
+      }
+
+      cartSyncFollowUpPending = false;
+      const syncStart = performance.now();
+
+      if (kind === 'fast' && pendingFastQuantityVariantIds.size > 0) {
+        await syncQuantityFast(customerEmail);
+      } else {
+        await useCartStore.getState().syncWithShopify(customerEmail);
+      }
+
+      const durationMs = Math.round(performance.now() - syncStart);
+      cartCoalesceLog(`sync duration ${durationMs}ms`);
+      cartSyncCount += 1;
+      cartSyncTotalDurationMs += durationMs;
+
+      if (cartSyncFollowUpPending && isCartDirty()) {
+        cartCoalesceLog('pending sync detected');
+        kind = 'full';
+        continue;
+      }
+      break;
+    } while (true);
+  } finally {
+    cartSyncRunnerInFlight = false;
+  }
+}
+
+/** @internal diagnostics for cart sync audits */
+export function getCartNetworkSyncMetrics(): {
+  maxQueueDepth: number;
+  currentQueueDepth: number;
+  totalSyncs: number;
+  avgSyncDurationMs: number;
+} {
+  return {
+    maxQueueDepth: cartNetworkMaxQueueDepth,
+    currentQueueDepth: cartNetworkQueueDepth,
+    totalSyncs: cartSyncCount,
+    avgSyncDurationMs:
+      cartSyncCount > 0 ? Math.round(cartSyncTotalDurationMs / cartSyncCount) : 0,
+  };
 }
 
 function isCartDirty(): boolean {
@@ -190,21 +286,18 @@ function isCartSyncPending(): boolean {
 
 const cartSyncScheduler = createCartSyncScheduler(
   async (customerEmail) => {
-    await enqueueCartNetwork(async () => {
-      await useCartStore.getState().syncWithShopify(customerEmail);
-    });
+    await enqueueCartNetwork(() => runCartNetworkSync('full', customerEmail));
   },
-  { shouldSync: isCartDirty },
+  { shouldSync: isCartDirty, debounceMs: CART_SYNC_DEBOUNCE_MS },
 );
 
 const fastQuantityScheduler = createCartSyncScheduler(
   async (customerEmail) => {
-    await enqueueCartNetwork(async () => {
-      await syncQuantityFast(customerEmail);
-    });
+    await enqueueCartNetwork(() => runCartNetworkSync('fast', customerEmail));
   },
   {
     shouldSync: () => pendingFastQuantityVariantIds.size > 0 && isCartDirty(),
+    debounceMs: CART_SYNC_DEBOUNCE_MS,
   },
 );
 
@@ -217,6 +310,7 @@ function finalizePendingCartSync(): void {
 
 function scheduleSync(): void {
   if (!isRemoteCartConfigured() || !isCartDirty()) return;
+  noteSyncScheduled();
   pendingFastQuantityVariantIds.clear();
   fastQuantityScheduler.cancelDebounce();
   useCartStore.setState({ pendingCartSync: true });
@@ -225,6 +319,7 @@ function scheduleSync(): void {
 
 function scheduleFastQuantitySync(variantId: string): void {
   if (!isRemoteCartConfigured() || !isCartDirty()) return;
+  noteSyncScheduled();
   pendingFastQuantityVariantIds.add(variantId);
   cartSyncScheduler.cancelDebounce();
   useCartStore.setState({ pendingCartSync: true });
@@ -243,11 +338,15 @@ function canFastPathQuantitySync(line: CartLine | undefined, qty: number): boole
 export function flushCartSync(customerEmail?: string): Promise<void> {
   if (!isRemoteCartConfigured()) return Promise.resolve();
   forceNextSync = true;
+  cartSyncScheduler.cancelDebounce();
+  fastQuantityScheduler.cancelDebounce();
   useCartStore.setState({ pendingCartSync: true });
-  return Promise.all([
-    fastQuantityScheduler.flushSync(customerEmail),
-    cartSyncScheduler.flushSync(customerEmail),
-  ]).then(() => {});
+  return enqueueCartNetwork(async () => {
+    if (pendingFastQuantityVariantIds.size > 0) {
+      await runCartNetworkSync('fast', customerEmail);
+    }
+    await runCartNetworkSync('full', customerEmail);
+  });
 }
 
 const CHECKOUT_SYNC_SETTLE_MS = 50;
@@ -329,7 +428,12 @@ async function applyRemoteCartSyncResult(
 ): Promise<void> {
   if (syncGeneration !== activeSyncGeneration) return;
   if (revisionAtStart !== cartRevision) {
-    scheduleSync();
+    if (cartSyncRunnerInFlight) {
+      cartSyncFollowUpPending = true;
+      cartCoalesceLog('pending sync detected');
+    } else {
+      scheduleSync();
+    }
     return;
   }
   if (!result) return;
