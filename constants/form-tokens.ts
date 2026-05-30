@@ -1,0 +1,97 @@
+/** Premium form styling — shared across auth and account flows */
+export const formTokens = {
+  typography: {
+    eyebrow: {
+      fontSize: 12,
+      letterSpacing: 4,
+      fontWeight: '500' as const,
+      color: '#666666',
+    },
+    title: {
+      fontSize: 40,
+      fontWeight: '700' as const,
+      lineHeight: 42,
+      color: '#111111',
+    },
+    description: {
+      fontSize: 16,
+      lineHeight: 24,
+      color: '#666666',
+    },
+    link: {
+      fontSize: 12,
+      letterSpacing: 0.3,
+      color: '#888888',
+    },
+  },
+  input: {
+    height: 55,
+    borderRadius: 28,
+    background: '#FAF9F7',
+    border: '#E5E5E5',
+    borderFocused: '#111111',
+    borderWidth: 1,
+    borderWidthFocused: 2,
+    paddingHorizontal: 18,
+    fontSize: 16,
+    placeholder: '#9A9A9A',
+    transitionMs: 200,
+  },
+  label: {
+    fontSize: 12,
+    letterSpacing: 3,
+    fontWeight: '500' as const,
+    color: '#666666',
+    focused: '#141414',
+  },
+  shadow: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  spacing: {
+    eyebrowToTitle: 8,
+    titleToDescription: 12,
+    descriptionToForm: 24,
+    labelToInput: 8,
+    fieldGap: 20,
+    ctaTop: 28,
+    buttonGap: 12,
+    forgotPasswordTop: 10,
+    errorToForm: 20,
+    /** @deprecated use descriptionToForm */
+    subtitleToForm: 24,
+    /** @deprecated use titleToDescription */
+    headerEyebrowToTitle: 8,
+    /** @deprecated use ctaTop */
+    sectionGap: 28,
+  },
+  passwordRequirements: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#888888',
+    metColor: '#666666',
+    gap: 6,
+  },
+  error: {
+    background: '#FAF6F6',
+    border: '#F1DADA',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    text: '#D14343',
+    inputBackground: '#FFF9F9',
+    inputBorder: '#D14343',
+    fieldFontSize: 13,
+    fieldMarginTop: 8,
+    fieldPaddingHorizontal: 12,
+    fieldPaddingVertical: 10,
+    animationMs: 180,
+  },
+  button: {
+    height: 56,
+    borderRadius: 28,
+  },
+} as const;

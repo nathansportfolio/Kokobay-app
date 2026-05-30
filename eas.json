@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 19.1.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": false
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6773783258"
+      }
+    }
+  }
+}

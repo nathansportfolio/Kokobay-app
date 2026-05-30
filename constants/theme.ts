@@ -1,53 +1,66 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+import { DefaultTheme, type Theme } from '@react-navigation/native';
 
-import { Platform } from 'react-native';
+/** Editorial luxury palette — light neutrals, warm stone accent */
+export const palette = {
+  canvas: '#F8F7F5',
+  surface: '#FFFFFF',
+  elevated: '#EDECE8',
+  ink: '#141414',
+  mist: '#5C5B58',
+  muted: '#94938E',
+  line: '#E2E0DC',
+  accent: '#6E5E4F',
+  accentSoft: '#8A7E72',
+} as const;
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
+/** Legacy template hook support */
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: palette.ink,
+    background: palette.canvas,
+    tint: palette.accent,
+    icon: palette.mist,
+    tabIconDefault: palette.muted,
+    tabIconSelected: palette.ink,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: palette.ink,
+    background: palette.canvas,
+    tint: palette.accent,
+    icon: palette.mist,
+    tabIconDefault: palette.muted,
+    tabIconSelected: palette.ink,
+  },
+} as const;
+
+export const navigationTheme: Theme = {
+  ...DefaultTheme,
+  dark: false,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: palette.accent,
+    background: palette.canvas,
+    card: palette.surface,
+    text: palette.ink,
+    border: palette.line,
+    notification: palette.accent,
+  },
+  fonts: {
+    regular: {
+      fontFamily: 'InstrumentSans-Regular',
+      fontWeight: '400',
+    },
+    medium: {
+      fontFamily: 'InstrumentSans-Medium',
+      fontWeight: '500',
+    },
+    bold: {
+      fontFamily: 'InstrumentSans-Bold',
+      fontWeight: '700',
+    },
+    heavy: {
+      fontFamily: 'InstrumentSans-Bold',
+      fontWeight: '700',
+    },
   },
 };
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});

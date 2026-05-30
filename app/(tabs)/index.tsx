@@ -1,98 +1,172 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useRef } from 'react';
+import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { HomeNewInHero, homeNewInHeroHeight } from '@/components/home/home-new-in-hero';
+import { HomeNewInSection } from '@/components/home/home-new-in-section';
+import { HomeScreenEntrance } from '@/components/home/home-screen-entrance';
+import { HomeShopByCategory } from '@/components/home/home-shop-by-category';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
+import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
+import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
+import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
+import { useMarketQueryKey } from '@/hooks/use-market-query-key';
+import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
+import { fetchHomeCatalogData, HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
+import type { Collection } from '@/types/shopify';
+import { cmsCollectionTilesToDisplayItems, type CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
+import { collectionsWithCoverImage } from '@/utils/collection-text';
+import { orderCollectionsForDisplay } from '@/utils/order-collections';
 
-export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+const COLLECTIONS_CMS_STALE_MS = 60 * 60_000;
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+const SHOP_BY_CATEGORY_TOP = 56;
+
+function orderHomeCollections(collections: Collection[]): Collection[] {
+  return collectionsWithCoverImage(
+    orderCollectionsForDisplay(collections, {
+      excludeHandles: [ALL_PRODUCTS_COLLECTION_HANDLE],
+    }),
   );
 }
 
-const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
-});
+function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDisplayItem[] {
+  return orderHomeCollections(collections)
+    .slice(0, HOME_SHOP_BY_CATEGORY_LIMIT)
+    .map((collection) => ({ collection, cmsUrl: undefined }));
+}
+
+export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const mainScrollRef = useRef<ScrollView>(null);
+  const loadingScrollRef = useRef<ScrollView>(null);
+  const scrollToTopMain = useCallback(() => {
+    mainScrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+  const scrollToTopLoading = useCallback(() => {
+    loadingScrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, []);
+  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
+  const headerStack = luxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
+  const tileWidth = Math.min(280, Math.round(width * 0.78));
+  const carouselHeight = tileWidth * (4 / 3) + 100;
+  const marketKey = useMarketQueryKey();
+
+  const { data, isPending, isError, refetch, isRefetching } = useQuery({
+    queryKey: ['home', 'catalog', marketKey],
+    staleTime: 4 * 60_000,
+    queryFn: () => fetchHomeCatalogData(),
+  });
+
+  const { data: cmsTiles } = useQuery({
+    queryKey: ['collections-cms'],
+    staleTime: COLLECTIONS_CMS_STALE_MS,
+    queryFn: ({ signal }) => getCollectionsCms({ signal }),
+  });
+
+  const { onScroll: onScrollLoading } = useBindScrollToTop(scrollToTopLoading, isPending);
+  const { onScroll: onScrollMain } = useBindScrollToTop(
+    scrollToTopMain,
+    !isPending && !isError && Boolean(data),
+  );
+
+  const newInProducts = useMemo(
+    () => (data ? data.newIn.slice(0, HOME_NEW_IN_CAROUSEL_LIMIT) : []),
+    [data],
+  );
+
+  const shopByCategoryItems = useMemo((): CmsCollectionDisplayItem[] => {
+    if (cmsTiles?.length) {
+      return cmsCollectionTilesToDisplayItems(
+        cmsTiles.slice(0, HOME_SHOP_BY_CATEGORY_LIMIT),
+      );
+    }
+    if (!data) return [];
+    return homeCollectionFallbackItems(data.collections);
+  }, [cmsTiles, data]);
+
+  if (isPending) {
+    return (
+      <View className="flex-1 bg-canvas">
+        <ScrollView
+          ref={loadingScrollRef}
+          className="flex-1"
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          onScroll={onScrollLoading}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingBottom: 48, paddingTop: 0 }}>
+          <Skeleton
+            className="mb-0 w-full rounded-none"
+            style={{ height: homeNewInHeroHeight(width), borderRadius: 0 }}
+          />
+          <View className="px-5 pt-6">
+            <Skeleton className="mb-3 h-3 w-24" />
+            <Skeleton className="mb-8 h-8 w-[55%]" />
+            <Skeleton className="mb-4 h-36 w-full" />
+            <Skeleton className="mb-10 h-28 w-full" />
+            <Skeleton className="mb-3 h-3 w-28" />
+            <Skeleton className="h-24 w-full" />
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <ScrollView
+        className="flex-1 bg-canvas"
+        contentContainerStyle={{ flexGrow: 1, paddingTop: headerStack, paddingBottom: 48 }}>
+        <View className="px-5">
+          <EmptyState
+            title="The bay is quiet"
+            message="We could not reach the catalog. Check your connection and try again."
+          />
+          <Button
+            title={isRefetching ? 'Refreshing…' : 'Retry'}
+            variant="secondary"
+            disabled={isRefetching}
+            onPress={() => refetch()}
+          />
+        </View>
+      </ScrollView>
+    );
+  }
+
+  return (
+    <HomeScreenEntrance>
+      <ScrollView
+        ref={mainScrollRef}
+        className="flex-1 bg-canvas"
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={false}
+        onScroll={onScrollMain}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 40 }}>
+        <HomeNewInHero width={width} />
+        <View style={{ paddingTop: 24 }}>
+          <HomeNewInSection
+            products={newInProducts}
+            tileWidth={tileWidth}
+            carouselHeight={carouselHeight}
+          />
+        </View>
+        <View style={{ paddingTop: SHOP_BY_CATEGORY_TOP }}>
+          <HomeShopByCategory
+            items={shopByCategoryItems}
+            staggerRowEntrance={false}
+            showViewAllCollections
+            cardLayout="strip"
+            screenWidth={width}
+          />
+        </View>
+      </ScrollView>
+    </HomeScreenEntrance>
+  );
+}
