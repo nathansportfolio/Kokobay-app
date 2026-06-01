@@ -1,21 +1,21 @@
-import { Link, usePathname } from 'expo-router';
+import { Link } from 'expo-router';
 import { memo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { HomeProductCarousel } from '@/components/home/home-product-carousel';
 import { HomeSectionTitle } from '@/components/home/home-section-title';
 import { Text } from '@/components/ui/text';
+import type { Href } from 'expo-router';
 import type { Product } from '@/types/shopify';
-import { newInCollectionHref } from '@/utils/collection-handles';
 
 type Props = {
   products: Product[];
   tileWidth: number;
   carouselHeight: number;
+  viewAllHref: Href;
 };
 
-function HomeNewInSectionInner({ products, tileWidth, carouselHeight }: Props) {
-  const pathname = usePathname();
+function HomeNewInSectionInner({ products, tileWidth, carouselHeight, viewAllHref }: Props) {
   return (
     <View style={{ paddingHorizontal: 20 }}>
       <HomeSectionTitle title="Latest arrivals" />
@@ -28,7 +28,7 @@ function HomeNewInSectionInner({ products, tileWidth, carouselHeight }: Props) {
           <HomeProductCarousel products={products} tileWidth={tileWidth} />
         )}
       </View>
-      <Link href={newInCollectionHref(pathname)} asChild>
+      <Link href={viewAllHref} asChild>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="View all new in products"

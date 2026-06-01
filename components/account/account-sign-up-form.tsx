@@ -1,9 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useRef, useState, type MutableRefObject } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { View } from 'react-native';
+import { TextInput, View } from 'react-native';
 
 import { AccountAuthBackButton } from '@/components/account/account-auth-back-button';
+import { AccountLegalLinks } from '@/components/account/account-legal-links';
 import { AuthFormHeader } from '@/components/forms/auth-form-header';
 import { ErrorMessage } from '@/components/forms/error-message';
 import { LoadingButton } from '@/components/forms/loading-button';
@@ -51,7 +52,19 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
   const { bindTextChange } = useClearAuthErrors(clearErrors);
   const password = useWatch({ control, name: 'password' }) ?? '';
 
+  const lastNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
+
   const clearServerError = () => setServerError(null);
+
+  const mergeInputRef =
+    (fieldRef: (instance: TextInput | null) => void, stash?: MutableRefObject<TextInput | null>) =>
+    (instance: TextInput | null) => {
+      fieldRef(instance);
+      if (stash) stash.current = instance;
+    };
 
   const onSubmit = handleSubmit(async (values) => {
     setServerError(null);
@@ -93,9 +106,14 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
           <Controller
             control={control}
             name="firstName"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { ref, onChange, onBlur, value } }) => (
               <FormInput
+                ref={ref}
                 autoCapitalize="words"
+                textContentType="givenName"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => lastNameRef.current?.focus()}
                 onBlur={onBlur}
                 onChangeText={bindTextChange('firstName', (text) => {
                   clearServerError();
@@ -115,9 +133,14 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
           <Controller
             control={control}
             name="lastName"
-            render={({ field: { onChange, onBlur, value } }) => (
+            render={({ field: { ref, onChange, onBlur, value } }) => (
               <FormInput
+                ref={mergeInputRef(ref, lastNameRef)}
                 autoCapitalize="words"
+                textContentType="familyName"
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onSubmitEditing={() => emailRef.current?.focus()}
                 onBlur={onBlur}
                 onChangeText={bindTextChange('lastName', (text) => {
                   clearServerError();
@@ -135,11 +158,16 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
         <Controller
           control={control}
           name="email"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { ref, onChange, onBlur, value } }) => (
             <FormInput
+              ref={mergeInputRef(ref, emailRef)}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passwordRef.current?.focus()}
               onBlur={onBlur}
               onChangeText={bindTextChange('email', (text) => {
                 clearServerError();
@@ -159,8 +187,13 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
         <Controller
           control={control}
           name="password"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { ref, onChange, onBlur, value } }) => (
             <PasswordInput
+              ref={mergeInputRef(ref, passwordRef)}
+              textContentType="newPassword"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => confirmPasswordRef.current?.focus()}
               onBlur={onBlur}
               onChangeText={bindTextChange('password', (text) => {
                 clearServerError();
@@ -184,8 +217,12 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
         <Controller
           control={control}
           name="confirmPassword"
-          render={({ field: { onChange, onBlur, value } }) => (
+          render={({ field: { ref, onChange, onBlur, value } }) => (
             <PasswordInput
+              ref={mergeInputRef(ref, confirmPasswordRef)}
+              textContentType="newPassword"
+              returnKeyType="done"
+              onSubmitEditing={() => void onSubmit()}
               onBlur={onBlur}
               onChangeText={bindTextChange('confirmPassword', (text) => {
                 clearServerError();
@@ -208,6 +245,9 @@ export function AccountSignUpForm({ canGoBack, onBack, onSignIn }: AccountSignUp
           onPress={onSubmit}
         />
         <Button title="Back to sign in" variant="secondary" size="form" onPress={onSignIn} />
+      </View>
+      <View className="mt-8">
+        <AccountLegalLinks />
       </View>
     </>
   );

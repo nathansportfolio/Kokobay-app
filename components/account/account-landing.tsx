@@ -1,5 +1,7 @@
 import { View } from 'react-native';
 
+import { ACCOUNT_SCREEN_GAP, AccountSection } from '@/components/account/account-layout';
+import { AccountLegalLinks } from '@/components/account/account-legal-links';
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
 import { AppSettingsLink } from '@/components/settings/app-settings-link';
 import { Button } from '@/components/ui/button';
@@ -32,6 +34,12 @@ export function AccountLanding({
         <Button title="Forgot password" variant="ghost" size="form" onPress={onForgotPassword} />
       </View>
       <AppSettingsLink onPress={onOpenSettings} />
+
+      <View style={{ marginTop: ACCOUNT_SCREEN_GAP }}>
+        <AccountSection title="Legal">
+          <AccountLegalLinks />
+        </AccountSection>
+      </View>
     </>
   );
 }

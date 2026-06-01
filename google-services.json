@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "432300522296",
+    "project_id": "koko-bay",
+    "storage_bucket": "koko-bay.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:432300522296:android:47d289e8f41d303e5bdfcd",
+        "android_client_info": {
+          "package_name": "com.kokobay.kokobayapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCzCp_izQQUAtsDgW3DTjlNH7stSLx5BJc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

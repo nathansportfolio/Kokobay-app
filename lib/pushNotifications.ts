@@ -45,7 +45,9 @@ import { InteractionManager, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Href } from 'expo-router';
 
+import { resolveDeepLinkUrl } from '@/lib/deep-link-router';
 import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 const PUSH_REGISTRATION_CACHE_KEY = 'kokobay_push_registration_v1';
 const ANONYMOUS_PUSH_EMAIL_KEY = 'kokobay_push_anonymous_email_v1';
@@ -101,7 +103,7 @@ export type PushNotificationData = {
   collectionHandle?: string;
   orderId?: string;
   orderNumber?: string;
-  /** Koko Bay store URL, app path, or `kokobayapp://` link. */
+  /** Koko Bay store URL, app path, or `kokobay://` / `kokobayapp://` link. */
   url?: string;
   /** Same as `url` when the backend sends `deepLink` at the root of the push job. */
   deepLink?: string;
@@ -399,7 +401,7 @@ export async function obtainExpoPushToken(): Promise<
 
 async function postPushRegister(payload: PushRegistrationPayload): Promise<boolean> {
   try {
-    const res = await fetch(pushApiUrl('/api/push/register'), {
+    const res = await fetchWithTimeout(pushApiUrl('/api/push/register'), {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -478,7 +480,7 @@ export async function registerPushNotifications(
 
 async function postPushUnregister(payload: PushRegistrationPayload): Promise<boolean> {
   try {
-    const res = await fetch(pushApiUrl('/api/push/unregister'), {
+    const res = await fetchWithTimeout(pushApiUrl('/api/push/unregister'), {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -738,85 +740,20 @@ function schedulePushNavigation(
 }
 
 function resolvePathFromUrl(url: string): ResolvePushDeepLinkResult | null {
-  const trimmed = url.trim();
-  let path = trimmed;
-
-  if (trimmed.startsWith('kokobayapp://')) {
-    path = trimmed.replace(/^kokobayapp:\/\//, '/');
-  } else if (/^https?:\/\//i.test(trimmed)) {
-    try {
-      const parsed = new URL(trimmed);
-      const host = parsed.hostname.toLowerCase();
-      if (host === 'kokobay.co.uk' || host === 'www.kokobay.co.uk' || host.endsWith('.kokobay.co.uk')) {
-        path = parsed.pathname;
-      } else {
-        return null;
-      }
-    } catch {
-      return null;
-    }
-  } else if (!trimmed.startsWith('/')) {
-    return null;
-  }
-
-  if (!path.startsWith('/')) {
-    path = `/${path}`;
-  }
-
-  const productsPath = path.match(/^\/products\/([^/]+)\/?$/);
-  if (productsPath?.[1]) {
-    return resolvePushDeepLink({ route: 'product', handle: decodeURIComponent(productsPath[1]) });
-  }
-
-  const collectionsPath = path.match(/^\/collections\/([^/]+)\/?$/);
-  if (collectionsPath?.[1]) {
-    return resolvePushDeepLink({
-      route: 'collection',
-      handle: decodeURIComponent(collectionsPath[1]),
-    });
-  }
-
-  const contentPath = path.match(/^\/(?:content|pages)\/([^/]+)\/?$/);
-  if (contentPath?.[1]) {
-    return resolvePushDeepLink({
-      route: 'content',
-      slug: decodeURIComponent(contentPath[1]),
-    });
-  }
-
-  const orderPath = path.match(/^\/account\/orders\/([^/]+)\/?$/);
-  if (orderPath?.[1]) {
-    return resolvePushDeepLink({
-      route: 'order',
-      orderId: decodeURIComponent(orderPath[1]),
-    });
-  }
-
-  if (path === '/cart' || path === '/cart/') {
-    return resolvePushDeepLink({ route: 'cart' });
-  }
-
-  if (path === '/wishlist' || path === '/wishlist/') {
-    return resolvePushDeepLink({ route: 'wishlist' });
-  }
-
-  // Normalize legacy tab paths to canonical deep-link paths.
-  const productTab = path.match(/^\/product\/([^/]+)\/?$/);
-  if (productTab?.[1]) {
-    return resolvePushDeepLink({ route: 'product', handle: decodeURIComponent(productTab[1]) });
-  }
-  const collectionTab = path.match(/^\/collection\/([^/]+)\/?$/);
-  if (collectionTab?.[1]) {
-    return resolvePushDeepLink({
-      route: 'collection',
-      handle: decodeURIComponent(collectionTab[1]),
-    });
+  const resolved = resolveDeepLinkUrl(url);
+  if (resolved.kind === 'unhandled' && !resolved.href) {
+    return {
+      href: null,
+      canonicalPath: resolved.canonicalPath,
+      reason: resolved.reason,
+      fallbackHref: PUSH_FALLBACK_HREF,
+    };
   }
 
   return {
-    href: path as Href,
-    canonicalPath: path,
-    fallbackHref: PUSH_FALLBACK_HREF,
+    href: resolved.href ?? resolved.fallbackHref,
+    canonicalPath: resolved.canonicalPath,
+    fallbackHref: resolved.fallbackHref,
   };
 }
 

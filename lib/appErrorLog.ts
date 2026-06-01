@@ -4,19 +4,35 @@ import { Platform } from 'react-native';
 import { getAppErrorScreen, getAppErrorUserId } from '@/lib/app-error-context';
 import { getDeviceLabel, isPhysicalDevice } from '@/lib/expo-device-safe';
 
+import { reportErrorToFirebaseCrashlytics } from '@/src/lib/firebase-crashlytics';
+
 import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 const REPORT_DEDUPE_MS = 12_000;
 const recentReports = new Map<string, number>();
 
-function apiOrigin(): string {
-  return resolveKokobayApiBaseUrl({ fallbackToDefault: true })!;
+/** POST /api/app/error-log — not GET /api/app-error (incident banner). */
+const ERROR_LOG_PATH = '/api/app/error-log';
+
+const IMPORTANT_ERROR_SOURCES = new Set([
+  'crash_guard',
+  'error_boundary',
+  'unhandled_promise_rejection',
+  'expo_router_root_error_boundary',
+]);
+
+function apiOrigin(): string | null {
+  const root = resolveKokobayApiBaseUrl({ fallbackToDefault: false });
+  return root ?? null;
 }
 
 export type ReportAppErrorInput = {
   message: string;
   level?: 'error' | 'warn' | 'info';
   fatal?: boolean;
+  /** When true, always POST to `/api/app/error-log`. */
+  important?: boolean;
   name?: string;
   stack?: string;
   screen?: string;
@@ -51,6 +67,19 @@ function shouldSendReport(key: string): boolean {
   return true;
 }
 
+function errorContextSource(context?: Record<string, unknown>): string | undefined {
+  const source = context?.source;
+  return typeof source === 'string' ? source : undefined;
+}
+
+/** Only crashes, fatals, and explicitly important errors hit the API. */
+export function shouldReportAppErrorToApi(input: ReportAppErrorInput): boolean {
+  if (input.important === true || input.fatal === true) return true;
+  const source = errorContextSource(input.context);
+  if (source && IMPORTANT_ERROR_SOURCES.has(source)) return true;
+  return false;
+}
+
 function sanitizeContext(context?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!context) return undefined;
   const out: Record<string, unknown> = {};
@@ -73,13 +102,18 @@ function sanitizeContext(context?: Record<string, unknown>): Record<string, unkn
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Fire-and-forget error report to Koko Bay `/api/app/error-log` (shows as `[APP]` in Vercel). */
+/**
+ * Reports to Firebase Crashlytics when configured; POSTs to Koko Bay only for important errors.
+ * @see ERROR_LOG_PATH (`/api/app/error-log`) — not `GET /api/app-error` (Shopify incident banner).
+ */
 export function reportAppError(input: ReportAppErrorInput): void {
   const message = input.message.trim().slice(0, 2000);
   if (!message) return;
 
+  const sendToApi = shouldReportAppErrorToApi(input);
   const dedupeKey = reportDedupeKey({ ...input, message });
-  if (!shouldSendReport(dedupeKey)) return;
+
+  if (sendToApi && !shouldSendReport(dedupeKey)) return;
 
   const screen = input.screen ?? getAppErrorScreen();
   const userId = input.userId ?? getAppErrorUserId();
@@ -101,7 +135,14 @@ export function reportAppError(input: ReportAppErrorInput): void {
     ...(runtimeContext ? { context: runtimeContext } : {}),
   };
 
-  void fetch(`${apiOrigin()}/api/app/error-log`, {
+  reportErrorToFirebaseCrashlytics(input);
+
+  if (!sendToApi) return;
+
+  const origin = apiOrigin();
+  if (!origin) return;
+
+  void fetchWithTimeout(`${origin}${ERROR_LOG_PATH}`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -124,17 +165,21 @@ export function reportAppErrorFromUnknown(
     stack,
     level: options?.level ?? 'error',
     fatal: options?.fatal,
+    important: options?.important,
     screen: options?.screen,
     userId: options?.userId,
     context: options?.context,
   });
 }
 
-/** Non-throwing operational failure (API 4xx/5xx, sync, WebView, etc.). */
+/** Operational issues (API 4xx/5xx, cart sync, etc.) — dev console only, no API noise. */
 export function reportOperationalFailure(
   message: string,
   context?: Record<string, unknown>,
   level: 'error' | 'warn' = 'error',
 ): void {
-  reportAppError({ message, level, context: { ...context, kind: 'operational' } });
+  if (__DEV__) {
+    const prefix = level === 'warn' ? '[operational warn]' : '[operational error]';
+    console.warn(prefix, message, context ?? {});
+  }
 }

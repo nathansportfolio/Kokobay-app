@@ -1,7 +1,7 @@
 {
   "name": "Koko Bay",
   "main": "expo-router/entry",
-  "version": "1.0.18",
+  "version": "1.0.25",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "start": "expo start --dev-client",
@@ -26,12 +26,16 @@
     "android:build": "expo run:android",
     "web": "expo start --web",
     "lint": "expo lint",
-    "push:preview-payload": "node scripts/preview-push-payload.mjs"
+    "push:preview-payload": "node scripts/preview-push-payload.mjs",
+    "well-known:generate": "node scripts/generate-well-known.mjs"
   },
   "dependencies": {
     "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@hookform/resolvers": "^5.2.2",
     "@react-native-community/slider": "5.0.1",
+    "@react-native-firebase/analytics": "^24.0.0",
+    "@react-native-firebase/app": "^24.0.0",
+    "@react-native-firebase/crashlytics": "^24.0.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
@@ -39,6 +43,7 @@
     "@tanstack/react-query": "^5.100.9",
     "expo": "~54.0.33",
     "expo-blur": "~15.0.8",
+    "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",

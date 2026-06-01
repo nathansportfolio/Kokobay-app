@@ -69,11 +69,11 @@ export function useAccountMode({ isAuthenticated }: UseAccountModeOptions) {
   }, [applyDirection]);
 
   const openSettings = useCallback(() => {
-    applyDirection('forward');
     if (isAuthenticated) {
-      setAuthenticatedView('settings');
+      setAuthenticatedView('dashboard');
       return;
     }
+    applyDirection('forward');
     setModeStack((prev) => {
       if (prev[prev.length - 1] === 'settings') return prev;
       return [...prev, 'settings'];
@@ -81,11 +81,8 @@ export function useAccountMode({ isAuthenticated }: UseAccountModeOptions) {
   }, [applyDirection, isAuthenticated]);
 
   const closeSettings = useCallback(() => {
+    if (isAuthenticated) return;
     applyDirection('back');
-    if (isAuthenticated) {
-      setAuthenticatedView('dashboard');
-      return;
-    }
     setModeStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   }, [applyDirection, isAuthenticated]);
 

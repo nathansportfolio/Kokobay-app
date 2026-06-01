@@ -4,6 +4,8 @@ export type AuthUser = {
   email: string;
   firstName: string;
   lastName: string;
+  /** Shopify email marketing consent — refreshed from `/api/customer/auth/me`. */
+  acceptsMarketing?: boolean | null;
 };
 
 /** What we persist in SecureStore — opaque token + user (no password) */

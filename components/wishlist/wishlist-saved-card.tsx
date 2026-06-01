@@ -1,5 +1,6 @@
 import { Link } from 'expo-router';
 import { X } from 'lucide-react-native';
+import { type ReactNode, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,9 +20,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useProductHref } from '@/hooks/use-product-href';
 import type { Product } from '@/types/shopify';
-import { firstValidProductImageUrl } from '@/utils/catalog-image';
+import { firstValidProductImage } from '@/utils/catalog-image';
 import { hapticLight } from '@/utils/haptics';
 import { formatMoney } from '@/utils/money';
+import { productTileImageUri } from '@/utils/product-tile-image-uri';
 import { isProductFullySoldOut } from '@/utils/product-availability';
 
 const REMOVE_ICON = { strokeWidth: 1.75 as const };
@@ -33,7 +35,7 @@ export type WishlistSavedCardProps = {
   product: Product | null | undefined;
   isPending: boolean;
   index: number;
-  onRemove: () => void;
+  onRemove: (handle: string) => void;
   /** Column content width (grid cell minus horizontal gutters). */
   tileWidth: number;
   /** Fixed image column height (grid rows share one height in FlashList). */
@@ -42,6 +44,30 @@ export type WishlistSavedCardProps = {
 
 const AnimatedImagePress = Animated.createAnimatedComponent(Pressable);
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function WishlistSavedCardSkeleton({
+  tileWidth,
+  imageHeight,
+  removeControl,
+}: {
+  tileWidth: number;
+  imageHeight: number;
+  removeControl: ReactNode;
+}) {
+  return (
+    <View style={{ width: tileWidth }}>
+      <View className="relative">
+        <Skeleton
+          className="rounded-2xl bg-warmElevated/85"
+          style={{ width: tileWidth, height: imageHeight }}
+        />
+        {removeControl}
+      </View>
+      <Skeleton className="mt-2.5 h-3.5 w-[92%] rounded-sm bg-warmElevated/75" />
+      <Skeleton className="mt-1.5 h-3 w-14 rounded-sm bg-warmElevated/65" />
+    </View>
+  );
+}
 
 export function WishlistSavedCard({
   handle,
@@ -66,9 +92,20 @@ export function WishlistSavedCard({
   const actionSize = relaxed ? 'md' : 'sm';
 
   const productLink = useProductHref(handle);
-  const imageUrl = product ? firstValidProductImageUrl(product) : null;
+  const sourceImage = product ? firstValidProductImage(product) : undefined;
+  const imageUrl = useMemo(() => {
+    if (!sourceImage) return undefined;
+    return productTileImageUri({
+      url: sourceImage.url,
+      width: sourceImage.width,
+      height: sourceImage.height,
+      tileWidth,
+      handle: product?.handle ?? handle,
+    });
+  }, [sourceImage, tileWidth, product?.handle, handle]);
   const title = product?.title ?? handle.replace(/-/g, ' ');
   const priceLabel = product ? formatMoney(product.priceRange.minVariantPrice) : '';
+  const isLoading = isPending || !product;
 
   const removeControl = (
     <AnimatedPressable
@@ -80,7 +117,7 @@ export function WishlistSavedCard({
       }}
       onPress={() => {
         hapticLight();
-        onRemove();
+        onRemove(handle);
       }}
       hitSlop={10}
       accessibilityRole="button"
@@ -92,6 +129,16 @@ export function WishlistSavedCard({
       </LuxuryCardActionSurface>
     </AnimatedPressable>
   );
+
+  if (isLoading) {
+    return (
+      <WishlistSavedCardSkeleton
+        tileWidth={tileWidth}
+        imageHeight={imageHeight}
+        removeControl={removeControl}
+      />
+    );
+  }
 
   return (
     <View>
@@ -116,11 +163,11 @@ export function WishlistSavedCard({
                     uri={imageUrl}
                     recyclingKey={handle}
                     priority="low"
-                    transition={200}
+                    transition={null}
                   />
-                ) : isPending ? (
-                  <Skeleton className="rounded-none" style={{ width: tileWidth, height: imageHeight }} />
-                ) : null}
+                ) : (
+                  <View className="h-full w-full bg-warmElevated" />
+                )}
               </View>
             </AnimatedImagePress>
           </Link>
@@ -146,8 +193,6 @@ export function WishlistSavedCard({
               <Text className="mt-1.5 font-sans-md text-[12px] uppercase tracking-[0.12em] text-mist">
                 {priceLabel}
               </Text>
-            ) : isPending ? (
-              <View className="mt-1.5 h-3 w-16 rounded-full bg-warmElevated/75" />
             ) : null}
           </Pressable>
         </Link>

@@ -7,8 +7,7 @@ const HOME_NEW_IN_HERO_BASE =
   'https://www.kokobay.co.uk/cdn/shop/collections/20250303_171037140_iOS.jpg?v=1754496329';
 
 /**
- * Device-sized Shopify CDN URL for the home hero (webp in production, png in iOS dev).
- * Smaller than the previous fixed width=1600 JPEG (~500KB) on typical phones.
+ * Device-sized Shopify CDN URL for the built-in default home hero (webp in production, png in iOS dev).
  */
 export function homeNewInHeroImageUri(screenWidth: number): string {
   const devicePixels = Math.ceil(screenWidth * PixelRatio.get());

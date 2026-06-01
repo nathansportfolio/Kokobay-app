@@ -7,6 +7,7 @@ import { useMarketStore } from '@/store/market-preference';
 import { showToast } from '@/store/toast';
 import { cn } from '@/utils/cn';
 import { hapticLight } from '@/utils/haptics';
+import { marketOptionDisplayLabel } from '@/utils/market-option-label';
 
 function MarketOptionRow({
   label,
@@ -25,7 +26,7 @@ function MarketOptionRow({
       accessibilityRole="radio"
       accessibilityState={{ selected }}
       className={cn(
-        'flex-row items-center justify-between py-3.5 active:opacity-78',
+        'flex-row items-center justify-between px-4 py-3.5 active:opacity-78',
         showDivider && 'border-b border-line/35',
         selected && 'bg-warmElevated/55',
       )}>
@@ -47,7 +48,12 @@ function MarketOptionRow({
   );
 }
 
-export function MarketCurrencySection() {
+type MarketCurrencySectionProps = {
+  /** Hides long intro copy when embedded in the account preferences card. */
+  compact?: boolean;
+};
+
+export function MarketCurrencySection({ compact = false }: MarketCurrencySectionProps) {
   const countryCode = useMarketStore((s) => s.countryCode);
   const currencyCode = useMarketStore((s) => s.currencyCode);
   const setMarket = useMarketStore((s) => s.setMarket);
@@ -64,10 +70,15 @@ export function MarketCurrencySection() {
 
   return (
     <View>
-      <Text variant="body" className="mb-4 text-mist">
-        Choose the currency for product prices and checkout. Options come from your Shopify store
-        markets.
-      </Text>
+      {compact ?
+        <Text variant="caption" className="mb-3 px-4 text-mist">
+          Currency for prices and checkout
+        </Text>
+      : <Text variant="body" className="mb-4 text-mist">
+          Choose the currency for product prices and checkout. Options come from your Shopify store
+          markets.
+        </Text>
+      }
 
       {isPending ? (
         <View className="items-center py-6">
@@ -78,11 +89,11 @@ export function MarketCurrencySection() {
           Could not load currencies. Check your Shopify connection and try again.
         </Text>
       ) : (
-        <View>
+        <View className={compact ? undefined : '-mx-4'}>
           {rows.map((option, index) => (
             <MarketOptionRow
               key={`${option.currencyCode}-${option.countryCode}`}
-              label={option.currencyCode}
+              label={marketOptionDisplayLabel(option)}
               selected={
                 option.countryCode === countryCode && option.currencyCode === currencyCode
               }

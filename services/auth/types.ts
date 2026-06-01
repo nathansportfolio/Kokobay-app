@@ -24,6 +24,12 @@ export type PasswordResetResult =
   | { ok: true; message: string }
   | { ok: false; error: string; code?: string };
 
+export type RestoreSessionResult =
+  | { status: 'ok'; session: AuthSession }
+  | { status: 'session_invalid' }
+  | { status: 'session_unknown' }
+  | { status: 'no_session' };
+
 /**
  * Pluggable auth — Koko Bay customer API by default; swap for Shopify Customer Account API when ready.
  * Keep methods async to match network I/O.
@@ -32,8 +38,12 @@ export type IAuthService = {
   login: (email: string, password: string) => Promise<AuthResult>;
   register: (input: RegisterInput) => Promise<AuthResult>;
   requestPasswordReset: (email: string) => Promise<PasswordResetResult>;
-  /** Validate or refresh server session (Koko Bay `/api/customer/auth/me`). */
-  restoreSession: () => Promise<AuthSession | null>;
+  /**
+   * Validate or refresh server session (Koko Bay `/api/customer/auth/me`).
+   * `session_unknown` means network/server failure — keep local credentials.
+   * `session_invalid` means the server rejected the token — clear credentials.
+   */
+  restoreSession: () => Promise<RestoreSessionResult>;
   logout: () => Promise<void>;
 };
 

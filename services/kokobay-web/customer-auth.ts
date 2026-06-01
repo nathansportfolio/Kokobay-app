@@ -1,4 +1,5 @@
-import type { AuthSession, AuthUser } from '@/types/auth';
+import type { AuthSession } from '@/types/auth';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { isKokobayWebProductsConfigured } from './client';
@@ -7,29 +8,15 @@ import {
   extractCustomerSessionFromBody,
   extractCustomerSessionFromHeaders,
   persistCustomerSessionCookie,
-  resolveCustomerSessionToken,
 } from './customer-session';
+import type { KokobayAuthErr, KokobayAuthOk } from './customer-auth-shared';
+import {
+  resolveSessionToken,
+  sessionFromCustomer,
+} from './customer-auth-shared';
 
-export type KokobayCustomerJson = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  phone?: string | null;
-  acceptsMarketing?: boolean;
-};
-
-type KokobayAuthOk = {
-  ok: true;
-  customer: KokobayCustomerJson;
-  sessionToken?: string;
-};
-
-type KokobayAuthErr = {
-  ok: false;
-  error: string;
-  code?: string;
-};
+export type { KokobayCustomerJson } from './customer-auth-shared';
+export { kokobayCustomerMe, type KokobayCustomerMeResult } from './customer-auth-restore';
 
 type KokobayMessageOk = {
   ok: true;
@@ -55,33 +42,7 @@ function friendlyError(error: string, code?: string): string {
   return error.trim() || 'Something went wrong. Please try again.';
 }
 
-function toAuthUser(customer: KokobayCustomerJson): AuthUser {
-  return {
-    id: customer.id,
-    email: customer.email,
-    firstName: customer.firstName ?? '',
-    lastName: customer.lastName ?? '',
-  };
-}
-
-function sessionFromCustomer(customer: KokobayCustomerJson, sessionToken: string): AuthSession {
-  return {
-    accessToken: sessionToken,
-    user: toAuthUser(customer),
-  };
-}
-
-function resolveSessionToken(
-  data: Record<string, unknown> | null,
-  sessionCookie: string | null,
-): string | null {
-  return (
-    sessionCookie?.trim() ||
-    extractCustomerSessionFromBody(data) ||
-    null
-  );
-}
-
+/** Login/signup/logout — failures return null data; no session-restore semantics. */
 async function customerAuthFetch(
   method: 'GET' | 'POST',
   path: string,
@@ -96,7 +57,7 @@ async function customerAuthFetch(
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -216,43 +177,4 @@ export async function kokobayCustomerForgotPassword(email: string): Promise<
       ? (data as KokobayMessageOk).message!
       : 'If an account exists for this email, a reset link has been sent.';
   return { ok: true, message };
-}
-
-export async function kokobayCustomerMe(): Promise<KokobayCustomerAuthResult | null> {
-  if (!isKokobayWebProductsConfigured()) return null;
-  const existing = await resolveCustomerSessionToken();
-  if (!existing) return null;
-
-  const { data, sessionCookie } = await customerAuthFetch('GET', '/api/customer/auth/me', undefined, existing);
-  if (data?.ok === true && (data as KokobayAuthOk).customer) {
-    const token = resolveSessionToken(data, sessionCookie) ?? existing;
-    if (token !== existing) await persistCustomerSessionCookie(token);
-    return { ok: true, session: sessionFromCustomer((data as KokobayAuthOk).customer, token) };
-  }
-
-  if ((data as KokobayAuthErr | null)?.code === 'unauthorized') {
-    const refreshed = await customerAuthFetch('POST', '/api/customer/auth/refresh', undefined, existing);
-    const refreshedToken = resolveSessionToken(refreshed.data, refreshed.sessionCookie) ?? refreshed.sessionCookie;
-    if (refreshedToken) await persistCustomerSessionCookie(refreshedToken);
-    if (refreshed.data?.ok === true) {
-      const customer = (refreshed.data as KokobayAuthOk).customer;
-      if (customer?.id) {
-        const token = refreshedToken ?? existing;
-        return { ok: true, session: sessionFromCustomer(customer, token) };
-      }
-      const retry = await customerAuthFetch('GET', '/api/customer/auth/me', undefined, refreshedToken ?? existing);
-      if (retry.data?.ok === true && (retry.data as KokobayAuthOk).customer) {
-        const token = resolveSessionToken(retry.data, retry.sessionCookie) ?? refreshedToken ?? existing;
-        if (token) await persistCustomerSessionCookie(token);
-        return {
-          ok: true,
-          session: sessionFromCustomer((retry.data as KokobayAuthOk).customer, token),
-        };
-      }
-    }
-    await persistCustomerSessionCookie(null);
-    return null;
-  }
-
-  return null;
 }

@@ -1,4 +1,5 @@
 import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 /** `GET /api/delivery-threshold` — Shopify `delivery_threshold` metaobject (not app_content). */
 export async function fetchDeliveryThresholdFromApi(
@@ -10,7 +11,7 @@ export async function fetchDeliveryThresholdFromApi(
   const url = `${root}/api/delivery-threshold`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: init?.signal,

@@ -5,6 +5,7 @@ import { View } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
 import { AccountAuthBackButton } from '@/components/account/account-auth-back-button';
+import { AccountLegalLinks } from '@/components/account/account-legal-links';
 import { AuthFormHeader } from '@/components/forms/auth-form-header';
 import { ErrorMessage } from '@/components/forms/error-message';
 import { LoadingButton } from '@/components/forms/loading-button';
@@ -129,6 +130,9 @@ export function AccountForgotPasswordForm({ canGoBack, onBack, onSignIn }: Accou
           onPress={onSubmit}
         />
         <Button title="Back to sign in" variant="secondary" size="form" onPress={onSignIn} />
+      </View>
+      <View className="mt-8">
+        <AccountLegalLinks />
       </View>
     </>
   );

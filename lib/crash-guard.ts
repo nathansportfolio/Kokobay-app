@@ -19,7 +19,7 @@ export function installJsCrashGuard(): void {
   errorUtils.setGlobalHandler((error, isFatal) => {
     reportAppErrorFromUnknown(error, {
       fatal: Boolean(isFatal),
-      context: { source: 'global_error_handler' },
+      context: { source: 'crash_guard' },
     });
 
     previous?.(error, isFatal);

@@ -85,10 +85,13 @@ export async function persistCustomerSessionCookie(value: string | null): Promis
   }
 }
 
-/** Koko Bay session JWT/JWE from Set-Cookie — not a Shopify GID or storefront token. */
+/** Session token sent as Bearer — Kokobay JWT or Shopify customer access token (server accepts both). */
 export function isLikelyKokobaySessionToken(token: string): boolean {
   const t = token.trim();
-  return t.startsWith('eyJ') && t.includes('.');
+  if (!t) return false;
+  if (t.startsWith('eyJ') && t.includes('.')) return true;
+  if (t.startsWith('shpua_') || t.startsWith('shpat_')) return true;
+  return t.length >= 16;
 }
 
 /** Best available Koko Bay session JWT: in-memory auth state, SecureStore, then auth persist. */
@@ -101,9 +104,7 @@ export async function resolveCustomerSessionToken(sessionOverride?: string): Pro
   ];
 
   for (const candidate of candidates) {
-    if (candidate && isLikelyKokobaySessionToken(candidate)) {
-      return candidate;
-    }
+    if (candidate) return candidate;
   }
 
   return null;

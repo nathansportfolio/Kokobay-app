@@ -1,73 +1,37 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
-import { AppState } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 
 import { APP_ERROR_BANNER_STRIP_HEIGHT } from '@/constants/app-error-banner';
 import { useAppPromotionBannerChromeHeight } from '@/hooks/use-app-promotion-banner-content';
-import { kokobayApiEnvDebug, resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
 import { fetchAppErrorBanner, type AppErrorBannerPayload } from '@/services/kokobay-web/app-error';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 
-const APP_ERROR_QUERY_KEY = ['app-error'] as const;
+export const APP_ERROR_QUERY_KEY = ['app-error'] as const;
 
-function logAppErrorBannerState(payload: Record<string, unknown>) {
-  if (!__DEV__) return;
-  console.log('[AppErrorBanner]', payload);
+const APP_ERROR_STALE_MS = 5 * 60_000;
+
+/** Shopify incident strip — off by default (separate from POST /api/app/error-log). */
+export function isIncidentBannerEnabled(): boolean {
+  return process.env.EXPO_PUBLIC_INCIDENT_BANNER_ENABLED === 'true';
 }
 
 export function useAppErrorBannerContent() {
-  const queryClient = useQueryClient();
-  const enabled = isKokobayWebProductsConfigured();
+  const enabled = isKokobayWebProductsConfigured() && isIncidentBannerEnabled();
 
   const query = useQuery<AppErrorBannerPayload | null>({
     queryKey: [...APP_ERROR_QUERY_KEY],
     enabled,
-    staleTime: 60_000,
+    staleTime: APP_ERROR_STALE_MS,
     gcTime: 60 * 60_000,
-    refetchOnWindowFocus: true,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
     refetchOnReconnect: true,
+    retry: false,
     placeholderData: (previous) => previous,
     queryFn: ({ signal }) => fetchAppErrorBanner({ signal }),
   });
 
   const data = query.data ?? null;
-  const visible = Boolean(data?.active && data.message.trim());
-
-  const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: [...APP_ERROR_QUERY_KEY] });
-  }, [queryClient]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refresh();
-    });
-    return () => sub.remove();
-  }, [refresh]);
-
-  useEffect(() => {
-    const cmsLookup =
-      query.isPending || query.fetchStatus === 'fetching'
-        ? 'loading'
-        : data != null
-          ? 'found'
-          : 'not_found (inactive or GET /api/app-error 404)';
-
-    logAppErrorBannerState({
-      shouldShow: visible,
-      cmsLookup,
-      loading: enabled && query.isPending,
-      message: data?.message || '(empty)',
-      queryStatus: query.status,
-      queryFetchStatus: query.fetchStatus,
-      apiEnabled: enabled,
-      apiBaseUrl: resolveKokobayApiBaseUrl(),
-      apiEnv: kokobayApiEnvDebug(),
-    });
-  }, [visible, data, query.isPending, query.status, query.fetchStatus, enabled]);
+  const visible = Boolean(enabled && data?.active && data.message.trim());
 
   return {
     visible,
@@ -75,7 +39,6 @@ export function useAppErrorBannerContent() {
     title: '',
     content: data?.message ?? '',
     richContent: undefined,
-    refresh,
   };
 }
 

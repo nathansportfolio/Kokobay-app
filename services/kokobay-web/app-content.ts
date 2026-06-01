@@ -5,6 +5,7 @@ import {
 } from '@/utils/shopify-rich-text';
 
 import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 type Json = Record<string, unknown>;
 
@@ -105,7 +106,7 @@ export async function fetchAppContent(
     : `${root}${path}`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: init?.signal,

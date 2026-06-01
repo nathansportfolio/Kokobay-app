@@ -6,17 +6,10 @@ import { useAppErrorBannerContent } from '@/hooks/use-app-error-banner-content';
 
 /** Incident strip rendered below navigation headers (no status-bar inset). */
 export function AppErrorBannerStrip() {
-  const { visible, loading, title, content, richContent } = useAppErrorBannerContent();
+  const { visible, title, content, richContent } = useAppErrorBannerContent();
 
   if (!visible) {
-    if (__DEV__) {
-      console.log('[AppErrorBanner] strip hidden', { visible, loading, title: title || '(empty)' });
-    }
     return null;
-  }
-
-  if (__DEV__) {
-    console.log('[AppErrorBanner] strip rendering', { title: title || '(empty)' });
   }
 
   return (

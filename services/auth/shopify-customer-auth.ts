@@ -24,7 +24,7 @@ export function createShopifyCustomerAuthService(_config: {
       };
     },
     async restoreSession() {
-      return null;
+      return { status: 'no_session' as const };
     },
 
     async logout(): Promise<void> {

@@ -10,10 +10,18 @@ import {
 
 import { trackAddToWishlist, trackRemoveFromWishlist } from '@/lib/gtm';
 import { showToast } from '@/store/toast';
-import { loadWishlistHandles, persistWishlistHandles } from '@/store/wishlist-persist';
+import {
+  loadWishlistEntries,
+  persistWishlistEntries,
+  wishlistHandlesFromEntries,
+} from '@/store/wishlist-persist';
+import type { WishlistEntry } from '@/types/wishlist';
 
 export type WishlistContextValue = {
+  /** Newest saved first — used for wishlist grid order. */
   wishlistHandles: string[];
+  /** Same order as `wishlistHandles`, with save timestamps. */
+  wishlistEntries: WishlistEntry[];
   wishlistCount: number;
   isWishlisted: (handle: string) => boolean;
   toggleWishlist: (handle: string) => void;
@@ -26,12 +34,19 @@ const WishlistContext = createContext<WishlistContextValue | null>(null);
 let wishlistPersistTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function WishlistProvider({ children }: PropsWithChildren) {
-  const [wishlistSet, setWishlistSet] = useState(() => new Set<string>());
+  const [wishlistEntries, setWishlistEntries] = useState<WishlistEntry[]>([]);
   const [wishlistHydrated, setWishlistHydrated] = useState(false);
 
+  const wishlistHandles = useMemo(
+    () => wishlistHandlesFromEntries(wishlistEntries),
+    [wishlistEntries],
+  );
+
+  const wishlistSet = useMemo(() => new Set(wishlistHandles), [wishlistHandles]);
+
   useEffect(() => {
-    void loadWishlistHandles().then((handles) => {
-      setWishlistSet(new Set(handles));
+    void loadWishlistEntries().then((entries) => {
+      setWishlistEntries(entries);
       setWishlistHydrated(true);
     });
   }, []);
@@ -39,17 +54,16 @@ export function WishlistProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!wishlistHydrated) return;
     if (wishlistPersistTimer) clearTimeout(wishlistPersistTimer);
-    const snapshot = [...wishlistSet].sort();
+    const snapshot = [...wishlistEntries];
     wishlistPersistTimer = setTimeout(() => {
       wishlistPersistTimer = undefined;
-      void persistWishlistHandles(snapshot);
+      void persistWishlistEntries(snapshot);
     }, 140);
     return () => {
       if (wishlistPersistTimer) clearTimeout(wishlistPersistTimer);
     };
-  }, [wishlistSet, wishlistHydrated]);
+  }, [wishlistEntries, wishlistHydrated]);
 
-  const wishlistHandles = useMemo(() => [...wishlistSet].sort(), [wishlistSet]);
   const wishlistCount = wishlistHandles.length;
 
   const isWishlisted = useCallback(
@@ -65,11 +79,12 @@ export function WishlistProvider({ children }: PropsWithChildren) {
       const h = handle.trim();
       if (!h) return;
       const wasPresent = wishlistSet.has(h);
-      setWishlistSet((prev) => {
-        const next = new Set(prev);
-        if (prev.has(h)) next.delete(h);
-        else next.add(h);
-        return next;
+      const addedAt = new Date().toISOString();
+      setWishlistEntries((prev) => {
+        if (prev.some((entry) => entry.handle === h)) {
+          return prev.filter((entry) => entry.handle !== h);
+        }
+        return [{ handle: h, addedAt }, ...prev.filter((entry) => entry.handle !== h)];
       });
       if (wasPresent) {
         trackRemoveFromWishlist({ handle: h });
@@ -86,14 +101,15 @@ export function WishlistProvider({ children }: PropsWithChildren) {
   );
 
   const reloadWishlist = useCallback(async () => {
-    const handles = await loadWishlistHandles();
-    setWishlistSet(new Set(handles));
+    const entries = await loadWishlistEntries();
+    setWishlistEntries(entries);
     setWishlistHydrated(true);
   }, []);
 
   const value = useMemo(
     () => ({
       wishlistHandles,
+      wishlistEntries,
       wishlistCount,
       isWishlisted,
       toggleWishlist,
@@ -102,6 +118,7 @@ export function WishlistProvider({ children }: PropsWithChildren) {
     }),
     [
       wishlistHandles,
+      wishlistEntries,
       wishlistCount,
       isWishlisted,
       toggleWishlist,

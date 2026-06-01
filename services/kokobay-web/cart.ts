@@ -1,6 +1,7 @@
 import type { CartLine } from '@/types/cart';
 import type { Money } from '@/types/shopify';
-import { reportAppErrorFromUnknown, reportOperationalFailure } from '@/lib/appErrorLog';
+import { reportOperationalFailure } from '@/lib/appErrorLog';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
 import { cartFlowLog, cartPerfLog } from '@/lib/cart-perf-log';
 import { createGuestId } from '@/utils/create-guest-id';
@@ -134,7 +135,7 @@ async function kokobayCartRequest(
   const route = pathWithMarket.split('?')[0] ?? pathWithMarket;
   const reqStart = performance.now();
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method,
       headers,
       body: payload !== undefined ? JSON.stringify(payload) : undefined,
@@ -171,8 +172,10 @@ async function kokobayCartRequest(
     return parsed;
   } catch (e) {
     cartFlowLog(method, route, performance.now() - reqStart);
-    reportAppErrorFromUnknown(e, {
-      context: { source: 'kokobay_cart_network', method, path },
+    reportOperationalFailure('Koko Bay cart network error', {
+      method,
+      path,
+      message: e instanceof Error ? e.message : String(e),
     });
     return null;
   }

@@ -9,6 +9,7 @@ import type {
   AccountOrdersResult,
 } from '@/types/account-order';
 import type { Money } from '@/types/shopify';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { kokobayCustomerMe } from './customer-auth';
@@ -267,7 +268,7 @@ async function fetchAccountOrdersOnce(
   logAccountOrders('fetch request', { url, after: options.after ?? null, first });
 
   try {
-    const res = await fetch(url, { headers });
+    const res = await fetchWithTimeout(url, { headers });
     const text = await res.text();
     let parsed: Record<string, unknown>;
     try {
@@ -343,7 +344,7 @@ export async function fetchAccountOrders(options: FetchOptions = {}): Promise<Ac
   let result = await fetchAccountOrdersOnce(options);
   if (!result.ok && result.unauthorized) {
     const refreshed = await kokobayCustomerMe();
-    if (refreshed?.ok) {
+    if (refreshed.status === 'ok') {
       result = await fetchAccountOrdersOnce({
         ...options,
         sessionToken: refreshed.session.accessToken,

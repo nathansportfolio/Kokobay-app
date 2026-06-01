@@ -220,10 +220,10 @@ export function useKokobayCollectionCatalog(
           after: pageParam,
         });
         return {
-          products: page?.items ?? [],
-          pageInfo: page?.pageInfo ?? EMPTY_PAGE_INFO,
+          products: page.items,
+          pageInfo: page.pageInfo,
           filters: [],
-          totalCount: page?.totalCount,
+          totalCount: page.totalCount,
         };
       }
       const page = await fetchKokobayCollectionPage(safe, {
@@ -233,13 +233,6 @@ export function useKokobayCollectionCatalog(
         sort: options.sort,
         storefrontFilters: filtersForLookup(),
       });
-      if (!page) {
-        return {
-          products: [],
-          pageInfo: EMPTY_PAGE_INFO,
-          filters: [],
-        };
-      }
       if (page.filters.length) {
         rememberFilters(page.filters, options.plpFilters);
       }
@@ -306,13 +299,6 @@ export function useKokobaySearchCatalog(
         sort: options.sort,
         storefrontFilters: filtersForLookup(),
       });
-      if (!page) {
-        return {
-          products: [],
-          pageInfo: EMPTY_PAGE_INFO,
-          filters: [],
-        };
-      }
       if (page.filters.length) {
         rememberFilters(page.filters, options.plpFilters);
       }

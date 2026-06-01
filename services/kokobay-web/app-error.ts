@@ -1,4 +1,5 @@
 import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 export type AppErrorBannerPayload = {
   active: boolean;
@@ -15,16 +16,13 @@ export async function fetchAppErrorBanner(
   const url = `${root}/api/app-error`;
 
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: init?.signal,
     });
     const text = await res.text();
     if (!res.ok) {
-      if (__DEV__) {
-        console.log('[AppErrorBanner] fetch miss', { status: res.status, url, apiBase: root });
-      }
       return null;
     }
     let json: Record<string, unknown> | null = null;

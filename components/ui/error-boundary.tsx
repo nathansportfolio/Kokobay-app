@@ -30,7 +30,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, State> {
     const label = this.props.name ?? 'AppErrorBoundary';
     reportAppErrorFromUnknown(error, {
       context: {
-        source: 'react_error_boundary',
+        source: 'error_boundary',
         boundary: label,
         componentStack: info.componentStack?.slice(0, 4000) ?? null,
       },

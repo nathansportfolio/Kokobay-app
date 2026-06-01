@@ -1,9 +1,13 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { Link } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { AccountOrderPreviewModal } from '@/components/account/account-order-preview-modal';
 import { Button } from '@/components/ui/button';
+import { palette } from '@/constants/theme';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { fetchAccountOrders } from '@/services/kokobay-web/account-orders';
@@ -27,6 +31,8 @@ type Props = {
   openOrderId?: string;
   openOrderNumber?: string;
   onRequestSignIn?: () => void;
+  /** When true, empty state uses compact in-card layout. */
+  embedded?: boolean;
 };
 
 type OrderRowProps = {
@@ -46,33 +52,27 @@ function OrderRow({ order, onPress }: OrderRowProps) {
         logAccountOrders('OrderRow pressed', summarizeOrder(order));
         onPress();
       }}
-      className="border-b border-line/60 py-4 active:opacity-85 last:border-b-0"
+      className="flex-row items-center border-b border-line/35 py-3.5 active:opacity-78 last:border-b-0"
       accessibilityRole="button"
       accessibilityLabel={`View order ${order.orderNumber}`}>
-      <View className="flex-row items-start justify-between gap-3">
-        <View className="min-w-0 flex-1">
-          <Text className="font-sans-md text-[15px] text-ink">{order.orderNumber}</Text>
-          <Text variant="caption" className="mt-1 text-mist">
-            {formatOrderDate(order.createdAt)}
+      <View className="min-w-0 flex-1 pr-3">
+        <Text className="font-sans-md text-[15px] leading-5 text-ink">{order.orderNumber}</Text>
+        <Text variant="caption" className="mt-1 text-mist">
+          {formatOrderDate(order.createdAt)}
+        </Text>
+        {summary ?
+          <Text variant="caption" className="mt-1.5 text-mist/90" numberOfLines={2}>
+            {summary}
           </Text>
-          {summary ? (
-            <Text variant="caption" className="mt-2 text-mist" numberOfLines={2}>
-              {summary}
-            </Text>
-          ) : null}
-        </View>
-        <View className="items-end">
-          <Text className="font-sans-md text-[15px] text-ink">
-            {formatCartMoney(displayTotal)}
-          </Text>
-          <Text variant="caption" className="mt-1 text-accent">
-            {status}
-          </Text>
-        </View>
+        : null}
+        <Text variant="caption" className="mt-1.5 text-accent">
+          {status}
+        </Text>
       </View>
-      <Text variant="caption" className="mt-3 text-mist underline">
-        View details
-      </Text>
+      <View className="items-end gap-2">
+        <Text className="font-sans-md text-[15px] text-ink">{formatCartMoney(displayTotal)}</Text>
+        <ChevronRight size={18} color={palette.mist} strokeWidth={1.5} />
+      </View>
     </Pressable>
   );
 }
@@ -90,11 +90,42 @@ function isOrdersError(error: unknown): error is Extract<AccountOrdersResult, { 
   return typeof error === 'object' && error !== null && 'ok' in error && (error as { ok: boolean }).ok === false;
 }
 
+function OrdersEmptyState({ embedded }: { embedded?: boolean }) {
+  const shopCta = (
+    <Link href="/" asChild>
+      <Button title="Start shopping" variant="secondary" />
+    </Link>
+  );
+
+  if (embedded) {
+    return (
+      <View className="items-center gap-4 py-6">
+        <Text variant="label" className="tracking-[0.12em] text-mist">
+          No orders yet
+        </Text>
+        <Text variant="body" className="text-center text-mist">
+          Your purchases will appear here after checkout.
+        </Text>
+        {shopCta}
+      </View>
+    );
+  }
+
+  return (
+    <EmptyState
+      title="No orders yet"
+      message="When you checkout, your purchases will appear here.">
+      {shopCta}
+    </EmptyState>
+  );
+}
+
 export function AccountOrdersSection({
   sessionToken,
   openOrderId,
   openOrderNumber,
   onRequestSignIn,
+  embedded,
 }: Props) {
   const enabled = Boolean(sessionToken?.trim());
   const [previewOrder, setPreviewOrder] = useState<AccountOrder | null>(null);
@@ -217,11 +248,7 @@ export function AccountOrdersSection({
   }
 
   if (!orders.length) {
-    return (
-      <Text variant="body" className="text-mist">
-        No orders yet. When you checkout, your purchases will appear here.
-      </Text>
-    );
+    return <OrdersEmptyState embedded={embedded} />;
   }
 
   return (

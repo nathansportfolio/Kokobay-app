@@ -1,6 +1,11 @@
 import { fetchShopify, isShopifyConfigured } from './client';
 import { GET_LOCALIZATION } from './queries';
-import { isKokobayWebProductsConfigured, fetchKokobayJson } from '@/services/kokobay-web/client';
+import { isKokobayWebProductsConfigured, tryFetchKokobayJson } from '@/services/kokobay-web/client';
+import {
+  compareMarketOptionsByDisplayOrder,
+  marketOptionDisplayLabel,
+  premiumRegionNameForMarket,
+} from '@/utils/market-option-label';
 
 export type MarketOption = {
   countryCode: string;
@@ -42,23 +47,32 @@ const FALLBACK_MARKET_OPTIONS: MarketOption[] = [
     countryName: 'United Kingdom',
     currencyCode: 'GBP',
     currencyName: 'British Pound',
-    label: 'GBP — United Kingdom',
+    label: 'United Kingdom (GBP)',
   },
   {
     countryCode: 'US',
     countryName: 'United States',
     currencyCode: 'USD',
     currencyName: 'US Dollar',
-    label: 'USD — United States',
+    label: 'United States (USD)',
   },
   {
     countryCode: 'IE',
-    countryName: 'Ireland',
+    countryName: 'Europe',
     currencyCode: 'EUR',
     currencyName: 'Euro',
-    label: 'EUR — Ireland',
+    label: 'Europe (EUR)',
   },
 ];
+
+function finalizeMarketOption(option: MarketOption): MarketOption {
+  const countryName = premiumRegionNameForMarket(option);
+  return {
+    ...option,
+    countryName,
+    label: marketOptionDisplayLabel({ ...option, countryName }),
+  };
+}
 
 export function marketOptionsFromCountries(countries: LocalizationCountry[]): MarketOption[] {
   const byCurrency = new Map<string, MarketOption>();
@@ -68,13 +82,13 @@ export function marketOptionsFromCountries(countries: LocalizationCountry[]): Ma
     const currencyCode = country.currency?.isoCode?.trim().toUpperCase();
     if (!countryCode || !currencyCode) continue;
 
-    const option: MarketOption = {
+    const option = finalizeMarketOption({
       countryCode,
       countryName: country.name?.trim() || countryCode,
       currencyCode,
       currencyName: country.currency?.name?.trim() || currencyCode,
-      label: `${currencyCode} — ${country.name?.trim() || countryCode}`,
-    };
+      label: '',
+    });
 
     const preferred = PREFERRED_COUNTRY_BY_CURRENCY[currencyCode];
     const existing = byCurrency.get(currencyCode);
@@ -83,12 +97,12 @@ export function marketOptionsFromCountries(countries: LocalizationCountry[]): Ma
     }
   }
 
-  return [...byCurrency.values()].sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+  return [...byCurrency.values()].sort(compareMarketOptionsByDisplayOrder);
 }
 
 export async function fetchShopifyMarketOptions(): Promise<MarketOption[]> {
   if (isKokobayWebProductsConfigured()) {
-    const data = await fetchKokobayJson('/api/markets');
+    const data = await tryFetchKokobayJson('/api/markets');
     const markets = data?.markets;
     if (Array.isArray(markets) && markets.length) {
       return markets
@@ -98,15 +112,16 @@ export async function fetchShopifyMarketOptions(): Promise<MarketOption[]> {
           const countryCode = String(o.countryCode ?? '').trim().toUpperCase();
           const currencyCode = String(o.currencyCode ?? '').trim().toUpperCase();
           if (!countryCode || !currencyCode) return null;
-          return {
+          return finalizeMarketOption({
             countryCode,
             countryName: String(o.countryName ?? countryCode),
             currencyCode,
             currencyName: String(o.currencyName ?? currencyCode),
-            label: String(o.label ?? `${currencyCode} — ${o.countryName ?? countryCode}`),
-          } satisfies MarketOption;
+            label: String(o.label ?? ''),
+          });
         })
-        .filter((row): row is MarketOption => row !== null);
+        .filter((row): row is MarketOption => row !== null)
+        .sort(compareMarketOptionsByDisplayOrder);
     }
   }
 

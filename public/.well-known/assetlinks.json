@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.kokobay.kokobayapp",
+      "sha256_cert_fingerprints": [
+        "3A:03:7F:56:2A:AB:F8:9B:EC:20:F9:9C:B4:57:5D:CE:F5:C6:3D:B9:DA:A9:2B:AF:6E:16:F4:48:F3:1A:11:62"
+      ]
+    }
+  }
+]

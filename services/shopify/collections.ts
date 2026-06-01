@@ -125,9 +125,10 @@ export async function getCollectionProducts(handle: string, first = 24): Promise
   if (isKokobayWebProductsConfigured()) {
     const apiHandle = resolveCollectionHandleForApi(safeHandle);
     return fetchKokobayProductsUpTo(first, (after) =>
-      fetchKokobayCollectionPage(apiHandle, { after }).then((page) =>
-        page ? { items: page.items, pageInfo: page.pageInfo } : null,
-      ),
+      fetchKokobayCollectionPage(apiHandle, { after }).then((page) => ({
+        items: page.items,
+        pageInfo: page.pageInfo,
+      })),
     );
   }
 

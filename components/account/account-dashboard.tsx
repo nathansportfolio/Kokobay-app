@@ -1,11 +1,18 @@
 import { View } from 'react-native';
 
+import { AccountDeleteAccountSection } from '@/components/account/account-delete-account-section';
+import {
+  ACCOUNT_SCREEN_GAP,
+  AccountCard,
+  AccountSection,
+} from '@/components/account/account-layout';
 import { AccountOrdersSection } from '@/components/account/account-orders-section';
+import { AccountPreferencesPanel } from '@/components/account/account-preferences-panel';
+import { AccountProfileCard } from '@/components/account/account-profile-card';
+import { AccountLegalLinks } from '@/components/account/account-legal-links';
+import { AccountSupportRow } from '@/components/account/account-support-row';
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
-import { AppSettingsLink } from '@/components/settings/app-settings-link';
 import { Button } from '@/components/ui/button';
-import { Text } from '@/components/ui/text';
-import { formTokens } from '@/constants/form-tokens';
 import type { AuthUser } from '@/types/auth';
 
 type AccountDashboardProps = {
@@ -15,8 +22,9 @@ type AccountDashboardProps = {
   openOrderNumber?: string;
   isLoggingOut: boolean;
   onLogout: () => void;
+  onAccountDeletionRequested: () => void | Promise<void>;
   onRequestSignIn: () => void;
-  onOpenSettings: () => void;
+  onRegisterRefresh?: (refresh: (() => Promise<void>) | null) => void;
 };
 
 export function AccountDashboard({
@@ -26,83 +34,62 @@ export function AccountDashboard({
   openOrderNumber,
   isLoggingOut,
   onLogout,
+  onAccountDeletionRequested,
   onRequestSignIn,
-  onOpenSettings,
+  onRegisterRefresh,
 }: AccountDashboardProps) {
-  const displayName = `${user.firstName} ${user.lastName}`.trim() || user.email;
-
   return (
     <>
       <LuxuryTabScreenHeader title="Account" />
 
-      <View
-        className="border border-formBorder bg-formBg px-5 py-6"
-        style={{
-          borderRadius: formTokens.input.borderRadius,
-          marginBottom: formTokens.spacing.sectionGap,
-        }}>
-        <Text
-          className="mb-4 font-sans-md uppercase"
-          style={{
-            fontSize: formTokens.label.fontSize,
-            letterSpacing: formTokens.label.letterSpacing,
-            fontWeight: formTokens.label.fontWeight,
-            color: formTokens.label.color,
-          }}>
-          Profile
-        </Text>
-        <Text variant="body" className="text-ink">
-          {displayName}
-        </Text>
-        <Text variant="caption" className="mt-1.5 font-sans text-[14px] leading-5 text-mist/90">
-          {user.email}
-        </Text>
-      </View>
+      <View style={{ gap: ACCOUNT_SCREEN_GAP }}>
+        <AccountSection title="Profile">
+          <AccountProfileCard user={user} />
+        </AccountSection>
 
-      <View
-        className="border border-formBorder bg-formBg px-5 py-6"
-        style={{
-          borderRadius: formTokens.input.borderRadius,
-          marginBottom: formTokens.spacing.sectionGap,
-        }}>
-        <Text
-          className="mb-4 font-sans-md uppercase"
-          style={{
-            fontSize: formTokens.label.fontSize,
-            letterSpacing: formTokens.label.letterSpacing,
-            fontWeight: formTokens.label.fontWeight,
-            color: formTokens.label.color,
-          }}>
-          Orders
-        </Text>
-        <AccountOrdersSection
+        <AccountSection title="Orders">
+          <AccountCard>
+            <View className="px-4 py-1">
+              <AccountOrdersSection
+                sessionToken={accessToken}
+                openOrderId={openOrderId}
+                openOrderNumber={openOrderNumber}
+                onRequestSignIn={onRequestSignIn}
+                embedded
+              />
+            </View>
+          </AccountCard>
+        </AccountSection>
+
+        <AccountSection title="Preferences">
+          <AccountCard>
+            <AccountPreferencesPanel onRegisterRefresh={onRegisterRefresh} />
+          </AccountCard>
+        </AccountSection>
+
+        <AccountSection title="Support">
+          <AccountSupportRow />
+        </AccountSection>
+
+        <AccountSection title="Legal">
+          <AccountLegalLinks />
+        </AccountSection>
+
+        <View className="gap-3 pt-1">
+          <Button
+            title={isLoggingOut ? 'Signing out…' : 'Sign out'}
+            variant="secondary"
+            loading={isLoggingOut}
+            disabled={isLoggingOut}
+            onPress={onLogout}
+          />
+        </View>
+
+        <AccountDeleteAccountSection
           sessionToken={accessToken}
-          openOrderId={openOrderId}
-          openOrderNumber={openOrderNumber}
-          onRequestSignIn={onRequestSignIn}
+          onDeletionRequested={onAccountDeletionRequested}
         />
       </View>
-
-      <View
-        className="border border-formBorder bg-formBg px-5 py-6"
-        style={{
-          borderRadius: formTokens.input.borderRadius,
-          marginBottom: formTokens.spacing.sectionGap,
-        }}>
-        <Text variant="body" className="text-mist">
-          For support, please email info@kokobay.co.uk
-        </Text>
-      </View>
-
-      <Button
-        title={isLoggingOut ? 'Signing out…' : 'Sign out'}
-        variant="secondary"
-        size="form"
-        loading={isLoggingOut}
-        disabled={isLoggingOut}
-        onPress={onLogout}
-      />
-      <AppSettingsLink className="mt-6" onPress={onOpenSettings} />
     </>
   );
 }

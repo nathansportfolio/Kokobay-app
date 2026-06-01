@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ACCOUNT_ORDERS_QUERY_KEY } from '@/components/account/account-orders-section';
@@ -14,30 +14,34 @@ import { AccountLanding } from '@/components/account/account-landing';
 import { AccountModeTransition } from '@/components/account/account-mode-transition';
 import { AccountSignInForm } from '@/components/account/account-sign-in-form';
 import { AccountSignUpForm } from '@/components/account/account-sign-up-form';
-import { LuxuryRefreshControl } from '@/components/ui/luxury-refresh-control';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAccountMode } from '@/hooks/use-account-mode';
-import { useGlobalPullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useAuthStore } from '@/store';
 import { isAllowedCheckoutUrl } from '@/utils/checkout-url';
 
 /** Inline shells — NativeWind flex-1 on ScrollView / SafeAreaView fails on Android. */
-const ACCOUNT_SHELL = { flex: 1, backgroundColor: palette.canvas } as const;
+const ACCOUNT_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
+/** flexGrow + RefreshControl blanks ScrollView children on Android — avoid for logged-in. */
 const ACCOUNT_SCROLL_CONTENT = {
-  flexGrow: 1,
-  paddingHorizontal: 20,
+  paddingHorizontal: 22,
   paddingBottom: 40,
   paddingTop: 8,
+} as const;
+
+const ACCOUNT_SCROLL_CONTENT_GUEST = {
+  ...ACCOUNT_SCROLL_CONTENT,
+  flexGrow: 1,
 } as const;
 
 export default function AccountScreen() {
   const router = useRouter();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const { height: winH } = useWindowDimensions();
-  /** Explicit height — flex:1 ScrollView collapses on Android (guest auth forms). */
+  /** Explicit height — flex:1 ScrollView collapses on Android (guest + logged-in). */
   const scrollHeight = Math.max(320, winH - tabBarHeight);
+  const scrollStyle = { height: scrollHeight, backgroundColor: '#FAF8F5' } as const;
   const { orderId, orderNumber } = useLocalSearchParams<{
     orderId?: string;
     orderNumber?: string;
@@ -47,13 +51,13 @@ export default function AccountScreen() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
   const logout = useAuthStore((s) => s.logout);
+  const clearSessionAfterAccountDeletion = useAuthStore((s) => s.clearSessionAfterAccountDeletion);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const settingsRefreshRef = useRef<(() => Promise<void>) | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const {
     currentGuestMode,
-    authenticatedView,
     canGoBack,
     transitionDirection,
     pushMode,
@@ -76,7 +80,7 @@ export default function AccountScreen() {
     settingsRefreshRef.current = refresh;
   }, []);
 
-  const onLogout = useCallback(async () => {
+  const signOutAndReset = useCallback(async () => {
     setIsLoggingOut(true);
     try {
       await logout();
@@ -85,6 +89,18 @@ export default function AccountScreen() {
       setIsLoggingOut(false);
     }
   }, [logout, resetToLanding]);
+
+  const onLogout = signOutAndReset;
+
+  const onAccountDeletionRequested = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await clearSessionAfterAccountDeletion();
+      resetToLanding();
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [clearSessionAfterAccountDeletion, resetToLanding]);
 
   const onRequestSignIn = useCallback(async () => {
     setIsLoggingOut(true);
@@ -114,14 +130,15 @@ export default function AccountScreen() {
     [clearReturnTo, router],
   );
 
-  const { refreshing, onRefresh } = useGlobalPullToRefresh(async () => {
-    if (user && accessToken && authenticatedView === 'dashboard') {
-      await queryClient.refetchQueries({ queryKey: [...ACCOUNT_ORDERS_QUERY_KEY, accessToken] });
-    }
-    if (settingsRefreshRef.current) {
-      await settingsRefreshRef.current();
-    }
-  });
+  useFocusEffect(
+    useCallback(() => {
+      if (!accessToken) return;
+      void queryClient.refetchQueries({
+        queryKey: [...ACCOUNT_ORDERS_QUERY_KEY, accessToken],
+        type: 'active',
+      });
+    }, [accessToken, queryClient]),
+  );
 
   const settingsPanel = (
     <AccountAppSettings
@@ -132,20 +149,18 @@ export default function AccountScreen() {
   );
 
   const body = user ?
-    <AccountModeTransition modeKey={authenticatedView} direction={transitionDirection}>
-      {authenticatedView === 'settings' ?
-        settingsPanel
-      : <AccountDashboard
-          user={user}
-          accessToken={accessToken}
-          openOrderId={typeof orderId === 'string' ? orderId : undefined}
-          openOrderNumber={typeof orderNumber === 'string' ? orderNumber : undefined}
-          isLoggingOut={isLoggingOut}
-          onLogout={onLogout}
-          onRequestSignIn={onRequestSignIn}
-          onOpenSettings={openSettings}
-        />
-      }
+    <AccountModeTransition modeKey="dashboard" direction={transitionDirection}>
+      <AccountDashboard
+        user={user}
+        accessToken={accessToken}
+        openOrderId={typeof orderId === 'string' ? orderId : undefined}
+        openOrderNumber={typeof orderNumber === 'string' ? orderNumber : undefined}
+        isLoggingOut={isLoggingOut}
+        onLogout={onLogout}
+        onAccountDeletionRequested={onAccountDeletionRequested}
+        onRequestSignIn={onRequestSignIn}
+        onRegisterRefresh={registerSettingsRefresh}
+      />
     </AccountModeTransition>
   : <AccountModeTransition modeKey={currentGuestMode} direction={transitionDirection}>
       {currentGuestMode === 'landing' ?
@@ -182,9 +197,7 @@ export default function AccountScreen() {
       }
     </AccountModeTransition>;
 
-  const showsTabTitleHeader =
-    (Boolean(user) && authenticatedView === 'dashboard') ||
-    (!user && currentGuestMode === 'landing');
+  const showsTabTitleHeader = Boolean(user) || (!user && currentGuestMode === 'landing');
 
   if (!hasHydrated) {
     return (
@@ -206,29 +219,36 @@ export default function AccountScreen() {
     </>
   );
 
-  const scrollStyle = user
-    ? ACCOUNT_SHELL
-    : { height: scrollHeight, backgroundColor: palette.canvas };
+  const scrollContentStyle = user ? ACCOUNT_SCROLL_CONTENT : ACCOUNT_SCROLL_CONTENT_GUEST;
+
+  const scroll = (
+    <ScrollView
+      ref={scrollRef}
+      style={scrollStyle}
+      nestedScrollEnabled
+      contentContainerStyle={scrollContentStyle}
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
+      showsVerticalScrollIndicator={false}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      {...(Platform.OS === 'android' ? { overScrollMode: 'always' as const } : {})}>
+      {chrome}
+    </ScrollView>
+  );
+
+  if (user) {
+    return (
+      <View style={ACCOUNT_SHELL} collapsable={false}>
+        {scroll}
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={ACCOUNT_SHELL} edges={['left', 'right']}>
       <View style={ACCOUNT_SHELL} collapsable={false}>
-        <ScrollView
-          ref={scrollRef}
-          style={scrollStyle}
-          contentContainerStyle={ACCOUNT_SCROLL_CONTENT}
-          keyboardShouldPersistTaps="handled"
-          automaticallyAdjustKeyboardInsets
-          showsVerticalScrollIndicator={false}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          refreshControl={
-            user ?
-              <LuxuryRefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            : undefined
-          }>
-          {chrome}
-        </ScrollView>
+        {scroll}
       </View>
     </SafeAreaView>
   );

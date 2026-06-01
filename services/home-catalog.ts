@@ -13,8 +13,8 @@ export const HOME_NEW_IN_CAROUSEL_LIMIT = 10;
 /** Home collections editorial tiles — full list on the Collections tab. */
 export const HOME_SHOP_BY_CATEGORY_LIMIT = 3;
 
-async function fetchKokobayHomeNewIn(limit: number): Promise<Product[]> {
-  const collectionPage = await fetchKokobayCollectionPage(LIVE_NEW_IN_COLLECTION_HANDLE, {
+async function fetchKokobayHomeNewIn(handle: string, limit: number): Promise<Product[]> {
+  const collectionPage = await fetchKokobayCollectionPage(handle, {
     first: limit,
   });
   if (collectionPage?.items.length) {
@@ -24,18 +24,32 @@ async function fetchKokobayHomeNewIn(limit: number): Promise<Product[]> {
   return latest.slice(0, limit);
 }
 
+export type FetchHomeCatalogDataOptions = {
+  /** From CMS hero `buttonLink` for the active market; defaults to `all-new-in`. */
+  newInCollectionHandle?: string;
+};
+
 /**
- * Home + search overlay share this so React Query dedupes on `['home', 'catalog']`.
+ * Home + search overlay share this so React Query dedupes on `['home', 'catalog', country, handle]`.
  */
-export async function fetchHomeCatalogData(): Promise<{ collections: Collection[]; newIn: Product[] }> {
+export async function fetchHomeCatalogData(
+  options: FetchHomeCatalogDataOptions = {},
+): Promise<{ collections: Collection[]; newIn: Product[] }> {
+  const newInHandle =
+    options.newInCollectionHandle?.trim() || LIVE_NEW_IN_COLLECTION_HANDLE;
+
   if (isKokobayWebProductsConfigured()) {
     const [collections, newIn] = await Promise.all([
       getCollections(),
-      fetchKokobayHomeNewIn(HOME_NEW_IN_CAROUSEL_LIMIT),
+      fetchKokobayHomeNewIn(newInHandle, HOME_NEW_IN_CAROUSEL_LIMIT),
     ]);
     return { collections, newIn };
   }
-  const [collections, newIn] = await Promise.all([getCollections(), getCollectionProducts('new-in')]);
+  const legacyHandle = newInHandle === LIVE_NEW_IN_COLLECTION_HANDLE ? 'new-in' : newInHandle;
+  const [collections, newIn] = await Promise.all([
+    getCollections(),
+    getCollectionProducts(legacyHandle),
+  ]);
   return {
     collections,
     newIn: newIn.slice(0, HOME_NEW_IN_CAROUSEL_LIMIT),

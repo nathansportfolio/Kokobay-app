@@ -1,4 +1,5 @@
 import { getShopifyCountryCode } from './market-context';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 const DEFAULT_API_VERSION = '2025-01';
 
@@ -67,7 +68,7 @@ export async function fetchShopify<T>(
         ? { ...variables, country }
         : variables;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

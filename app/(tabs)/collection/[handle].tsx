@@ -14,6 +14,7 @@ import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-fo
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
 import { PlpProductCountLabel } from '@/components/plp/plp-product-count-label';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Button } from '@/components/ui/button';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ProductGridSkeleton } from '@/components/ui/product-grid-skeleton';
 import { Screen } from '@/components/ui/screen';
@@ -137,6 +138,7 @@ export default function CollectionScreen() {
     isPending: legacyCatalogPending,
     isError: legacyCatalogError,
     isRefetching: legacyCatalogRefetching,
+    refetch: refetchLegacyCatalog,
   } = useQuery({
     queryKey: ['collection', 'products', safeHandle, marketKey],
     enabled: Boolean(safeHandle) && !isWebCatalog,
@@ -155,6 +157,7 @@ export default function CollectionScreen() {
   const catalogPending = isWebCatalog ? kokobayCatalog.isPending : legacyCatalogPending;
   const catalogError = isWebCatalog ? kokobayCatalog.isError : legacyCatalogError;
   const catalogRefetching = isWebCatalog ? kokobayCatalog.isRefetching : legacyCatalogRefetching;
+  const catalogRefetch = isWebCatalog ? kokobayCatalog.refetch : refetchLegacyCatalog;
 
   const priceMeta = useMemo(
     () => plpPriceSliderMetaForCurrency(marketCurrency),
@@ -468,7 +471,9 @@ export default function CollectionScreen() {
   if (catalogError && flatItems.length === 0) {
     return (
       <Screen scroll>
-        <EmptyState title="Something went wrong" message="We could not load this collection. Try again." />
+        <EmptyState title="Something went wrong" message="We could not load this collection. Try again.">
+          <Button title="Try again" variant="primary" onPress={() => void catalogRefetch()} />
+        </EmptyState>
       </Screen>
     );
   }

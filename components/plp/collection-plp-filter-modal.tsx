@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { useMemo } from 'react';
-import { Modal, Platform, Pressable, ScrollView, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { Modal, Platform, Pressable, ScrollView, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PdpAccordion } from '@/components/pdp/pdp-accordion';
@@ -218,6 +218,68 @@ function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
+function logFilterModalHeader(action: 'Close' | 'Clear', phase: string) {
+  if (__DEV__) {
+    console.log(`[FilterModal] ${action} ${phase}`);
+  }
+}
+
+function FilterModalHeaderAction({
+  action,
+  label,
+  onPress,
+  align = 'start',
+  accent,
+}: {
+  action: 'Close' | 'Clear';
+  label: string;
+  onPress: () => void;
+  align?: 'start' | 'end';
+  accent?: boolean;
+}) {
+  const touchHandlers = {
+    onPressIn: () => logFilterModalHeader(action, 'pressIn'),
+    onPress: () => {
+      logFilterModalHeader(action, 'onPress');
+      onPress();
+    },
+  };
+
+  const labelClass = accent
+    ? 'font-sans-md text-[15px] leading-5 text-accent'
+    : 'font-sans text-[15px] leading-5 text-mist';
+
+  const rowClass = cn(
+    'z-10 min-h-[44px] min-w-[72px] shrink-0 justify-center py-2',
+    align === 'end' && 'items-end',
+  );
+
+  if (Platform.OS === 'android') {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={action === 'Close' ? 'Close filters' : 'Clear all filters'}
+        className={rowClass}
+        style={{ paddingHorizontal: 10 }}
+        {...touchHandlers}>
+        <Text className={labelClass}>{label}</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <Pressable
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      accessibilityRole="button"
+      accessibilityLabel={action === 'Close' ? 'Close filters' : 'Clear all filters'}
+      className={rowClass}
+      {...touchHandlers}>
+      <Text className={labelClass}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export function CollectionPlpFilterModal({
   visible,
   onClose,
@@ -260,32 +322,44 @@ export function CollectionPlpFilterModal({
     [facetColourGroups, facetColourGroupCounts, draft.colors],
   );
 
+  const handleClose = useCallback(() => {
+    logFilterModalHeader('Close', 'handleClose → onClose()');
+    hapticLight();
+    onClose();
+  }, [onClose]);
+
+  const handleClear = useCallback(() => {
+    logFilterModalHeader('Clear', 'handleClear → onClear()');
+    onClear();
+  }, [onClear]);
+
+  const titleBlock = (
+    <View className="min-w-0 flex-1 px-2" pointerEvents="none">
+      <Text
+        variant="title"
+        numberOfLines={1}
+        className="text-center text-[17px] tracking-[-0.2px] text-ink">
+        Filters
+      </Text>
+    </View>
+  );
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView className="flex-1 bg-canvas" edges={['top', 'left', 'right']}>
-        <View className="relative flex-row items-center border-b border-line/60 px-6 py-3">
-          <Pressable
-            onPress={onClose}
-            hitSlop={{ top: 12, bottom: 12, left: 8, right: 16 }}
-            accessibilityRole="button"
-            accessibilityLabel="Close filters"
-            className="min-h-[44px] min-w-[72px] justify-center py-2">
-            <Text className="font-sans text-[15px] leading-5 text-mist">Close</Text>
-          </Pressable>
-          <Text
-            variant="title"
-            pointerEvents="none"
-            className="absolute inset-x-0 text-center text-[17px] tracking-[-0.2px] text-ink">
-            Filters
-          </Text>
-          <Pressable
-            onPress={onClear}
-            hitSlop={{ top: 12, bottom: 12, left: 16, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel="Clear all filters"
-            className="ml-auto min-h-[44px] min-w-[72px] items-end justify-center py-2">
-            <Text className="font-sans-md text-[15px] leading-5 text-accent">Clear</Text>
-          </Pressable>
+        <View className="flex-row items-center border-b border-line/60 px-4 py-3">
+          {Platform.OS === 'android' ?
+            <>
+              {titleBlock}
+              <FilterModalHeaderAction action="Close" label="Close" onPress={handleClose} align="end" />
+              <FilterModalHeaderAction action="Clear" label="Clear" onPress={handleClear} align="end" accent />
+            </>
+          : <>
+              <FilterModalHeaderAction action="Close" label="Close" onPress={handleClose} />
+              {titleBlock}
+              <FilterModalHeaderAction action="Clear" label="Clear" onPress={handleClear} align="end" accent />
+            </>
+          }
         </View>
         <ScrollView
           className="flex-1 px-5 pt-2"

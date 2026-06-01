@@ -1,0 +1,53 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "2GMFTDU442.com.kokobay.kokobayapp"
+        ],
+        "components": [
+          {
+            "/": "/products/*",
+            "comment": "Product detail (Google Ads PDP)"
+          },
+          {
+            "/": "/collections/*",
+            "comment": "Collection PLP"
+          },
+          {
+            "/": "/search",
+            "comment": "Search PLP with query string"
+          },
+          {
+            "/": "/search/*"
+          },
+          {
+            "/": "/pages/*",
+            "comment": "Promotional / policy landing pages"
+          },
+          {
+            "/": "/content/*"
+          },
+          {
+            "/": "/account/orders/*"
+          },
+          {
+            "/": "/cart"
+          },
+          {
+            "/": "/wishlist"
+          },
+          {
+            "/": "/account"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "2GMFTDU442.com.kokobay.kokobayapp"
+    ]
+  }
+}

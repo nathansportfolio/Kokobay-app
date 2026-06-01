@@ -1,5 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
+import { APP_HOME_HERO_QUERY_KEY } from '@/constants/app-home-hero-cms';
+import { APP_ERROR_QUERY_KEY, isIncidentBannerEnabled } from '@/hooks/use-app-error-banner-content';
 import { clearAppContentMemoryCache } from '@/services/kokobay-web/app-content';
 import { clearKokobayWebCatalogCache } from '@/services/kokobay-web/catalog';
 import { clearKokobayWebCollectionsCache } from '@/services/kokobay-web/collections-catalog';
@@ -9,10 +11,13 @@ export async function refreshAppData(queryClient: QueryClient): Promise<void> {
   clearKokobayWebCatalogCache();
   clearKokobayWebCollectionsCache();
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['app-error'] }),
+    ...(isIncidentBannerEnabled() ?
+      [queryClient.invalidateQueries({ queryKey: [...APP_ERROR_QUERY_KEY] })]
+    : []),
     queryClient.invalidateQueries({ queryKey: ['app-promotion-banner'] }),
     queryClient.invalidateQueries({ queryKey: ['delivery-threshold'] }),
     queryClient.invalidateQueries({ queryKey: ['home', 'catalog'] }),
+    queryClient.invalidateQueries({ queryKey: [...APP_HOME_HERO_QUERY_KEY] }),
     queryClient.invalidateQueries({ queryKey: ['collections-cms'] }),
     queryClient.invalidateQueries({ queryKey: ['categories', 'collections'] }),
     queryClient.invalidateQueries({ queryKey: ['kokobay', 'api', 'collections'] }),

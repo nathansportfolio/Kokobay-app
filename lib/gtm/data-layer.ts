@@ -5,6 +5,7 @@ import { getGtmConfig, isGtmLiveConfigured } from '@/lib/gtm/config';
 import { gtmLiveReceiver } from '@/lib/gtm/receivers/gtm-receiver';
 import { mockGtmReceiver } from '@/lib/gtm/receivers/mock-receiver';
 import type { GtmDataLayerEvent } from '@/lib/gtm/types';
+import { trackDataLayerEventForFirebase } from '@/src/services/analytics';
 
 function appMeta() {
   return {
@@ -30,11 +31,12 @@ export function pushToDataLayer(event: GtmDataLayerEvent): void {
 
   if (!isGtmLiveConfigured()) {
     mockGtmReceiver.push(payload);
-    return;
+  } else {
+    gtmLiveReceiver.push(payload);
+    if (debug) {
+      mockGtmReceiver.push(payload);
+    }
   }
 
-  gtmLiveReceiver.push(payload);
-  if (debug) {
-    mockGtmReceiver.push(payload);
-  }
+  trackDataLayerEventForFirebase(payload);
 }

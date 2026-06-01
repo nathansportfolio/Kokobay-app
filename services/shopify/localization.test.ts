@@ -28,8 +28,13 @@ describe('marketOptionsFromCountries', () => {
       },
     ]);
 
-    assert.deepEqual(options.map((o) => o.currencyCode).sort(), ['EUR', 'GBP', 'USD']);
+    assert.deepEqual(
+      options.map((o) => o.currencyCode),
+      ['GBP', 'USD', 'EUR'],
+    );
     assert.equal(options.find((o) => o.currencyCode === 'EUR')?.countryCode, 'IE');
+    assert.equal(options.find((o) => o.currencyCode === 'EUR')?.label, 'Europe (EUR)');
+    assert.equal(options.find((o) => o.currencyCode === 'GBP')?.label, 'United Kingdom (GBP)');
     assert.equal(options.find((o) => o.currencyCode === 'USD')?.countryCode, 'US');
   });
 });

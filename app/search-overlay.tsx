@@ -1,6 +1,6 @@
 import type { Href } from 'expo-router';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Search, X } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, TextInput, useWindowDimensions, View } from 'react-native';
@@ -16,10 +16,10 @@ import { LuxuryRefreshControl } from '@/components/ui/luxury-refresh-control';
 import { Text } from '@/components/ui/text';
 import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
+import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { useGlobalPullToRefresh } from '@/hooks/use-pull-to-refresh';
-import { fetchHomeCatalogData } from '@/services/home-catalog';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { fetchKokobayPredictiveSearch } from '@/services/kokobay-web/search';
 import { searchProducts } from '@/services/shopify';
@@ -77,12 +77,8 @@ export default function SearchOverlayScreen() {
     return predictive?.suggestions ?? [];
   }, [hasQuery, trimmed.length, predictiveEnabled, predictive?.suggestions]);
 
-  const { data: homeCatalog, isPending: homeCatalogPending, refetch: refetchHomeCatalog } = useQuery({
-    queryKey: ['home', 'catalog', marketKey],
-    staleTime: 4 * 60_000,
-    placeholderData: keepPreviousData,
-    queryFn: () => fetchHomeCatalogData(),
-  });
+  const { data: homeCatalog, isPending: homeCatalogPending, refetch: refetchHomeCatalog } =
+    useHomeCatalogQuery();
 
   const { refreshing, onRefresh } = useGlobalPullToRefresh(async () => {
     await refetchHomeCatalog();

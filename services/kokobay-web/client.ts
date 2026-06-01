@@ -1,6 +1,8 @@
 import { KOKOBAY_PRODUCTS_API_KEY_HEADER } from '@/constants/kokobay-web';
 import { getShopifyCountryCode, getShopifyCurrencyCode } from '@/services/shopify/market-context';
+import { fetchWithTimeout, HttpResponseError } from '@/utils/fetch-with-timeout';
 
+import { KokobayApiError, toKokobayApiError } from './api-errors';
 import {
   isKokobayApiConfigured,
   kokobayApiEnvDebug,
@@ -40,14 +42,14 @@ function withMarketQuery(path: string): string {
   return `${path}${sep}${params.toString()}`;
 }
 
-/** `GET` JSON from the Koko Bay web API (public storefront routes). */
+/** `GET` JSON from the Koko Bay web API. Throws {@link KokobayApiError} on failure. */
 export async function fetchKokobayJson(
   path: string,
   init?: { signal?: AbortSignal },
-): Promise<Json | null> {
+): Promise<Json> {
   const root = resolveKokobayApiBaseUrl();
   if (!root) {
-    return null;
+    throw new KokobayApiError('Koko Bay API is not configured');
   }
   const key = apiKey();
   const url = `${root}${withMarketQuery(path.startsWith('/') ? path : `/${path}`)}`;
@@ -55,17 +57,42 @@ export async function fetchKokobayJson(
   if (key) {
     headers[KOKOBAY_PRODUCTS_API_KEY_HEADER] = key;
   }
+
   try {
-    const res = await fetch(url, { headers, signal: init?.signal });
+    const res = await fetchWithTimeout(url, { headers, signal: init?.signal });
     const text = await res.text();
     if (!res.ok) {
-      return null;
+      throw new HttpResponseError(
+        `HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`,
+        res.status,
+        url,
+      );
     }
     try {
-      return JSON.parse(text) as Json;
-    } catch {
-      return null;
+      const parsed: unknown = JSON.parse(text);
+      if (parsed === null || typeof parsed !== 'object') {
+        throw new KokobayApiError('Invalid JSON response');
+      }
+      if (Array.isArray(parsed)) {
+        return parsed as unknown as Json;
+      }
+      return parsed as Json;
+    } catch (error) {
+      if (error instanceof KokobayApiError) throw error;
+      throw new KokobayApiError('Invalid JSON response', error);
     }
+  } catch (error) {
+    throw toKokobayApiError(error);
+  }
+}
+
+/** Same as {@link fetchKokobayJson} but returns `null` on failure (banners, optional CMS). */
+export async function tryFetchKokobayJson(
+  path: string,
+  init?: { signal?: AbortSignal },
+): Promise<Json | null> {
+  try {
+    return await fetchKokobayJson(path, init);
   } catch {
     return null;
   }
@@ -73,5 +100,7 @@ export async function fetchKokobayJson(
 
 /** `GET /api/collections` → `{ collections: KokobayCollectionJson[] }` */
 export async function fetchKokobayCollectionsJson(): Promise<Json | null> {
-  return fetchKokobayJson('/api/collections');
+  return tryFetchKokobayJson('/api/collections');
 }
+
+export { KokobayApiError } from './api-errors';

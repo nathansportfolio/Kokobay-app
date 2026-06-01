@@ -1,27 +1,31 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link, usePathname } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
+import { WishlistGridItem } from '@/components/wishlist/wishlist-grid-item';
 import { WishlistGridSkeleton } from '@/components/wishlist/wishlist-grid-skeleton';
-import { WishlistSavedCard } from '@/components/wishlist/wishlist-saved-card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Text } from '@/components/ui/text';
+import {
+  WISHLIST_PRODUCTS_GC_TIME_MS,
+  WISHLIST_PRODUCTS_STALE_TIME_MS,
+} from '@/constants/wishlist-query';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useWishlist } from '@/contexts/wishlist-context';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
+import { fetchWishlistProductPreviews } from '@/services/kokobay-web/wishlist-products';
 import { getProduct } from '@/services/shopify';
+import type { Product } from '@/types/shopify';
 import { newInCollectionHref } from '@/utils/collection-handles';
-import {
-  PRODUCT_QUERY_GC_TIME_MS,
-  PRODUCT_QUERY_STALE_TIME_MS,
-} from '@/constants/product-query';
-import { productQueryKey } from '@/utils/product-query-key';
+import { wishlistPreviewToProduct } from '@/utils/wishlist-product-mapper';
+import { wishlistProductsQueryKey } from '@/utils/wishlist-query-key';
+import { useMarketStore } from '@/store/market-preference';
 
 /** Horizontal inset — `px-5` luxury breathing room */
 const H_PAD = 20;
@@ -34,6 +38,8 @@ const LIST_BOTTOM_PAD = 48;
 /** Inline shell — NativeWind flex-1 on SafeAreaView / FlashList fails on Android. */
 const WISHLIST_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
 
+type WishlistProductsMap = Record<string, Product>;
+
 function useWishlistGridMetrics() {
   const { width: winW } = useWindowDimensions();
   return useMemo(() => {
@@ -43,7 +49,8 @@ function useWishlistGridMetrics() {
     const imageH = Math.round((tileW * 4) / 3);
     const textStack = 58;
     const itemHeight = imageH + textStack;
-    return { inner, tileW, imageH, itemHeight };
+    const cellHeight = itemHeight + ROW_GAP;
+    return { inner, tileW, imageH, itemHeight, cellHeight };
   }, [winW]);
 }
 
@@ -51,12 +58,38 @@ function WishlistHeader() {
   return <LuxuryTabScreenHeader title="Wishlist" />;
 }
 
+async function loadWishlistProductsMap(
+  handles: readonly string[],
+  currencyCode: string,
+  signal?: AbortSignal,
+): Promise<WishlistProductsMap> {
+  const map: WishlistProductsMap = {};
+
+  if (isKokobayWebProductsConfigured()) {
+    const previews = await fetchWishlistProductPreviews(handles, { signal });
+    for (const preview of previews) {
+      const product = wishlistPreviewToProduct(preview, currencyCode);
+      if (product) map[preview.handle] = product;
+    }
+    return map;
+  }
+
+  await Promise.all(
+    handles.map(async (handle) => {
+      const product = await getProduct(handle, { signal });
+      if (product) map[handle] = product;
+    }),
+  );
+  return map;
+}
+
 export default function WishlistScreen() {
   const pathname = usePathname();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const marketKey = useMarketQueryKey();
-  const { tileW, imageH, itemHeight } = useWishlistGridMetrics();
-  const { wishlistHandles, wishlistHydrated, toggleWishlist } = useWishlist();
+  const currencyCode = useMarketStore((s) => s.currencyCode);
+  const { tileW, imageH, cellHeight } = useWishlistGridMetrics();
+  const { wishlistHandles, wishlistHydrated } = useWishlist();
   const listRef = useRef<FlashListRef<string>>(null);
 
   const scrollToTop = useCallback(() => {
@@ -67,14 +100,28 @@ export default function WishlistScreen() {
     wishlistHydrated && wishlistHandles.length > 0,
   );
 
-  const productQueries = useQueries({
-    queries: wishlistHandles.map((handle) => ({
-      queryKey: productQueryKey(handle, marketKey),
-      queryFn: ({ signal }) => getProduct(handle, { signal }),
-      staleTime: PRODUCT_QUERY_STALE_TIME_MS,
-      gcTime: PRODUCT_QUERY_GC_TIME_MS,
-      enabled: wishlistHydrated && wishlistHandles.length > 0,
-    })),
+  const listEnabled = wishlistHydrated && wishlistHandles.length > 0;
+
+  const {
+    data: productsByHandle = {},
+    isPending: productsPending,
+    isFetching: productsFetching,
+    isError: productsError,
+    refetch: refetchProducts,
+  } = useQuery({
+    queryKey: wishlistProductsQueryKey(marketKey, wishlistHandles),
+    queryFn: ({ signal }) => loadWishlistProductsMap(wishlistHandles, currencyCode, signal),
+    enabled: listEnabled,
+    staleTime: WISHLIST_PRODUCTS_STALE_TIME_MS,
+    gcTime: WISHLIST_PRODUCTS_GC_TIME_MS,
+    placeholderData: (previous) => {
+      if (!previous) return previous;
+      const next: WishlistProductsMap = {};
+      for (const handle of wishlistHandles) {
+        if (previous[handle]) next[handle] = previous[handle];
+      }
+      return next;
+    },
   });
 
   const listHeader = useMemo(
@@ -88,36 +135,36 @@ export default function WishlistScreen() {
 
   const overrideItemLayout = useCallback(
     (layout: { span?: number; size?: number }) => {
-      layout.size = itemHeight;
+      layout.size = cellHeight;
     },
-    [itemHeight],
+    [cellHeight],
   );
 
   const renderItem = useCallback(
     ({ item: handle, index }: { item: string; index: number }) => {
-      const q = productQueries[index];
+      const product = productsByHandle[handle];
+      const isPending = (productsPending || productsFetching) && !product;
       return (
-        <View
-          style={{
-            flex: 1,
-            maxWidth: '50%',
-            paddingRight: index % 2 === 0 ? COL_GAP / 2 : 0,
-            paddingLeft: index % 2 === 1 ? COL_GAP / 2 : 0,
-            marginBottom: ROW_GAP,
-          }}>
-          <WishlistSavedCard
-            handle={handle}
-            product={q?.data ?? undefined}
-            isPending={Boolean(q?.isPending)}
-            index={index}
-            tileWidth={tileW}
-            imageHeight={imageH}
-            onRemove={() => toggleWishlist(handle)}
-          />
-        </View>
+        <WishlistGridItem
+          handle={handle}
+          product={product}
+          isPending={isPending}
+          index={index}
+          tileWidth={tileW}
+          imageHeight={imageH}
+          cellHeight={cellHeight}
+          columnGap={COL_GAP}
+        />
       );
     },
-    [productQueries, toggleWishlist, tileW, imageH],
+    [productsByHandle, productsPending, productsFetching, tileW, imageH, cellHeight],
+  );
+
+  const keyExtractor = useCallback((handle: string) => handle, []);
+
+  const listExtra = useMemo(
+    () => `${tileW}:${imageH}:${cellHeight}:${Object.keys(productsByHandle).length}`,
+    [tileW, imageH, cellHeight, productsByHandle],
   );
 
   const listBottomPad = tabBarHeight + LIST_BOTTOM_PAD;
@@ -150,6 +197,19 @@ export default function WishlistScreen() {
     );
   }
 
+  if (productsError && Object.keys(productsByHandle).length === 0) {
+    return (
+      <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
+        <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD, paddingBottom: listBottomPad }]}>
+          <WishlistHeader />
+          <EmptyState title="Something went wrong" message="We could not load your wishlist. Try again.">
+            <Button title="Try again" variant="primary" onPress={() => void refetchProducts()} />
+          </EmptyState>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
       <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD }]}>
@@ -158,16 +218,17 @@ export default function WishlistScreen() {
           style={{ flex: 1 }}
           data={wishlistHandles}
           numColumns={2}
-          keyExtractor={(h) => h}
+          keyExtractor={keyExtractor}
           renderItem={renderItem}
+          getItemType={() => 'wishlistTile'}
           ListHeaderComponent={listHeader}
-          drawDistance={440}
+          drawDistance={Math.max(400, cellHeight * 3)}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           onScroll={onScroll}
           scrollEventThrottle={16}
           overrideItemLayout={overrideItemLayout}
-          extraData={itemHeight}
+          extraData={listExtra}
           removeClippedSubviews={false}
           contentContainerStyle={{
             paddingBottom: listBottomPad,

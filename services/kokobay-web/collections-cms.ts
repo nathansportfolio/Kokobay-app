@@ -1,4 +1,5 @@
 import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 export type CmsCollectionTile = {
   slug: string;
@@ -30,7 +31,7 @@ export async function getCollectionsCms(
   }
 
   const url = `${root}/api/collections-cms`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     signal: init?.signal,

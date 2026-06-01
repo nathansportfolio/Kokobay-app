@@ -8,6 +8,7 @@ import { AuthFormHeader } from '@/components/forms/auth-form-header';
 import { ErrorMessage } from '@/components/forms/error-message';
 import { LoadingButton } from '@/components/forms/loading-button';
 import { PasswordInput } from '@/components/forms/password-input';
+import { AccountLegalLinks } from '@/components/account/account-legal-links';
 import { AppSettingsLink } from '@/components/settings/app-settings-link';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/ui/form-field';
@@ -168,6 +169,9 @@ export function AccountSignInForm({
         <Button title="Create an account" variant="secondary" size="form" onPress={onCreateAccount} />
       </View>
       <AppSettingsLink onPress={onOpenSettings} />
+      <View className="mt-8">
+        <AccountLegalLinks />
+      </View>
     </>
   );
 }

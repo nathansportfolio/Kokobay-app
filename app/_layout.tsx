@@ -23,6 +23,7 @@ import { Text } from '@/components/ui/text';
 import { ToastHost } from '@/components/ui/toast-host';
 import { navigationTheme, palette } from '@/constants/theme';
 import { useAppFonts } from '@/hooks/use-app-fonts';
+import { useAppDeepLinking } from '@/hooks/use-app-deep-linking';
 import { usePushNotificationSetup } from '@/hooks/use-push-notification-setup';
 import {
   APP_LAUNCH_FADE_DURATION_MS,
@@ -43,6 +44,7 @@ export const unstable_settings = {
 export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
   reportAppErrorFromUnknown(error, {
     fatal: true,
+    important: true,
     context: { source: 'expo_router_root_error_boundary' },
   });
 
@@ -64,7 +66,9 @@ export default function RootLayout() {
   const launchPrepared = useRef(false);
   const splashHidden = useRef(false);
 
-  usePushNotificationSetup(fontsLoaded && appContentReady);
+  const navigationReady = fontsLoaded && appContentReady;
+  useAppDeepLinking(navigationReady);
+  usePushNotificationSetup(navigationReady);
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(palette.canvas).catch(() => {});
@@ -131,6 +135,8 @@ export default function RootLayout() {
               />
               <Stack.Screen name="products/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="collections/[handle]" options={{ headerShown: false }} />
+              <Stack.Screen name="search" options={{ headerShown: false }} />
+              <Stack.Screen name="pages/[slug]" options={{ headerShown: false }} />
               <Stack.Screen name="account/orders/[orderId]" options={{ headerShown: false }} />
               <Stack.Screen name="wishlist" options={{ headerShown: false }} />
               <Stack.Screen name="cart" options={{ headerShown: false }} />

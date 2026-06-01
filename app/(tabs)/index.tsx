@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { usePathname } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,9 +15,12 @@ import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
 import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
-import { useMarketQueryKey } from '@/hooks/use-market-query-key';
+import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
+import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
-import { fetchHomeCatalogData, HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
+import { HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
+import { collectionHref } from '@/utils/collection-navigation';
+import { resolveHomeNewInCollectionHandle } from '@/utils/home-new-in-collection-handle';
 import type { Collection } from '@/types/shopify';
 import { cmsCollectionTilesToDisplayItems, type CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
@@ -41,6 +45,7 @@ function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDi
 }
 
 export default function HomeScreen() {
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const mainScrollRef = useRef<ScrollView>(null);
@@ -55,13 +60,17 @@ export default function HomeScreen() {
   const headerStack = luxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
   const tileWidth = Math.min(280, Math.round(width * 0.78));
   const carouselHeight = tileWidth * (4 / 3) + 100;
-  const marketKey = useMarketQueryKey();
+  const heroQuery = useAppHomeHeroQuery();
+  const newInHandle = useMemo(
+    () => resolveHomeNewInCollectionHandle(heroQuery.data?.buttonLink),
+    [heroQuery.data?.buttonLink],
+  );
+  const viewAllHref = useMemo(
+    () => collectionHref(newInHandle, pathname),
+    [newInHandle, pathname],
+  );
 
-  const { data, isPending, isError, refetch, isRefetching } = useQuery({
-    queryKey: ['home', 'catalog', marketKey],
-    staleTime: 4 * 60_000,
-    queryFn: () => fetchHomeCatalogData(),
-  });
+  const { data, isPending, isError, refetch, isRefetching } = useHomeCatalogQuery();
 
   const { data: cmsTiles } = useQuery({
     queryKey: ['collections-cms'],
@@ -155,6 +164,7 @@ export default function HomeScreen() {
             products={newInProducts}
             tileWidth={tileWidth}
             carouselHeight={carouselHeight}
+            viewAllHref={viewAllHref}
           />
         </View>
         <View style={{ paddingTop: SHOP_BY_CATEGORY_TOP }}>

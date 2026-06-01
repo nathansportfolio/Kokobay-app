@@ -8,6 +8,7 @@ import {
 } from '@/utils/storefront-filters';
 
 import { fetchKokobayJson, isKokobayWebProductsConfigured } from './client';
+import { KokobayApiError } from './api-errors';
 import {
   buildPaginatedQuery,
   KOKOBAY_CATALOG_PAGE_SIZE,
@@ -40,11 +41,17 @@ function mapPreviewRows(raw: unknown): Product[] {
 }
 
 function parsePaginatedPreviews(
-  data: Record<string, unknown> | null,
-): (KokobayPaginatedResult<Product> & { totalCount?: number }) | null {
-  if (!data || isErrorPayload(data)) return null;
+  data: Record<string, unknown>,
+): KokobayPaginatedResult<Product> & { totalCount?: number } {
+  if (isErrorPayload(data)) {
+    throw new KokobayApiError(
+      typeof data.error === 'string' ? data.error : 'Could not load products',
+    );
+  }
   const body = data as unknown as KokobayPaginatedProductsJson;
-  if (!Array.isArray(body.products)) return null;
+  if (!Array.isArray(body.products)) {
+    throw new KokobayApiError('Invalid catalog response');
+  }
   return {
     items: mapPreviewRows(body.products),
     pageInfo: parsePageInfo(body.pagination),
@@ -62,8 +69,10 @@ export type KokobayProductsPage = KokobayPaginatedResult<Product> & { totalCount
 
 export async function fetchKokobayProductsPage(
   options: FetchKokobayProductsPageOptions = {},
-): Promise<KokobayProductsPage | null> {
-  if (!isKokobayWebProductsConfigured()) return null;
+): Promise<KokobayProductsPage> {
+  if (!isKokobayWebProductsConfigured()) {
+    throw new KokobayApiError('Koko Bay API is not configured');
+  }
   const first = options.first ?? KOKOBAY_CATALOG_PAGE_SIZE;
   const params = buildPaginatedQuery({ first, after: options.after });
   const data = await fetchKokobayJson(`/api/products?${params.toString()}`);
@@ -79,7 +88,7 @@ export async function fetchKokobayProductByHandle(
   const safe = handle.trim();
   if (!safe) return null;
   const data = await fetchKokobayJson(`/api/products/${encodeURIComponent(safe)}`, options);
-  if (!data || isErrorPayload(data)) return null;
+  if (isErrorPayload(data)) return null;
   const body = data as unknown as KokobayProductDetailJson;
   return storefrontProductToProduct(body.product);
 }
@@ -115,19 +124,29 @@ function appendCollectionQueryOptions(
 export async function fetchKokobayCollectionPage(
   handle: string,
   options: FetchKokobayCollectionPageOptions = {},
-): Promise<KokobayCollectionPage | null> {
-  if (!isKokobayWebProductsConfigured()) return null;
+): Promise<KokobayCollectionPage> {
+  if (!isKokobayWebProductsConfigured()) {
+    throw new KokobayApiError('Koko Bay API is not configured');
+  }
   const safe = handle.trim();
-  if (!safe) return null;
+  if (!safe) {
+    throw new KokobayApiError('Collection handle is required');
+  }
   const first = options.first ?? KOKOBAY_CATALOG_PAGE_SIZE;
   const params = buildPaginatedQuery({ first, after: options.after });
   appendCollectionQueryOptions(params, options);
   const data = await fetchKokobayJson(
     `/api/collections/${encodeURIComponent(safe)}?${params.toString()}`,
   );
-  if (!data || isErrorPayload(data)) return null;
+  if (isErrorPayload(data)) {
+    throw new KokobayApiError(
+      typeof data.error === 'string' ? data.error : 'Could not load collection',
+    );
+  }
   const body = data as unknown as KokobayCollectionProductsJson;
-  if (!Array.isArray(body.products)) return null;
+  if (!Array.isArray(body.products)) {
+    throw new KokobayApiError('Invalid collection response');
+  }
   const collection = storefrontCollectionSummaryToCollection(
     body.collection
       ? {
@@ -164,10 +183,14 @@ export type KokobaySearchPage = KokobayPaginatedResult<Product> & {
 export async function fetchKokobaySearchPage(
   query: string,
   options: FetchKokobaySearchPageOptions = {},
-): Promise<KokobaySearchPage | null> {
-  if (!isKokobayWebProductsConfigured()) return null;
+): Promise<KokobaySearchPage> {
+  if (!isKokobayWebProductsConfigured()) {
+    throw new KokobayApiError('Koko Bay API is not configured');
+  }
   const q = query.trim();
-  if (!q) return null;
+  if (!q) {
+    throw new KokobayApiError('Search query is required');
+  }
   const first = options.first ?? KOKOBAY_CATALOG_PAGE_SIZE;
   const params = buildPaginatedQuery({ first, after: options.after, q });
   if (options.sort) {
@@ -177,9 +200,13 @@ export async function fetchKokobaySearchPage(
     appendPlpFiltersToSearchParams(params, options.plpFilters, options.storefrontFilters);
   }
   const data = await fetchKokobayJson(`/api/search?${params.toString()}`);
-  if (!data || isErrorPayload(data)) return null;
+  if (isErrorPayload(data)) {
+    throw new KokobayApiError(typeof data.error === 'string' ? data.error : 'Search failed');
+  }
   const body = data as unknown as KokobaySearchJson;
-  if (!Array.isArray(body.products)) return null;
+  if (!Array.isArray(body.products)) {
+    throw new KokobayApiError('Invalid search response');
+  }
   const rawFilters = body.productFilters ?? body.filters;
   return {
     items: mapPreviewRows(body.products),
@@ -191,8 +218,7 @@ export async function fetchKokobaySearchPage(
 
 async function fetchProductFeed(path: string, first: number): Promise<Product[]> {
   const data = await fetchKokobayJson(`${path}?first=${Math.max(1, first)}`);
-  const page = parsePaginatedPreviews(data);
-  return page?.items ?? [];
+  return parsePaginatedPreviews(data).items;
 }
 
 /** `GET /api/products?sort=created` — newest products first. */
@@ -201,8 +227,7 @@ export async function fetchKokobayLatestProducts(first = 12): Promise<Product[]>
   const params = buildPaginatedQuery({ first: Math.max(1, first) });
   params.set('sort', 'created');
   const data = await fetchKokobayJson(`/api/products?${params.toString()}`);
-  const page = parsePaginatedPreviews(data);
-  return page?.items ?? [];
+  return parsePaginatedPreviews(data).items;
 }
 
 /** `GET /api/products/featured` */

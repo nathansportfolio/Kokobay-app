@@ -5,6 +5,7 @@ import { buildKokobayCustomerAuthHeaders } from './customer-session';
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { isKokobayWebProductsConfigured } from './client';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
+import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 export type BackInStockSubscribeInput = {
   email: string;
@@ -92,7 +93,7 @@ export async function checkBackInStockSubscription(input: {
   try {
     const headers = await buildKokobayCustomerAuthHeaders(input.sessionToken, { includeGuestCart: false });
     headers.Accept = 'application/json';
-    const res = await fetch(`${root}/api/back-in-stock?${params.toString()}`, { headers });
+    const res = await fetchWithTimeout(`${root}/api/back-in-stock?${params.toString()}`, { headers });
     const text = await res.text();
     let data: Record<string, unknown> | null = null;
     try {
@@ -152,7 +153,7 @@ export async function subscribeBackInStock(
       Object.assign(headers, authHeaders);
     }
 
-    const res = await fetch(`${root}/api/back-in-stock`, {
+    const res = await fetchWithTimeout(`${root}/api/back-in-stock`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),

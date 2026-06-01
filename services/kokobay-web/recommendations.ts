@@ -1,6 +1,6 @@
 import type { Product } from '@/types/shopify';
 
-import { fetchKokobayJson, isKokobayWebProductsConfigured } from './client';
+import { isKokobayWebProductsConfigured, tryFetchKokobayJson } from './client';
 import { storefrontProductPreviewToProduct } from './storefront-mappers';
 import type { KokobayRecommendationsJson } from './storefront-types';
 
@@ -40,7 +40,7 @@ export async function fetchKokobayProductRecommendations(options: {
     ? `/api/products/recommendations?${params.toString()}`
     : `/api/recommendations?${params.toString()}`;
 
-  const data = await fetchKokobayJson(path);
+  const data = await tryFetchKokobayJson(path);
   if (!data) {
     return null;
   }
