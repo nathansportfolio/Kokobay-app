@@ -53,9 +53,6 @@ export async function fetchAppHomeHero(
     });
     const text = await res.text();
     if (!res.ok) {
-      if (__DEV__) {
-        console.log('[AppHomeHero] fetch miss', { status: res.status, url, apiBase: root, country });
-      }
       return null;
     }
 

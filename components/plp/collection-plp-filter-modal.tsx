@@ -218,12 +218,6 @@ function toggleInList(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-function logFilterModalHeader(action: 'Close' | 'Clear', phase: string) {
-  if (__DEV__) {
-    console.log(`[FilterModal] ${action} ${phase}`);
-  }
-}
-
 function FilterModalHeaderAction({
   action,
   label,
@@ -238,11 +232,7 @@ function FilterModalHeaderAction({
   accent?: boolean;
 }) {
   const touchHandlers = {
-    onPressIn: () => logFilterModalHeader(action, 'pressIn'),
-    onPress: () => {
-      logFilterModalHeader(action, 'onPress');
-      onPress();
-    },
+    onPress: () => onPress(),
   };
 
   const labelClass = accent
@@ -323,13 +313,11 @@ export function CollectionPlpFilterModal({
   );
 
   const handleClose = useCallback(() => {
-    logFilterModalHeader('Close', 'handleClose → onClose()');
     hapticLight();
     onClose();
   }, [onClose]);
 
   const handleClear = useCallback(() => {
-    logFilterModalHeader('Clear', 'handleClear → onClear()');
     onClear();
   }, [onClear]);
 

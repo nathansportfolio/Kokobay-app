@@ -1,4 +1,4 @@
-import type { CartLine } from '@/types/cart';
+import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
@@ -19,6 +19,13 @@ export type ShopifyCartSnapshot = {
   subtotal: Money;
   total: Money;
   totalTax?: Money | null;
+  discountCodes?: CartDiscountCode[];
+  /** Cart-level discount from API (`cost.discountAmount`). */
+  cartDiscountAmount?: Money | null;
+  /** Sum of cart line `cost.subtotalAmount` — pre-discount merchandise from the cart API. */
+  lineMerchandiseSubtotal?: Money | null;
+  /** Sum of cart line `cost.totalAmount` — post-discount merchandise from the cart API. */
+  lineMerchandiseTotal?: Money | null;
 };
 
 type GqlMoney = { amount: string; currencyCode: string } | null | undefined;
@@ -83,6 +90,7 @@ function parseCartLines(cart: GqlCart, existing: CartLine[]): CartLine[] {
       variantTitle: merch?.title?.trim() || prev?.variantTitle,
       imageUrl: merch?.image?.url?.trim() || prev?.imageUrl || null,
       unitPrice: merch?.price ? normalizeMoney(merch.price, prev?.unitPrice) : prev?.unitPrice,
+      listUnitPrice: prev?.listUnitPrice ?? prev?.unitPrice,
     });
   }
 

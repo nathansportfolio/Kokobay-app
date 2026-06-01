@@ -79,12 +79,4 @@ export async function initializeFirebaseAnalytics(): Promise<void> {
   if (!analytics) return;
 
   await analytics.setAnalyticsCollectionEnabled(config.enabled);
-
-  if (config.debug && __DEV__) {
-    console.info('[Firebase] Analytics initialized', {
-      platform: Platform.OS,
-      projectId: config.projectId,
-      measurementId: config.measurementId,
-    });
-  }
 }

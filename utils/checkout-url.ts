@@ -1,5 +1,8 @@
 import type { CartLine } from '@/types/cart';
 
+/** Checkout/cart attribution — appended to every app-generated checkout URL. */
+export const APP_CHECKOUT_SOURCE = 'app';
+
 /** Hostnames allowed inside the in-app checkout WebView. */
 export function isAllowedCheckoutHost(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/^www\./, '');
@@ -117,7 +120,10 @@ export function buildOnlineStoreCartPermalinkUrl(
   }
 
   if (!segments.length) return null;
-  return `${origin}/cart/${segments.join(',')}?checkout`;
+  const params = new URLSearchParams();
+  params.set('source', APP_CHECKOUT_SOURCE);
+  params.set('checkout', '');
+  return `${origin}/cart/${segments.join(',')}?${params.toString()}`;
 }
 
 /**
@@ -140,6 +146,7 @@ export function buildOnlineStoreCartAddUrl(
   }
 
   if (!params.toString()) return null;
+  params.set('source', APP_CHECKOUT_SOURCE);
   params.set('return_to', '/checkout');
   return `${origin}/cart/add?${params.toString()}`;
 }
@@ -219,6 +226,18 @@ export function buildOnlineStoreCheckoutUrl(storeOrigin: string): string {
   return `${storeOrigin.replace(/\/+$/, '')}/checkout`;
 }
 
+/** Append `source=app` for checkout attribution (idempotent). */
+export function withAppCheckoutSource(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.get('source') === APP_CHECKOUT_SOURCE) return url;
+    parsed.searchParams.set('source', APP_CHECKOUT_SOURCE);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 /** Storefront `checkoutUrl` from cart sync — safe to load in the WebView as-is. */
 export function normalizeStorefrontCheckoutUrl(
   checkoutUrl: string | null | undefined,
@@ -227,6 +246,11 @@ export function normalizeStorefrontCheckoutUrl(
   if (!trimmed) return null;
   if (!isAllowedCheckoutUrl(trimmed)) return null;
   return trimmed;
+}
+
+function finalizeAppCheckoutUrl(url: string | null): string | null {
+  if (!url) return null;
+  return withAppCheckoutSource(url);
 }
 
 export type ResolveCheckoutWebViewUrlOptions = {
@@ -245,6 +269,7 @@ export type ResolveCheckoutWebViewUrlOptions = {
  * WebView entry URL.
  * - Prefer synced Storefront `checkoutUrl` for any user when valid (preserves cart market/currency).
  * - Fall back to Online Store cart permalink only when checkoutUrl is missing or invalid.
+ * Always appends `source=app` for checkout attribution.
  * Never appends `checkout[email]` or currency/country query params.
  */
 export function resolveCheckoutWebViewUrl(
@@ -258,20 +283,22 @@ export function resolveCheckoutWebViewUrl(
 
   const resume = normalizeStorefrontCheckoutUrl(options?.resumeUrl);
   if (resume) {
-    return resume;
+    return finalizeAppCheckoutUrl(resume);
   }
 
   if (normalizedCheckoutUrl) {
-    return normalizedCheckoutUrl;
+    return finalizeAppCheckoutUrl(normalizedCheckoutUrl);
   }
 
   if (options?.awaitingCheckoutUrl) {
     return null;
   }
 
-  return buildOnlineStoreCartPermalinkUrl(lines, {
-    storeOrigin: resolveOnlineStoreOrigin(checkoutUrl),
-  });
+  return finalizeAppCheckoutUrl(
+    buildOnlineStoreCartPermalinkUrl(lines, {
+      storeOrigin: resolveOnlineStoreOrigin(checkoutUrl),
+    }),
+  );
 }
 
 /** Shopify order confirmation — safe point to clear the local bag. */

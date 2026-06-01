@@ -23,9 +23,6 @@ export async function fetchAppPromotionBanner(
     });
     const text = await res.text();
     if (!res.ok) {
-      if (__DEV__) {
-        console.log('[AppPromotionBanner] fetch miss', { status: res.status, url, apiBase: root });
-      }
       return null;
     }
     const json = JSON.parse(text) as { active?: unknown; message?: unknown };

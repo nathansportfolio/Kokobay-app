@@ -13,6 +13,15 @@ export type CartLine = {
   imageUrl?: string | null;
   /** Unit price at add-to-bag — used for cart totals when the live catalog is unavailable. */
   unitPrice?: Money;
+  /** Original list unit price before cart-level discounts — used for discount row display. */
+  listUnitPrice?: Money;
   /** Known stock cap from catalog or last Shopify reconcile — clamps optimistic qty. */
   maxQty?: number;
+};
+
+export type CartDiscountCode = {
+  code: string;
+  applicable: boolean;
+  /** Discount value from cart API (`discountCodes[].amount`). */
+  amount?: Money;
 };

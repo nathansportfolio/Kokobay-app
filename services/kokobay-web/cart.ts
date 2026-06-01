@@ -1,9 +1,10 @@
-import type { CartLine } from '@/types/cart';
+import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
 import { cartFlowLog, cartPerfLog } from '@/lib/cart-perf-log';
+import { logAppFirstOrderOnNewCart } from '@/services/cart/app-first-order-new-cart-log';
 import { createGuestId } from '@/utils/create-guest-id';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
@@ -28,18 +29,27 @@ type KokobayCartLine = {
   image?: { url?: string | null; altText?: string | null } | null;
   cost?: {
     amountPerQuantity?: KokobayMoney;
+    subtotalAmount?: KokobayMoney;
     totalAmount?: KokobayMoney;
   } | null;
+};
+
+type KokobayCartDiscountCode = {
+  code?: string;
+  applicable?: boolean;
+  amount?: KokobayMoney;
 };
 
 type KokobayCart = {
   id: string | null;
   checkoutUrl: string | null;
   lines: KokobayCartLine[];
+  discountCodes?: KokobayCartDiscountCode[];
   cost?: {
     subtotalAmount?: KokobayMoney;
     totalAmount?: KokobayMoney;
     totalTaxAmount?: KokobayMoney;
+    discountAmount?: KokobayMoney;
   } | null;
 };
 
@@ -81,8 +91,12 @@ function normalizeMoney(
   };
 }
 
-/** Dev-only: inspect cart API payload for cost / delivery fields. */
-function logCartResponseInDev(_method: string, _cart: KokobayCart | undefined): void {}
+function logCartResponseInDev(
+  _method: string,
+  _path: string,
+  _response: KokobayCartResponse | null,
+  _status?: number,
+): void {}
 
 async function kokobayCartRequest(
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -157,6 +171,7 @@ async function kokobayCartRequest(
     }
 
     if (!res.ok || parsed.ok === false) {
+      logCartResponseInDev(method, pathWithMarket, parsed, res.status);
       reportOperationalFailure(parsed.error?.trim() || 'Koko Bay cart request failed', {
         source: 'kokobay_cart',
         method,
@@ -167,7 +182,7 @@ async function kokobayCartRequest(
       return parsed.ok === false ? parsed : null;
     }
 
-    logCartResponseInDev(method, parsed.cart);
+    logCartResponseInDev(method, pathWithMarket, parsed, res.status);
 
     return parsed;
   } catch (e) {
@@ -202,16 +217,80 @@ function parseCartLines(cart: KokobayCart, existing: CartLine[]): CartLine[] {
       unitPrice: line.cost?.amountPerQuantity
         ? normalizeMoney(line.cost.amountPerQuantity, prev?.unitPrice)
         : prev?.unitPrice,
+      listUnitPrice: prev?.listUnitPrice ?? prev?.unitPrice,
     });
   }
 
   return out;
 }
 
+function parseDiscountMoney(m: KokobayMoney | null | undefined): Money | null {
+  if (m?.amount == null || String(m.amount).trim() === '') return null;
+  const value = Number.parseFloat(String(m.amount));
+  if (!Number.isFinite(value)) return null;
+  return {
+    amount: value.toFixed(2),
+    currencyCode: m.currencyCode ?? getShopifyCurrencyCode(),
+  };
+}
+
+function parseCartDiscountCodes(
+  discountCodes: KokobayCartDiscountCode[] | undefined,
+  cartDiscountAmount?: Money | null,
+): CartDiscountCode[] {
+  if (!Array.isArray(discountCodes)) return [];
+  return discountCodes
+    .map((entry) => {
+      const code = entry.code?.trim();
+      if (!code) return null;
+      const parsed: CartDiscountCode = { code, applicable: entry.applicable !== false };
+      const amount = parseDiscountMoney(entry.amount) ?? cartDiscountAmount ?? null;
+      if (amount) parsed.amount = amount;
+      return parsed;
+    })
+    .filter((entry): entry is CartDiscountCode => entry !== null);
+}
+
+function sumCartLineCost(
+  lines: KokobayCartLine[],
+  field: 'subtotalAmount' | 'totalAmount',
+): Money | null {
+  let sum = 0;
+  let currencyCode = getShopifyCurrencyCode();
+  let found = false;
+
+  for (const line of lines) {
+    const amount = line.cost?.[field];
+    if (amount?.amount) {
+      const value = Number.parseFloat(amount.amount);
+      if (Number.isFinite(value)) {
+        sum += value;
+        currencyCode = amount.currencyCode ?? currencyCode;
+        found = true;
+        continue;
+      }
+    }
+
+    const unit = line.cost?.amountPerQuantity;
+    if (field === 'totalAmount' && unit?.amount && line.quantity > 0) {
+      const value = Number.parseFloat(unit.amount) * line.quantity;
+      if (Number.isFinite(value)) {
+        sum += value;
+        currencyCode = unit.currencyCode ?? currencyCode;
+        found = true;
+      }
+    }
+  }
+
+  if (!found) return null;
+  return { amount: sum.toFixed(2), currencyCode };
+}
+
 function snapshotFromCart(cart: KokobayCart, existing: CartLine[]): ShopifyCartSnapshot | null {
   const checkoutUrl = cart.checkoutUrl?.trim();
   const cartId = cart.id?.trim();
   if (!cartId || !checkoutUrl) return null;
+  const cartDiscountAmount = parseDiscountMoney(cart.cost?.discountAmount);
   return {
     cartId,
     checkoutUrl,
@@ -221,6 +300,10 @@ function snapshotFromCart(cart: KokobayCart, existing: CartLine[]): ShopifyCartS
     totalTax: cart.cost?.totalTaxAmount
       ? normalizeMoney(cart.cost.totalTaxAmount)
       : null,
+    discountCodes: parseCartDiscountCodes(cart.discountCodes, cartDiscountAmount),
+    cartDiscountAmount,
+    lineMerchandiseSubtotal: sumCartLineCost(cart.lines, 'subtotalAmount'),
+    lineMerchandiseTotal: sumCartLineCost(cart.lines, 'totalAmount'),
   };
 }
 
@@ -234,8 +317,17 @@ async function getCart(guestId: string, customerEmail?: string): Promise<Kokobay
 async function createCart(guestId: string, customerEmail?: string): Promise<KokobayCart | null> {
   const start = performance.now();
   const res = await kokobayCartRequest('POST', '/api/cart', guestId, {}, customerEmail);
-  cartPerfLog(`createCart took ${Math.round(performance.now() - start)}ms`);
-  return res?.cart ?? null;
+  const durationMs = Math.round(performance.now() - start);
+  cartPerfLog(`createCart took ${durationMs}ms`);
+  const cart = res?.cart ?? null;
+  if (cart) {
+    void logAppFirstOrderOnNewCart({
+      guestId,
+      customerEmail,
+      cartId: cart.id,
+    }).catch(() => {});
+  }
+  return cart;
 }
 
 async function addItem(
@@ -291,6 +383,51 @@ async function clearCart(guestId: string, customerEmail?: string): Promise<void>
   const start = performance.now();
   await kokobayCartRequest('DELETE', '/api/cart', guestId, undefined, customerEmail);
   cartPerfLog(`clearCart took ${Math.round(performance.now() - start)}ms`);
+}
+
+/** POST /api/cart/discount-code — apply a discount code to the remote cart. */
+export async function applyKokobayCartDiscountCode(
+  guestId: string | null,
+  code: string,
+  localLines: CartLine[],
+  customerEmail?: string,
+): Promise<KokobayCartSyncResult | null> {
+  if (!isKokobayWebProductsConfigured()) return null;
+
+  const normalizedCode = code.trim();
+  if (!normalizedCode) return null;
+
+  const sessionGuestId = guestId?.trim() || createGuestId();
+  const email = customerEmail?.trim() || getCartCustomerEmail();
+  const start = performance.now();
+  const res = await kokobayCartRequest(
+    'POST',
+    '/api/cart/discount-code',
+    sessionGuestId,
+    { code: normalizedCode },
+    email,
+  );
+  const durationMs = Math.round(performance.now() - start);
+  cartPerfLog(`applyDiscountCode took ${durationMs}ms`);
+
+  if (!res) {
+    return {
+      snapshot: null,
+      guestId: sessionGuestId,
+      syncError: { code: 'network_error', message: 'Could not apply discount code' },
+    };
+  }
+
+  if (res?.ok === false) {
+    return {
+      snapshot: null,
+      guestId: sessionGuestId,
+      syncError: cartErrorFromResponse(res),
+    };
+  }
+
+  const snapshot = res?.cart ? snapshotFromCart(res.cart, localLines) : null;
+  return { snapshot, guestId: sessionGuestId, syncError: null };
 }
 
 export type KokobayCartSyncResult = {

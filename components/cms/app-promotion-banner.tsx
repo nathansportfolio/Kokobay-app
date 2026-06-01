@@ -5,17 +5,10 @@ import { useAppPromotionBannerContent } from '@/hooks/use-app-promotion-banner-c
 
 /** Promotion strip — black background, white text (below header, above incident banner). */
 export function AppPromotionBannerStrip() {
-  const { visible, loading, message } = useAppPromotionBannerContent();
+  const { visible, message } = useAppPromotionBannerContent();
 
   if (!visible) {
-    if (__DEV__) {
-      console.log('[AppPromotionBanner] strip hidden', { visible, loading, message: message || '(empty)' });
-    }
     return null;
-  }
-
-  if (__DEV__) {
-    console.log('[AppPromotionBanner] strip rendering', { message: message || '(empty)' });
   }
 
   return (

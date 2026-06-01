@@ -21,16 +21,6 @@ export function redirectSystemPath({
   const target = deepLinkTargetHref(resolved);
   markAppLinkHandled(hrefToLogString(target));
 
-  if (__DEV__) {
-    console.log('[deep-link] redirectSystemPath', {
-      initial,
-      input,
-      kind: resolved.kind,
-      reason: resolved.reason ?? null,
-      output: hrefToLogString(target),
-    });
-  }
-
   if (typeof target === 'string') {
     return target;
   }

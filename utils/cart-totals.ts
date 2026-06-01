@@ -2,7 +2,7 @@ import type { CartLine } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { getShopifyCurrencyCode } from '@/services/shopify/market-context';
 
-import { lineSubtotalMoney } from '@/utils/cart-line-pricing';
+import { lineSubtotalMoney, lineListSubtotalMoney } from '@/utils/cart-line-pricing';
 
 /** Subtotal before shipping — sum of each line’s subtotal (same basis as row totals). */
 export function computeCartSubtotal(lines: CartLine[], fallbackCurrency?: string): Money {
@@ -10,6 +10,19 @@ export function computeCartSubtotal(lines: CartLine[], fallbackCurrency?: string
   let currencyCode = fallbackCurrency?.trim().toUpperCase() || getShopifyCurrencyCode();
   for (const line of lines) {
     const sub = lineSubtotalMoney(line);
+    if (!sub) continue;
+    currencyCode = sub.currencyCode;
+    sum += Number.parseFloat(sub.amount);
+  }
+  return { amount: sum.toFixed(2), currencyCode };
+}
+
+/** Pre-discount merchandise subtotal from list prices captured at add-to-bag. */
+export function computeCartListSubtotal(lines: CartLine[], fallbackCurrency?: string): Money {
+  let sum = 0;
+  let currencyCode = fallbackCurrency?.trim().toUpperCase() || getShopifyCurrencyCode();
+  for (const line of lines) {
+    const sub = lineListSubtotalMoney(line);
     if (!sub) continue;
     currencyCode = sub.currencyCode;
     sum += Number.parseFloat(sub.amount);

@@ -18,11 +18,6 @@ let pendingNavigation: {
   options?: { replace?: boolean; source?: AppLinkNavigationSource };
 } | null = null;
 
-function log(message: string, extra?: Record<string, unknown>) {
-  if (!__DEV__) return;
-  console.log(`[deep-link] ${message}`, extra ?? '');
-}
-
 export function setAppLinkNavigationReady(ready: boolean): void {
   navigationReady = ready;
   if (ready) {
@@ -50,16 +45,11 @@ export function scheduleAppLinkNavigation(
   href: Href,
   options?: { replace?: boolean; source?: AppLinkNavigationSource },
 ): void {
-  const destination = hrefToLogString(href);
   const run = () => {
-    log('navigating', { destination, replace: Boolean(options?.replace), source: options?.source });
     try {
       navigate(href, { replace: options?.replace });
-    } catch (error) {
-      log('navigation failed', {
-        destination,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    } catch {
+      // Navigation errors are non-fatal for deep links.
     }
   };
 
@@ -81,7 +71,6 @@ export function navigateFromResolvedDeepLink(
 ): boolean {
   const target = deepLinkTargetHref(resolved);
   if (resolved.kind === 'unhandled' && !resolved.href) {
-    log('skip unhandled url', { url: options.url, reason: resolved.reason });
     return false;
   }
 
@@ -89,7 +78,6 @@ export function navigateFromResolvedDeepLink(
 
   if (!navigationReady) {
     pendingNavigation = { navigate, href: target, options: { replace, source: options.source } };
-    log('defer until navigation ready', { destination: hrefToLogString(target) });
     return true;
   }
 

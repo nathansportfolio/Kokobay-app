@@ -6,8 +6,6 @@ import {
 } from '@/src/services/analytics-gtm-mapper';
 import type { FirebaseEcommerceEventParams } from '@/src/types/analytics';
 
-const LOG_PREFIX = '[Firebase Analytics]';
-
 let initPromise: Promise<void> | null = null;
 
 async function ensureInitialized(): Promise<void> {
@@ -96,13 +94,8 @@ export function trackDataLayerEventForFirebase(event: GtmDataLayerEvent): void {
         await dispatchToFirebase(dispatch);
       }
 
-      if (getFirebaseAnalyticsConfig().debug && __DEV__) {
-        console.info(LOG_PREFIX, event.event, dispatches);
-      }
-    } catch (error) {
-      if (__DEV__) {
-        console.warn(LOG_PREFIX, 'failed to log event', event.event, error);
-      }
+    } catch {
+      // Firebase analytics failures are non-fatal.
     }
   })();
 }

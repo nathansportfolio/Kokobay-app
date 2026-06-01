@@ -3,7 +3,6 @@ import { useCallback, useEffect } from 'react';
 import { AppState } from 'react-native';
 
 import { APP_PROMOTION_BANNER_STRIP_HEIGHT } from '@/constants/app-promotion-banner';
-import { kokobayApiEnvDebug, resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
 import {
   fetchAppPromotionBanner,
   type AppPromotionBannerPayload,
@@ -11,11 +10,6 @@ import {
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 
 const APP_PROMOTION_BANNER_QUERY_KEY = ['app-promotion-banner'] as const;
-
-function logAppPromotionBannerState(payload: Record<string, unknown>) {
-  if (!__DEV__) return;
-  console.log('[AppPromotionBanner]', payload);
-}
 
 export function useAppPromotionBannerContent() {
   const queryClient = useQueryClient();
@@ -49,27 +43,6 @@ export function useAppPromotionBannerContent() {
     });
     return () => sub.remove();
   }, [refresh]);
-
-  useEffect(() => {
-    const cmsLookup =
-      query.isPending || query.fetchStatus === 'fetching'
-        ? 'loading'
-        : data != null
-          ? 'found'
-          : 'not_found (inactive or GET /api/app-promotion-banner 404)';
-
-    logAppPromotionBannerState({
-      shouldShow: visible,
-      cmsLookup,
-      loading: enabled && query.isPending,
-      message: data?.message || '(empty)',
-      queryStatus: query.status,
-      queryFetchStatus: query.fetchStatus,
-      apiEnabled: enabled,
-      apiBaseUrl: resolveKokobayApiBaseUrl(),
-      apiEnv: kokobayApiEnvDebug(),
-    });
-  }, [visible, data, query.isPending, query.status, query.fetchStatus, enabled]);
 
   return {
     visible,

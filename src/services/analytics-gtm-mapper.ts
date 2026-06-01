@@ -5,8 +5,6 @@ import type {
   FirebaseEcommerceEventParams,
 } from '@/src/types/analytics';
 
-const LOG_PREFIX = '[Firebase Analytics]';
-
 function isHomePagePath(pagePath?: string): boolean {
   if (!pagePath) return false;
   const normalized = pagePath.replace(/\/+$/, '') || '/';
@@ -180,9 +178,6 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
       return [{ type: 'recommended', method: 'logAddToWishlist', params: ecommerce }];
 
     default:
-      if (__DEV__) {
-        console.info(LOG_PREFIX, 'skipped unmapped GTM event', event.event);
-      }
       return [];
   }
 }

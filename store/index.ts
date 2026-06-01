@@ -12,8 +12,17 @@ export {
   ensureCartSyncedForCheckout,
   isCartSettledForCheckout,
   getCartNetworkSyncMetrics,
+  selectCartPricingForDisplay,
   type AddToCartInput,
   type CartLine,
+  type CartDiscountCode,
+  type ReservedCartPricing,
 } from './cart';
 export { useAuthStore, type AuthUser, type AuthSession } from './auth-session';
+export {
+  useAppBenefitsStore,
+  refreshAppBenefitsInBackground,
+  scheduleAppBenefitsRefreshOnCartChange,
+  getIsFirstAppOrderSync,
+} from './app-benefits';
 export { useSearchHistoryStore } from './search-history';

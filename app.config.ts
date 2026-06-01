@@ -118,27 +118,4 @@ const config: ExpoConfig = {
   }]],
 };
 
-if ((firebaseAnalyticsEnabled || firebaseCrashlyticsEnabled) && !useFirebaseNative) {
-  console.warn(
-    '[app.config] Firebase native plugins (Analytics / Crashlytics) need both google-services files. ' +
-      `Expected iOS: ${iosGoogleServicesFile} (${hasIosGoogleServices ? 'found' : 'missing'}), ` +
-      `Android: ${androidGoogleServicesFile} (${hasAndroidGoogleServices ? 'found' : 'missing'}). ` +
-      'Download from Firebase Console, then run `npx expo prebuild --clean`.',
-  );
-}
-
-if (!hasIosGoogleServices) {
-  console.warn(
-    `[app.config] Missing ${iosGoogleServicesFile} — iOS Firebase / push native config will not be linked. ` +
-      'Place the file from Firebase (bundle id com.kokobay.kokobayapp) at the project root.',
-  );
-}
-
-if (!hasAndroidGoogleServices) {
-  console.warn(
-    `[app.config] Missing ${androidGoogleServicesFile} — Android FCM / Firebase native config will not be linked. ` +
-      'Place the file from Firebase (package com.kokobay.kokobayapp) at the project root.',
-  );
-}
-
 export default config;

@@ -1,6 +1,5 @@
 import { useSegments } from 'expo-router';
 import type { PropsWithChildren } from 'react';
-import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,17 +17,6 @@ export function AppGlobalShell({ children }: PropsWithChildren) {
   const segments = useSegments();
   const isTabScene = segments[0] === '(tabs)';
   const bannerTop = luxuryTabHeaderBarBottom(insets.top);
-
-  useEffect(() => {
-    if (!__DEV__) return;
-    console.log('[AppHeaderBanner] shell', {
-      isTabScene,
-      segments,
-      bannerTop,
-      topInset: insets.top,
-      willMountStrip: isTabScene,
-    });
-  }, [isTabScene, segments, bannerTop, insets.top]);
 
   return (
     <View style={styles.root}>

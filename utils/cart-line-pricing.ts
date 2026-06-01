@@ -12,6 +12,24 @@ export function resolveCartLineUnitPrice(line: CartLine): Money | null {
   return null;
 }
 
+/** List-price subtotal basis — preserved before Shopify cart discounts adjust line prices. */
+export function resolveCartLineListUnitPrice(line: CartLine): Money | null {
+  const candidate = line.listUnitPrice ?? line.unitPrice;
+  if (!candidate) return null;
+  const n = Number.parseFloat(candidate.amount);
+  if (!Number.isFinite(n)) return null;
+  return candidate;
+}
+
+export function lineListSubtotalMoney(line: CartLine): Money | null {
+  const unit = resolveCartLineListUnitPrice(line);
+  if (!unit) return null;
+  return {
+    amount: (Number.parseFloat(unit.amount) * line.qty).toFixed(2),
+    currencyCode: unit.currencyCode,
+  };
+}
+
 export function lineSubtotalMoney(line: CartLine): Money | null {
   const unit = resolveCartLineUnitPrice(line);
   if (!unit) return null;

@@ -10,18 +10,24 @@ import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { trackBeginCheckout } from '@/lib/gtm';
 import { ensureCartSyncedForCheckout, showToast, useAuthStore, useCartStore } from '@/store';
 import { DEFAULT_FREE_DELIVERY_THRESHOLD_GBP } from '@/constants/delivery-threshold';
+import { formatCartDiscountRowLabel } from '@/constants/first-app-order-discount';
 import { formatCartMoney } from '@/utils/money';
 import { resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
+import type { CartAppliedDiscount } from '@/utils/cart-cost-breakdown';
 
 type Money = { amount: string; currencyCode: string };
 
 type Props = {
   subtotal: Money;
+  appliedDiscounts?: CartAppliedDiscount[];
+  /** Merchandise total after discounts (before delivery). */
+  merchandiseTotal?: Money;
   delivery: Money | null;
   tax?: Money | null;
   usesShopifyCheckout?: boolean;
   /** From CMS `delivery_threshold`; defaults to 100. */
   freeDeliveryThresholdGbp?: number;
+  marketCountryCode?: string;
   /** Breathing room above the scene bottom. On tab routes the scene already clears the tab bar — use ~8–12px (see cart screen). */
   bottomInset: number;
 };
@@ -41,14 +47,48 @@ const rowValue: TextStyle = {
   color: 'rgba(20, 20, 20, 0.88)',
 };
 
-const DELIVERY_AT_CHECKOUT_LABEL = 'On Checkout';
+const DELIVERY_AT_CHECKOUT_LABEL = 'Calculated on checkout';
+
+function isUkDeliveryMarket(subtotal: Money, marketCountryCode?: string): boolean {
+  if (marketCountryCode?.trim().toUpperCase() === 'GB') return true;
+  return subtotal.currencyCode.trim().toUpperCase() === 'GBP';
+}
+
+function resolveDeliveryValueLabel(options: {
+  subtotal: Money;
+  delivery: Money | null;
+  usesShopifyCheckout: boolean;
+  freeDeliveryThresholdGbp: number;
+  marketCountryCode?: string;
+}): string {
+  const subtotalN = Number.parseFloat(options.subtotal.amount);
+  const qualifiesForFreeUkDelivery =
+    isUkDeliveryMarket(options.subtotal, options.marketCountryCode) &&
+    Number.isFinite(subtotalN) &&
+    subtotalN >= options.freeDeliveryThresholdGbp;
+
+  if (qualifiesForFreeUkDelivery) return 'Free';
+
+  if (options.usesShopifyCheckout) {
+    return DELIVERY_AT_CHECKOUT_LABEL;
+  }
+
+  const deliveryN = options.delivery ? Number.parseFloat(options.delivery.amount) : NaN;
+  const deliveryIsKnown = options.delivery && Number.isFinite(deliveryN);
+  if (deliveryIsKnown && deliveryN <= 0.005) return 'Free';
+  if (deliveryIsKnown) return formatCartMoney(options.delivery!);
+  return '—';
+}
 
 export function CartCheckoutBar({
   subtotal,
+  appliedDiscounts = [],
+  merchandiseTotal,
   delivery,
   tax = null,
   usesShopifyCheckout = false,
   freeDeliveryThresholdGbp,
+  marketCountryCode,
   bottomInset,
 }: Props) {
   const [checkingOut, setCheckingOut] = useState(false);
@@ -62,24 +102,18 @@ export function CartCheckoutBar({
 
   const subtotalN = Number.parseFloat(subtotal.amount);
   const showOrderSummary = Number.isFinite(subtotalN) && subtotalN > 0;
-  const qualifiesForFreeDelivery =
-    Number.isFinite(subtotalN) && subtotalN >= freeDeliveryThreshold;
-  const deliveryN = delivery ? Number.parseFloat(delivery.amount) : NaN;
-  const deliveryIsKnown = delivery && Number.isFinite(deliveryN);
-  const deliveryIsFree = deliveryIsKnown && deliveryN <= 0.005;
-  const deliveryValueLabel = qualifiesForFreeDelivery
-    ? 'Free'
-    : deliveryIsKnown
-      ? deliveryIsFree
-        ? usesShopifyCheckout
-          ? DELIVERY_AT_CHECKOUT_LABEL
-          : 'Free'
-        : formatCartMoney(delivery)
-      : usesShopifyCheckout
-        ? DELIVERY_AT_CHECKOUT_LABEL
-        : '—';
+  const deliveryValueLabel = resolveDeliveryValueLabel({
+    subtotal,
+    delivery,
+    usesShopifyCheckout,
+    freeDeliveryThresholdGbp: freeDeliveryThreshold,
+    marketCountryCode,
+  });
   const taxN = tax ? Number.parseFloat(tax.amount) : 0;
   const showTax = Boolean(tax && Number.isFinite(taxN) && taxN > 0.005);
+  const hasAppliedDiscounts = appliedDiscounts.length > 0;
+  const heroMerchandiseTotal = hasAppliedDiscounts && merchandiseTotal ? merchandiseTotal : subtotal;
+  const showPreDiscountSubtotal = hasAppliedDiscounts;
 
   const onCheckout = useCallback(async () => {
     if (!isRemoteCartConfigured()) return;
@@ -115,10 +149,30 @@ export function CartCheckoutBar({
     <View style={[styles.inner, { paddingBottom: 16 }]}>
       {showOrderSummary ? (
         <View className="mb-2 gap-1">
+          {showPreDiscountSubtotal ? (
+            <View className="flex-row items-center justify-between gap-4">
+              <Text style={rowLabel}>Subtotal</Text>
+              <Text style={rowValue}>{formatCartMoney(subtotal)}</Text>
+            </View>
+          ) : null}
+          {appliedDiscounts.map((discount) => {
+            const discountN = Number.parseFloat(discount.amount.amount);
+            const showAmount = Number.isFinite(discountN) && discountN > 0.005;
+            return (
+              <View
+                key={discount.code}
+                className="flex-row items-center justify-between gap-4">
+                <Text style={rowLabel}>{formatCartDiscountRowLabel(discount.code)}</Text>
+                {showAmount ? (
+                  <Text style={rowValue}>-{formatCartMoney(discount.amount)}</Text>
+                ) : (
+                  <Text style={rowValue}>Applied</Text>
+                )}
+              </View>
+            );
+          })}
           <View className="flex-row items-center justify-between gap-4">
-            <Text style={rowLabel}>
-              {usesShopifyCheckout && delivery ? 'Delivery' : 'Delivery estimate'}
-            </Text>
+            <Text style={rowLabel}>Delivery</Text>
             <Text style={rowValue}>{deliveryValueLabel}</Text>
           </View>
           {showTax ? (
@@ -138,7 +192,7 @@ export function CartCheckoutBar({
             color: 'rgba(92, 91, 88, 0.75)',
             textTransform: 'uppercase',
           }}>
-          Subtotal
+          {hasAppliedDiscounts ? 'Total' : 'Subtotal'}
         </Text>
         <Text
           style={{
@@ -147,7 +201,7 @@ export function CartCheckoutBar({
             letterSpacing: -0.6,
             color: '#141414',
           }}>
-          {formatCartMoney(subtotal)}
+          {formatCartMoney(heroMerchandiseTotal)}
         </Text>
       </View>
       <Button

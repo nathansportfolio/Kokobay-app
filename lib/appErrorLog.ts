@@ -172,14 +172,9 @@ export function reportAppErrorFromUnknown(
   });
 }
 
-/** Operational issues (API 4xx/5xx, cart sync, etc.) — dev console only, no API noise. */
+/** Operational issues (API 4xx/5xx, cart sync, etc.) — reserved for future telemetry; no-op today. */
 export function reportOperationalFailure(
-  message: string,
-  context?: Record<string, unknown>,
-  level: 'error' | 'warn' = 'error',
-): void {
-  if (__DEV__) {
-    const prefix = level === 'warn' ? '[operational warn]' : '[operational error]';
-    console.warn(prefix, message, context ?? {});
-  }
-}
+  _message: string,
+  _context?: Record<string, unknown>,
+  _level: 'error' | 'warn' = 'error',
+): void {}

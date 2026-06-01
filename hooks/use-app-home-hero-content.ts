@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 
 import {
   DEFAULT_HOME_HERO_BUTTON_BG,
@@ -9,17 +9,10 @@ import {
 } from '@/constants/app-home-hero-cms';
 import { homeNewInHeroImageUri } from '@/constants/home-hero';
 import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
-import { useMarketQueryKey } from '@/hooks/use-market-query-key';
-import { kokobayApiEnvDebug, resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { homeHeroDisplayImageUri } from '@/utils/home-hero-image';
 import type { HomeHeroCtaTarget } from '@/utils/home-hero-link';
 import { resolveHomeHeroCtaTarget } from '@/utils/home-hero-link';
-
-function logAppHomeHeroState(payload: Record<string, unknown>) {
-  if (!__DEV__) return;
-  console.log('[AppHomeHero]', payload);
-}
 
 export type AppHomeHeroContent = {
   imageUri: string;
@@ -35,7 +28,6 @@ export type AppHomeHeroContent = {
 };
 
 export function useAppHomeHeroContent(screenWidth: number, pathname: string): AppHomeHeroContent {
-  const marketKey = useMarketQueryKey();
   const enabled = isKokobayWebProductsConfigured();
   const query = useAppHomeHeroQuery();
 
@@ -67,18 +59,6 @@ export function useAppHomeHeroContent(screenWidth: number, pathname: string): Ap
       fromCms: false,
     };
   }, [cms, fromCms, pathname, screenWidth]);
-
-  useEffect(() => {
-    if (!enabled || query.isPending) return;
-    logAppHomeHeroState({
-      fromCms,
-      cmsLookup: fromCms ? 'found' : 'not_found (GET /api/content/app-home-hero 404)',
-      country: marketKey,
-      kicker: content.kicker,
-      apiBaseUrl: resolveKokobayApiBaseUrl(),
-      apiEnv: kokobayApiEnvDebug(),
-    });
-  }, [content.kicker, enabled, fromCms, marketKey, query.isPending]);
 
   return {
     ...content,

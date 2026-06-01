@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { AppState } from 'react-native';
 
+import type { ShopifyCartSnapshot } from '@/services/shopify/cart';
 import { isRemoteCartConfigured, usesKokobayCartProxy } from '@/services/cart/remote-cart';
 import { patchCartQuantityFast, syncLocalCartToRemote } from '@/services/cart/sync';
 import { cartCoalesceLog } from '@/lib/cart-coalesce-log';
@@ -8,19 +9,33 @@ import { cartPerfLog } from '@/lib/cart-perf-log';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { trackRemoveFromCart } from '@/lib/gtm';
 import { showToast } from '@/store/toast';
-import type { CartLine } from '@/types/cart';
+import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { clampCartQuantity, inventoryLimitToast, resolveQuantityCap } from '@/utils/cart-inventory';
 import {
   ensureDeliveryThresholdLoaded,
   getDeliveryThresholdGbpSync,
 } from '@/services/delivery-threshold';
-import { computeCartSubtotal, computeEstimatedTotal, computeShippingEstimate } from '@/utils/cart-totals';
+import {
+  computeCartSubtotal,
+  computeEstimatedTotal,
+  computeShippingEstimate,
+} from '@/utils/cart-totals';
 import { hasCartLinePricing } from '@/utils/cart-line-pricing';
 import { cartSyncErrorToast } from '@/utils/cart-sync-messages';
+import {
+  deriveAppliedDiscountsFromCart,
+  type CartAppliedDiscount,
+} from '@/utils/cart-cost-breakdown';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
 import { CART_SYNC_DEBOUNCE_MS, createCartSyncScheduler } from './cart-sync-scheduler';
+import { logAppFirstOrder } from '@/services/cart/app-first-order-log';
+import {
+  clearFirstAppOrderDiscountApplySettled,
+  isFirstAppOrderDiscountApplySettled,
+} from '@/services/cart/first-order-discount-settled';
+import { getIsFirstAppOrderSync, scheduleAppBenefitsRefreshOnCartChange } from './app-benefits';
 import {
   loadCartGuestId,
   loadPersistedCart,
@@ -29,6 +44,57 @@ import {
   persistCartLines,
   persistShopifyCartId,
 } from './cart-persist';
+
+export type { CartDiscountCode } from '@/types/cart';
+
+export type ReservedCartPricing = {
+  shopifySubtotal: Money;
+  shopifyTotal: Money;
+  shopifyTotalTax: Money | null;
+  shopifyDiscountCodes: CartDiscountCode[];
+  shopifyCartDiscountAmount: Money | null;
+  shopifyLineMerchandiseSubtotal: Money | null;
+  shopifyLineMerchandiseTotal: Money | null;
+};
+
+function cartDiscountAmountValue(amount: Money | null | undefined): number {
+  if (amount?.amount == null || String(amount.amount).trim() === '') return 0;
+  const value = Number.parseFloat(String(amount.amount));
+  return Number.isFinite(value) ? value : 0;
+}
+
+function pickDiscountAmount(
+  primary: Money | null | undefined,
+  secondary: Money | null | undefined,
+): Money | undefined {
+  const primaryN = cartDiscountAmountValue(primary);
+  const secondaryN = cartDiscountAmountValue(secondary);
+  if (primaryN <= 0.005 && secondaryN <= 0.005) return undefined;
+  if (secondaryN > primaryN && secondary) return secondary;
+  return primary ?? secondary ?? undefined;
+}
+
+function mergeCartDiscountCodes(
+  primary: CartDiscountCode[],
+  secondary: CartDiscountCode[],
+): CartDiscountCode[] {
+  const byCode = new Map<string, CartDiscountCode>();
+  for (const entry of [...secondary, ...primary]) {
+    const key = entry.code.trim().toUpperCase();
+    if (!key) continue;
+    const prev = byCode.get(key);
+    byCode.set(key, {
+      code: entry.code,
+      applicable: entry.applicable,
+      amount: pickDiscountAmount(entry.amount, prev?.amount),
+    });
+  }
+  return [...byCode.values()];
+}
+
+function hasCartDiscountCodes(discountCodes: CartDiscountCode[]): boolean {
+  return discountCodes.some((entry) => entry.code.trim());
+}
 
 const MAX_QTY = 99;
 
@@ -64,7 +130,8 @@ function optimisticCartTotals(lines: CartLine[]): {
 }
 
 function refreshOptimisticCartTotalsAfterThresholdLoad(): void {
-  const { lines, shopifyTotalTax } = useCartStore.getState();
+  const { lines, shopifyTotalTax, shopifyDiscountCodes } = useCartStore.getState();
+  if (hasCartDiscountCodes(shopifyDiscountCodes)) return;
   const totals = optimisticCartTotals(lines);
   if (!totals) return;
   useCartStore.setState({
@@ -91,6 +158,7 @@ function mergeCartLines(disk: CartLine[], memory: CartLine[]): CartLine[] {
         ...l,
         qty: clampQty(prev.qty + l.qty),
         maxQty: mergeMaxQty(prev.maxQty, l.maxQty),
+        listUnitPrice: prev.listUnitPrice ?? l.listUnitPrice ?? prev.unitPrice ?? l.unitPrice,
       });
     } else {
       map.set(k, { ...l, qty: clampQty(l.qty) });
@@ -116,6 +184,7 @@ function mergeSyncedCartLines(
       title: line.title ?? synced.title,
       variantTitle: line.variantTitle ?? synced.variantTitle,
       imageUrl: line.imageUrl ?? synced.imageUrl,
+      listUnitPrice: line.listUnitPrice ?? line.unitPrice,
       unitPrice: synced.unitPrice ?? line.unitPrice,
     };
     if (options?.learnInventoryCap) {
@@ -148,6 +217,12 @@ type CartState = {
   shopifySubtotal: Money | null;
   shopifyTotal: Money | null;
   shopifyTotalTax: Money | null;
+  shopifyDiscountCodes: CartDiscountCode[];
+  shopifyCartDiscountAmount: Money | null;
+  shopifyLineMerchandiseSubtotal: Money | null;
+  shopifyLineMerchandiseTotal: Money | null;
+  reservedDiscountPricing: ReservedCartPricing | null;
+  displayAppliedDiscounts: CartAppliedDiscount[];
   isSyncingShopify: boolean;
   pendingCartSync: boolean;
   hasHydrated: boolean;
@@ -159,7 +234,105 @@ type CartState = {
   removeItem: (variantId: string) => void;
   updateQuantity: (variantId: string, qty: number) => void;
   clear: () => void;
+  applyRemoteSnapshot: (snapshot: ShopifyCartSnapshot, reconciledLines?: CartLine[]) => void;
 };
+
+export type CartPricingForDisplay = {
+  shopifySubtotal: Money | null;
+  shopifyTotal: Money | null;
+  shopifyTotalTax: Money | null;
+  shopifyDiscountCodes: CartDiscountCode[];
+  shopifyCartDiscountAmount: Money | null;
+  shopifyLineMerchandiseSubtotal: Money | null;
+  shopifyLineMerchandiseTotal: Money | null;
+};
+
+type CartPricingForDisplayState = Pick<
+  CartState,
+  | 'shopifySubtotal'
+  | 'shopifyTotal'
+  | 'shopifyTotalTax'
+  | 'shopifyDiscountCodes'
+  | 'shopifyCartDiscountAmount'
+  | 'shopifyLineMerchandiseSubtotal'
+  | 'shopifyLineMerchandiseTotal'
+  | 'reservedDiscountPricing'
+  | 'pendingCartSync'
+  | 'isSyncingShopify'
+>;
+
+let cartPricingForDisplayCache: CartPricingForDisplay | null = null;
+
+function moneyEqual(a: Money | null | undefined, b: Money | null | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a && !b;
+  return a.amount === b.amount && a.currencyCode === b.currencyCode;
+}
+
+function discountCodesEqual(a: CartDiscountCode[], b: CartDiscountCode[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+    if (left.code !== right.code || left.applicable !== right.applicable) return false;
+    if (!moneyEqual(left.amount, right.amount)) return false;
+  }
+  return true;
+}
+
+function cartPricingForDisplayEqual(a: CartPricingForDisplay, b: CartPricingForDisplay): boolean {
+  return (
+    moneyEqual(a.shopifySubtotal, b.shopifySubtotal) &&
+    moneyEqual(a.shopifyTotal, b.shopifyTotal) &&
+    moneyEqual(a.shopifyTotalTax, b.shopifyTotalTax) &&
+    discountCodesEqual(a.shopifyDiscountCodes, b.shopifyDiscountCodes) &&
+    moneyEqual(a.shopifyCartDiscountAmount, b.shopifyCartDiscountAmount) &&
+    moneyEqual(a.shopifyLineMerchandiseSubtotal, b.shopifyLineMerchandiseSubtotal) &&
+    moneyEqual(a.shopifyLineMerchandiseTotal, b.shopifyLineMerchandiseTotal)
+  );
+}
+
+/** Keep last API discount pricing visible while cart sync is in flight. */
+function computeCartPricingForDisplay(state: CartPricingForDisplayState): CartPricingForDisplay {
+  if ((state.pendingCartSync || state.isSyncingShopify) && state.reservedDiscountPricing) {
+    const reserved = state.reservedDiscountPricing;
+    return {
+      ...reserved,
+      shopifyDiscountCodes: mergeCartDiscountCodes(
+        state.shopifyDiscountCodes,
+        reserved.shopifyDiscountCodes,
+      ),
+      shopifyCartDiscountAmount:
+        pickDiscountAmount(state.shopifyCartDiscountAmount, reserved.shopifyCartDiscountAmount) ??
+        state.shopifyCartDiscountAmount ??
+        reserved.shopifyCartDiscountAmount ??
+        null,
+    };
+  }
+  return {
+    shopifySubtotal: state.shopifySubtotal,
+    shopifyTotal: state.shopifyTotal,
+    shopifyTotalTax: state.shopifyTotalTax,
+    shopifyDiscountCodes: state.shopifyDiscountCodes,
+    shopifyCartDiscountAmount: state.shopifyCartDiscountAmount,
+    shopifyLineMerchandiseSubtotal: state.shopifyLineMerchandiseSubtotal,
+    shopifyLineMerchandiseTotal: state.shopifyLineMerchandiseTotal,
+  };
+}
+
+/**
+ * Derived cart pricing for the bag screen. Returns a stable object reference when values
+ * are unchanged so React 19 / useSyncExternalStore do not loop on new snapshots.
+ */
+export function selectCartPricingForDisplay(state: CartPricingForDisplayState): CartPricingForDisplay {
+  const next = computeCartPricingForDisplay(state);
+  if (cartPricingForDisplayCache && cartPricingForDisplayEqual(cartPricingForDisplayCache, next)) {
+    return cartPricingForDisplayCache;
+  }
+  cartPricingForDisplayCache = next;
+  return next;
+}
 
 let cartRevision = 0;
 /** Revision last successfully pushed to Shopify — skips no-op syncs on resume. */
@@ -385,24 +558,31 @@ function bumpCartRevision(): void {
   cartRevision += 1;
 }
 
-function logCartDebug(
-  action: string,
-  details: { lineItemId?: string; quantity?: number; handle?: string },
-): void {
-  if (!__DEV__) return;
-  console.log('[CART DEBUG]', {
-    action,
-    lineItemId: details.lineItemId ?? null,
-    quantity: details.quantity ?? null,
-    handle: details.handle ?? null,
-    timestamp: Date.now(),
-  });
+/** Empty bag or no codes on cart — first-order discount can be auto-applied again this session. */
+function notifyFirstAppOrderDiscountRetryAllowed(getState: () => CartState): void {
+  if (getIsFirstAppOrderSync() === false) return;
+  const { lines, shopifyDiscountCodes } = getState();
+  if (hasCartDiscountCodes(shopifyDiscountCodes)) return;
+  if (!isFirstAppOrderDiscountApplySettled()) return;
+  clearFirstAppOrderDiscountApplySettled();
+  logAppFirstOrder('allow_retry', { lineCount: lines.length });
 }
+
+function logCartDebug(
+  _action: string,
+  _details: { lineItemId?: string; quantity?: number; handle?: string },
+): void {}
 
 function applyOptimisticLineUpdate(
   lines: CartLine[],
-  previous: Pick<CartState, 'shopifySubtotal' | 'shopifyTotal' | 'shopifyTotalTax'>,
+  previous: Pick<
+    CartState,
+    'shopifySubtotal' | 'shopifyTotal' | 'shopifyTotalTax' | 'shopifyDiscountCodes'
+  >,
 ): Partial<CartState> {
+  if (hasCartDiscountCodes(previous.shopifyDiscountCodes)) {
+    return { lines };
+  }
   const totals = optimisticCartTotals(lines);
   if (!totals) return { lines };
   return {
@@ -425,6 +605,7 @@ async function applyRemoteCartSyncResult(
   revisionAtStart: number,
   syncGeneration: number,
   result: Awaited<ReturnType<typeof syncLocalCartToRemote>>,
+  customerEmail?: string,
 ): Promise<void> {
   if (syncGeneration !== activeSyncGeneration) return;
   if (revisionAtStart !== cartRevision) {
@@ -448,14 +629,7 @@ async function applyRemoteCartSyncResult(
     dropLinesMissingOnRemote: Boolean(result.syncError),
     learnInventoryCap,
   });
-  useCartStore.setState({
-    lines: reconciledLines,
-    shopifyCartId: snapshot.cartId,
-    checkoutUrl: snapshot.checkoutUrl,
-    shopifySubtotal: snapshot.subtotal,
-    shopifyTotal: snapshot.total,
-    shopifyTotalTax: snapshot.totalTax ?? null,
-  });
+  useCartStore.getState().applyRemoteSnapshot(snapshot, reconciledLines);
   await persistShopifyCartId(snapshot.cartId);
 
   if (result.syncError) {
@@ -466,6 +640,14 @@ async function applyRemoteCartSyncResult(
     showToast(cartSyncErrorToast(result.syncError, reconciledLines));
   } else if (revisionAtStart === cartRevision) {
     lastSyncedRevision = cartRevision;
+  }
+
+  if (!result.syncError) {
+    void import('@/services/cart/auto-first-app-order-discount')
+      .then((mod) => {
+        mod.maybeAutoApplyFirstAppOrderDiscount(customerEmail);
+      })
+      .catch(() => {});
   }
 }
 
@@ -525,7 +707,7 @@ async function syncQuantityFast(customerEmail?: string): Promise<void> {
         return;
       }
 
-      await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, lastResult);
+      await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, lastResult, customerEmail);
     }
   } finally {
     if (syncGeneration === activeSyncGeneration) {
@@ -542,6 +724,12 @@ export const useCartStore = create<CartState>((set, get) => ({
   shopifySubtotal: null,
   shopifyTotal: null,
   shopifyTotalTax: null,
+  shopifyDiscountCodes: [],
+  shopifyCartDiscountAmount: null,
+  shopifyLineMerchandiseSubtotal: null,
+  shopifyLineMerchandiseTotal: null,
+  reservedDiscountPricing: null,
+  displayAppliedDiscounts: [],
   isSyncingShopify: false,
   pendingCartSync: false,
   hasHydrated: false,
@@ -591,6 +779,12 @@ export const useCartStore = create<CartState>((set, get) => ({
         shopifySubtotal: null,
         shopifyTotal: null,
         shopifyTotalTax: null,
+        shopifyDiscountCodes: [],
+        shopifyCartDiscountAmount: null,
+        shopifyLineMerchandiseSubtotal: null,
+        shopifyLineMerchandiseTotal: null,
+        reservedDiscountPricing: null,
+        displayAppliedDiscounts: [],
         isSyncingShopify: false,
       });
       if (shopifyCartId || guestId) {
@@ -601,6 +795,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         lastSyncedRevision = cartRevision;
       }
       finalizePendingCartSync();
+      notifyFirstAppOrderDiscountRetryAllowed(get);
       return;
     }
 
@@ -608,7 +803,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ isSyncingShopify: true, pendingCartSync: true });
     try {
       const result = await syncLocalCartToRemote(shopifyCartId, guestId, lines, customerEmail);
-      await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, result);
+      await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, result, customerEmail);
     } finally {
       if (syncGeneration === activeSyncGeneration) {
         set({ isSyncingShopify: false });
@@ -634,13 +829,17 @@ export const useCartStore = create<CartState>((set, get) => ({
     const safeQty = clampQty(qty);
     const catalogCap = resolveQuantityCap(quantityAvailable);
     logCartDebug('addToCart', { lineItemId: variantId, quantity: safeQty, handle });
+    const wasEmpty = get().lines.length === 0;
     bumpCartRevision();
     const snapshot = {
       ...(title !== undefined ? { title } : {}),
       ...(variantTitle !== undefined ? { variantTitle } : {}),
       ...(imageUrl !== undefined ? { imageUrl } : {}),
-      ...(unitPrice !== undefined ? { unitPrice } : {}),
-    } satisfies Partial<Pick<CartLine, 'title' | 'variantTitle' | 'imageUrl' | 'unitPrice'>>;
+    } satisfies Partial<Pick<CartLine, 'title' | 'variantTitle' | 'imageUrl'>>;
+    const priceSnapshot =
+      unitPrice !== undefined
+        ? { unitPrice, listUnitPrice: unitPrice }
+        : ({} as Partial<Pick<CartLine, 'unitPrice' | 'listUnitPrice'>>);
     let inventoryCapNotice: {
       added: number;
       requested: number;
@@ -668,6 +867,9 @@ export const useCartStore = create<CartState>((set, get) => ({
                 qty: clamped.qty,
                 maxQty,
                 ...snapshot,
+                ...(unitPrice !== undefined
+                  ? { unitPrice, listUnitPrice: l.listUnitPrice ?? unitPrice }
+                  : priceSnapshot),
               };
             })
           : (() => {
@@ -680,7 +882,7 @@ export const useCartStore = create<CartState>((set, get) => ({
                   kind: 'add',
                 };
               }
-              return [...s.lines, { handle, variantId, qty: clamped.qty, maxQty, ...snapshot }];
+              return [...s.lines, { handle, variantId, qty: clamped.qty, maxQty, ...snapshot, ...priceSnapshot }];
             })();
       return applyOptimisticLineUpdate(lines, s);
     });
@@ -693,6 +895,10 @@ export const useCartStore = create<CartState>((set, get) => ({
       }
     }
     requestDeliveryThresholdForCartEdits();
+    if (wasEmpty) {
+      notifyFirstAppOrderDiscountRetryAllowed(get);
+    }
+    scheduleAppBenefitsRefreshOnCartChange();
     scheduleSync();
   },
 
@@ -715,11 +921,20 @@ export const useCartStore = create<CartState>((set, get) => ({
           shopifySubtotal: null,
           shopifyTotal: null,
           shopifyTotalTax: null,
+          shopifyDiscountCodes: [],
+          shopifyCartDiscountAmount: null,
+          shopifyLineMerchandiseSubtotal: null,
+          shopifyLineMerchandiseTotal: null,
+          reservedDiscountPricing: null,
+          displayAppliedDiscounts: [],
         };
       }
       return applyOptimisticLineUpdate(lines, s);
     });
     requestDeliveryThresholdForCartEdits();
+    if (!get().lines.length) {
+      notifyFirstAppOrderDiscountRetryAllowed(get);
+    }
     scheduleSync();
   },
 
@@ -765,6 +980,12 @@ export const useCartStore = create<CartState>((set, get) => ({
           shopifySubtotal: null,
           shopifyTotal: null,
           shopifyTotalTax: null,
+          shopifyDiscountCodes: [],
+          shopifyCartDiscountAmount: null,
+          shopifyLineMerchandiseSubtotal: null,
+          shopifyLineMerchandiseTotal: null,
+          reservedDiscountPricing: null,
+          displayAppliedDiscounts: [],
         };
       }
       return applyOptimisticLineUpdate(lines, s);
@@ -780,11 +1001,51 @@ export const useCartStore = create<CartState>((set, get) => ({
     }
     const lineAfter = get().lines.find((l) => l.variantId === variantId);
     requestDeliveryThresholdForCartEdits();
+    if (!get().lines.length) {
+      notifyFirstAppOrderDiscountRetryAllowed(get);
+    }
     if (canFastPathQuantitySync(lineAfter, qty)) {
       scheduleFastQuantitySync(variantId);
     } else {
       scheduleSync();
     }
+  },
+
+  applyRemoteSnapshot: (snapshot, reconciledLines) => {
+    const lines =
+      reconciledLines ??
+      mergeSyncedCartLines(useCartStore.getState().lines, snapshot.lines);
+    const discountCodes = snapshot.discountCodes ?? [];
+    const pricing = {
+      shopifySubtotal: snapshot.subtotal,
+      shopifyTotal: snapshot.total,
+      shopifyTotalTax: snapshot.totalTax ?? null,
+      shopifyDiscountCodes: discountCodes,
+      shopifyCartDiscountAmount: snapshot.cartDiscountAmount ?? null,
+      shopifyLineMerchandiseSubtotal: snapshot.lineMerchandiseSubtotal ?? null,
+      shopifyLineMerchandiseTotal: snapshot.lineMerchandiseTotal ?? null,
+    };
+    const displayAppliedDiscounts = deriveAppliedDiscountsFromCart({
+      subtotal: snapshot.subtotal,
+      total: snapshot.total,
+      totalTax: snapshot.totalTax ?? null,
+      discountCodes,
+      cartDiscountAmount: snapshot.cartDiscountAmount ?? null,
+      lineMerchandiseSubtotal: snapshot.lineMerchandiseSubtotal ?? null,
+      lineMerchandiseTotal: snapshot.lineMerchandiseTotal ?? null,
+    });
+    set({
+      lines,
+      shopifyCartId: snapshot.cartId,
+      checkoutUrl: snapshot.checkoutUrl,
+      ...pricing,
+      displayAppliedDiscounts,
+      reservedDiscountPricing: hasCartDiscountCodes(discountCodes)
+        ? pricing
+        : null,
+    });
+    void persistShopifyCartId(snapshot.cartId);
+    notifyFirstAppOrderDiscountRetryAllowed(get);
   },
 
   clear: () => {
@@ -798,10 +1059,17 @@ export const useCartStore = create<CartState>((set, get) => ({
       shopifySubtotal: null,
       shopifyTotal: null,
       shopifyTotalTax: null,
+      shopifyDiscountCodes: [],
+      shopifyCartDiscountAmount: null,
+      shopifyLineMerchandiseSubtotal: null,
+      shopifyLineMerchandiseTotal: null,
+      reservedDiscountPricing: null,
+      displayAppliedDiscounts: [],
       pendingCartSync: false,
     });
     void persistShopifyCartId(null);
     void persistCartGuestId(null);
+    notifyFirstAppOrderDiscountRetryAllowed(get);
   },
 }));
 

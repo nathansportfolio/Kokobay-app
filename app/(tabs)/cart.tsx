@@ -21,6 +21,7 @@ import { trackViewCart } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { useCartBagUnitCount } from '@/hooks/use-cart-selectors';
 import { useCartStore } from '@/store';
+import { selectCartPricingForDisplay } from '@/store/cart';
 import { useMarketStore } from '@/store/market-preference';
 import type { CartLine } from '@/types/cart';
 import { resolveCartCostBreakdownForDisplay } from '@/utils/cart-cost-breakdown';
@@ -40,9 +41,7 @@ const CART_SCROLL_CONTENT = {
 export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useOptionalBottomTabBarHeight();
-  const shopifySubtotal = useCartStore((s) => s.shopifySubtotal);
-  const shopifyTotal = useCartStore((s) => s.shopifyTotal);
-  const shopifyTotalTax = useCartStore((s) => s.shopifyTotalTax);
+  const cartPricingForDisplay = useCartStore(selectCartPricingForDisplay);
   const { lines, hasHydrated } = useCartStore(
     useShallow((s) => ({
       lines: s.lines,
@@ -50,24 +49,33 @@ export default function CartScreen() {
     })),
   );
   const marketCurrency = useMarketStore((s) => s.currencyCode);
+  const marketCountryCode = useMarketStore((s) => s.countryCode);
   const freeDeliveryThresholdGbp = useDeliveryThreshold();
   const usesShopifyCheckout = isRemoteCartConfigured();
   const costBreakdown = useMemo(
     () =>
       resolveCartCostBreakdownForDisplay({
         lines,
-        shopifySubtotal,
-        shopifyTotal,
-        shopifyTotalTax,
+        shopifySubtotal: cartPricingForDisplay.shopifySubtotal,
+        shopifyTotal: cartPricingForDisplay.shopifyTotal,
+        shopifyTotalTax: cartPricingForDisplay.shopifyTotalTax,
+        shopifyDiscountCodes: cartPricingForDisplay.shopifyDiscountCodes,
+        shopifyLineMerchandiseSubtotal: cartPricingForDisplay.shopifyLineMerchandiseSubtotal,
+        shopifyLineMerchandiseTotal: cartPricingForDisplay.shopifyLineMerchandiseTotal,
+        shopifyCartDiscountAmount: cartPricingForDisplay.shopifyCartDiscountAmount,
         usesShopifyCheckout,
         marketCurrency,
         freeDeliveryThresholdGbp,
       }),
     [
       lines,
-      shopifySubtotal,
-      shopifyTotal,
-      shopifyTotalTax,
+      cartPricingForDisplay.shopifySubtotal,
+      cartPricingForDisplay.shopifyTotal,
+      cartPricingForDisplay.shopifyTotalTax,
+      cartPricingForDisplay.shopifyDiscountCodes,
+      cartPricingForDisplay.shopifyLineMerchandiseSubtotal,
+      cartPricingForDisplay.shopifyLineMerchandiseTotal,
+      cartPricingForDisplay.shopifyCartDiscountAmount,
       usesShopifyCheckout,
       marketCurrency,
       freeDeliveryThresholdGbp,
@@ -187,10 +195,13 @@ export default function CartScreen() {
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <CartCheckoutBar
             subtotal={costBreakdown.subtotal}
+            appliedDiscounts={costBreakdown.appliedDiscounts}
+            merchandiseTotal={costBreakdown.total}
             delivery={costBreakdown.delivery}
             tax={costBreakdown.tax}
             usesShopifyCheckout={usesShopifyCheckout}
             freeDeliveryThresholdGbp={freeDeliveryThresholdGbp}
+            marketCountryCode={marketCountryCode}
             bottomInset={checkoutBottomInset}
           />
         </View>

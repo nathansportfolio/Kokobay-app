@@ -73,13 +73,6 @@ export async function initializeFirebaseCrashlytics(): Promise<void> {
 
   const { enabled } = getFirebaseCrashlyticsConfig();
   await crashlytics.setCrashlyticsCollectionEnabled(enabled);
-
-  if (__DEV__) {
-    console.info('[Firebase] Crashlytics initialized', {
-      platform: Platform.OS,
-      collectionEnabled: enabled,
-    });
-  }
 }
 
 /** Associates Crashlytics reports with a signed-in user (pass null to clear). */

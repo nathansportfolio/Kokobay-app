@@ -11,7 +11,24 @@ import { registerPushNotifications, unregisterPushNotifications } from '@/lib/pu
 import { invalidateMarketingConsentCache } from '@/services/kokobay-web/marketing-consent';
 
 import { loadPersistedSession, persistSession } from './auth-persist';
+import { refreshAppBenefitsInBackground, useAppBenefitsStore } from './app-benefits';
 import { flushCartSync } from './cart';
+
+/** Sync guest cart to the new account, load benefits, then auto-apply first-order discount. */
+async function completeAuthenticatedCartSetup(session: AuthSession): Promise<void> {
+  const discount = await import('@/services/cart/auto-first-app-order-discount');
+  discount.resetFirstAppOrderDiscountAutoApplyState();
+  useAppBenefitsStore.getState().clear();
+
+  useAuthStore.getState().setSession(session);
+
+  await flushCartSync(session.user.email);
+  await useAppBenefitsStore.getState().refresh(session.accessToken, {
+    force: true,
+    applyDiscount: false,
+  });
+  await discount.maybeAutoApplyFirstAppOrderDiscountAsync(session.user.email);
+}
 
 type AuthState = {
   user: AuthUser | null;
@@ -45,6 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         accessToken: restored.session.accessToken,
         hasHydrated: true,
       });
+      refreshAppBenefitsInBackground(restored.session.accessToken);
       return;
     }
 
@@ -53,6 +71,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const local = await loadPersistedSession();
       if (local) {
         set({ user: local.user, accessToken: local.accessToken, hasHydrated: true });
+        refreshAppBenefitsInBackground(local.accessToken);
         return;
       }
       set({ user: null, accessToken: null, hasHydrated: true });
@@ -71,6 +90,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const session = await loadPersistedSession();
       if (session) {
         set({ user: session.user, accessToken: session.accessToken, hasHydrated: true });
+        refreshAppBenefitsInBackground(session.accessToken);
       } else {
         set({ user: null, accessToken: null, hasHydrated: true });
       }
@@ -99,9 +119,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     const result = await getAuthService().login(email, password);
     if (result.ok) {
-      get().setSession(result.session);
       trackLogin();
-      await flushCartSync(result.session.user.email);
+      await completeAuthenticatedCartSetup(result.session);
     }
     return result;
   },
@@ -109,9 +128,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (input) => {
     const result = await getAuthService().register(input);
     if (result.ok) {
-      get().setSession(result.session);
       trackSignUp();
-      await flushCartSync(result.session.user.email);
+      await completeAuthenticatedCartSetup(result.session);
     }
     return result;
   },
@@ -123,6 +141,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await unregisterPushNotifications(email);
     await getAuthService().logout();
     invalidateMarketingConsentCache();
+    void import('@/services/cart/auto-first-app-order-discount')
+      .then((mod) => {
+        mod.resetFirstAppOrderDiscountAutoApplyState();
+      })
+      .catch(() => {});
+    useAppBenefitsStore.getState().clear();
     get().clearSession();
     await flushCartSync();
   },
@@ -131,6 +155,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const email = get().user?.email;
     await unregisterPushNotifications(email);
     invalidateMarketingConsentCache();
+    void import('@/services/cart/auto-first-app-order-discount')
+      .then((mod) => {
+        mod.resetFirstAppOrderDiscountAutoApplyState();
+      })
+      .catch(() => {});
+    useAppBenefitsStore.getState().clear();
     await persistCustomerSessionCookie(null);
     get().clearSession();
     await flushCartSync();
