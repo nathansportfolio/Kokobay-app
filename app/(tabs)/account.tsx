@@ -18,6 +18,7 @@ import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAccountMode } from '@/hooks/use-account-mode';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { markSignOutPerf } from '@/lib/sign-out-perf';
 import { useAuthStore } from '@/store';
 import { isAllowedCheckoutUrl } from '@/utils/checkout-url';
 
@@ -85,6 +86,7 @@ export default function AccountScreen() {
     try {
       await logout();
       resetToLanding();
+      markSignOutPerf('guest_account_screen');
     } finally {
       setIsLoggingOut(false);
     }
@@ -97,6 +99,7 @@ export default function AccountScreen() {
     try {
       await clearSessionAfterAccountDeletion();
       resetToLanding();
+      markSignOutPerf('guest_account_screen');
     } finally {
       setIsLoggingOut(false);
     }

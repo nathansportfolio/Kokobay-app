@@ -1,3 +1,9 @@
+import {
+  getResumeNetworkTrigger,
+  networkRequestCompleted,
+  networkRequestStarted,
+} from '@/lib/lifecycle-perf';
+
 /** Default deadline for mobile API requests — avoids hung loading states. */
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
 
@@ -47,6 +53,10 @@ export async function fetchWithTimeout(
   const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
   const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
 
+  const networkId = __DEV__
+    ? networkRequestStarted(url, init.method ?? 'GET', getResumeNetworkTrigger())
+    : 0;
+
   try {
     return await fetch(url, { ...init, signal });
   } catch (error) {
@@ -56,5 +66,6 @@ export async function fetchWithTimeout(
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    if (__DEV__) networkRequestCompleted(networkId);
   }
 }

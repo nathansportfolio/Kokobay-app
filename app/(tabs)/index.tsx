@@ -16,6 +16,7 @@ import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
+import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
@@ -45,6 +46,7 @@ function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDi
 }
 
 export default function HomeScreen() {
+  useLifecycleRenderCount('home');
   const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();

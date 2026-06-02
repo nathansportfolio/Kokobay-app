@@ -1,6 +1,7 @@
 /** Debounced cart sync — coalesces rapid qty changes; pauses while app is backgrounded. */
 
 import { cartPerfLog } from '@/lib/cart-perf-log';
+import { registerTrackedAppStateListener } from '@/lib/lifecycle-perf/install';
 
 import type { AppLifecycle } from './cart-app-lifecycle';
 
@@ -14,7 +15,11 @@ export type CartSyncSchedulerOptions = {
   debounceMs?: number;
   /** When false, scheduled/ resumed syncs are skipped (cart already matches server). */
   shouldSync?: () => boolean;
+  /** Foreground resume gate — return false to skip resume debounce/network. */
+  shouldForegroundResume?: () => boolean;
   lifecycle?: AppLifecycle;
+  /** Dev lifecycle perf — unique AppState listener id. */
+  lifecycleListenerId?: string;
 };
 
 export type CartSyncScheduler = {
@@ -32,13 +37,16 @@ export function createCartSyncScheduler(
 ): CartSyncScheduler {
   const debounceMs = options.debounceMs ?? CART_SYNC_DEBOUNCE_MS;
   const shouldSync = options.shouldSync ?? (() => true);
+  const shouldForegroundResume = options.shouldForegroundResume ?? (() => true);
   const lifecycle = options.lifecycle ?? resolveNativeAppLifecycle();
+  const lifecycleListenerId = options.lifecycleListenerId;
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let resumeTimer: ReturnType<typeof setTimeout> | undefined;
   let chain: Promise<void> = Promise.resolve();
   let pendingRunCount = 0;
   let lifecycleAttached = false;
+  let removeLifecycleListener: (() => void) | undefined;
 
   const cancelDebounce = () => {
     if (debounceTimer) {
@@ -80,11 +88,14 @@ export function createCartSyncScheduler(
   };
 
   const scheduleAfterResume = () => {
+    if (!shouldForegroundResume()) return;
     if (!shouldSync()) return;
     cancelDebounce();
     resumeTimer = setTimeout(() => {
       resumeTimer = undefined;
-      if (!shouldSync() || !lifecycle.isActive()) return;
+      if (!lifecycle.isActive()) return;
+      if (!shouldForegroundResume()) return;
+      if (!shouldSync()) return;
       armDebounce();
     }, RESUME_SYNC_DEFER_MS);
   };
@@ -92,7 +103,8 @@ export function createCartSyncScheduler(
   const attachLifecycleListener = () => {
     if (lifecycleAttached) return;
     lifecycleAttached = true;
-    lifecycle.onStateChange((active) => {
+
+    const onActiveChange = (active: boolean) => {
       if (!active) {
         cancelDebounce();
         return;
@@ -100,7 +112,16 @@ export function createCartSyncScheduler(
       lifecycle.deferAfterInteractions(() => {
         scheduleAfterResume();
       });
-    });
+    };
+
+    if (__DEV__ && lifecycleListenerId) {
+      removeLifecycleListener = registerTrackedAppStateListener(lifecycleListenerId, (state) => {
+        onActiveChange(state === 'active');
+      });
+      return;
+    }
+
+    lifecycle.onStateChange(onActiveChange);
   };
 
   return {

@@ -3,6 +3,10 @@ import { PropsWithChildren, useEffect } from 'react';
 
 import { AppGlobalShell } from '@/components/providers/app-global-shell';
 import { AppErrorBannerSync } from '@/components/providers/app-error-banner-sync';
+import { AppPromotionBannerSync } from '@/components/providers/app-promotion-banner-sync';
+import { DeliveryThresholdSync } from '@/components/providers/delivery-threshold-sync';
+import { LifecyclePerfSync } from '@/components/providers/lifecycle-perf-sync';
+import { ResumePerfSync } from '@/components/providers/resume-perf-sync';
 import { AppErrorRouteTracker } from '@/components/providers/app-error-route-tracker';
 import { GtmRouteTracker } from '@/components/providers/gtm-route-tracker';
 import { ScrollToTopProvider } from '@/contexts/scroll-to-top-context';
@@ -58,6 +62,10 @@ export function AppProviders({ children }: PropsWithChildren) {
   return (
     <QueryClientProvider client={getQueryClient()}>
       <AppErrorRouteTracker />
+      <LifecyclePerfSync />
+      <ResumePerfSync />
+      <DeliveryThresholdSync />
+      <AppPromotionBannerSync />
       <AppErrorBannerSync />
       <GtmRouteTracker />
       <WishlistProvider>

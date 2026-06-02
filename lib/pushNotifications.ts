@@ -138,6 +138,17 @@ export type PushNotificationNavigate = (
 /** Prevents duplicate navigation when cold-start and tap listener both fire. */
 const handledResponseKeys = new Set<string>();
 
+/** Blocks auto re-register while sign-out unregisters (avoids register/unregister race). */
+let pushRegistrationPausedForSignOut = false;
+
+export function pausePushRegistrationForSignOut(): void {
+  pushRegistrationPausedForSignOut = true;
+}
+
+export function resumePushRegistrationAfterSignOut(): void {
+  pushRegistrationPausedForSignOut = false;
+}
+
 type PendingPushNavigation = {
   dedupeKey: string;
   href: Href;
@@ -430,6 +441,14 @@ async function postPushRegister(payload: PushRegistrationPayload): Promise<boole
 export async function registerPushNotifications(
   emailInput?: string | null,
 ): Promise<PushRegistrationResult> {
+  if (pushRegistrationPausedForSignOut) {
+    return {
+      ok: true,
+      expoPushToken: '',
+      skipped: true,
+    };
+  }
+
   if (isExpoGoClient()) {
     return {
       ok: false,

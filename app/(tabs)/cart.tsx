@@ -14,8 +14,10 @@ import { CartLineSkeleton } from '@/components/ui/cart-line-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
+import { useCartPricingAuditScreen } from '@/hooks/use-cart-pricing-audit';
 import { useDeliveryThreshold } from '@/hooks/use-delivery-threshold';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewCart } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
@@ -39,6 +41,7 @@ const CART_SCROLL_CONTENT = {
 } as const;
 
 export default function CartScreen() {
+  useLifecycleRenderCount('cart');
   const insets = useSafeAreaInsets();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const cartPricingForDisplay = useCartStore(selectCartPricingForDisplay);
@@ -84,15 +87,26 @@ export default function CartScreen() {
 
   const bagUnitCount = useCartBagUnitCount();
 
+  useCartPricingAuditScreen({
+    lines,
+    marketCurrency,
+    costBreakdown,
+    freeDeliveryThresholdGbp,
+    usesShopifyCheckout,
+    bagUnitCount,
+  });
+
+  const viewCartLineKey = useCartStore(
+    useShallow((s) => s.lines.map((line) => `${line.variantId}:${line.qty}`).join('|')),
+  );
   const viewCartTrackedRef = useRef<string | null>(null);
   useFocusEffect(
     useCallback(() => {
-      if (!hasHydrated || lines.length === 0) return;
-      const key = lines.map((line) => `${line.variantId}:${line.qty}`).join('|');
-      if (viewCartTrackedRef.current === key) return;
-      viewCartTrackedRef.current = key;
-      trackViewCart(lines);
-    }, [hasHydrated, lines]),
+      if (!hasHydrated || !viewCartLineKey) return;
+      if (viewCartTrackedRef.current === viewCartLineKey) return;
+      viewCartTrackedRef.current = viewCartLineKey;
+      trackViewCart(useCartStore.getState().lines);
+    }, [hasHydrated, viewCartLineKey]),
   );
 
   const renderItem = useCallback(({ item }: { item: CartLine }) => <CartLineRow line={item} />, []);

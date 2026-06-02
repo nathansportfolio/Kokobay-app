@@ -32,6 +32,7 @@ import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { usePdpGoBack } from '@/hooks/use-pdp-go-back';
 import { useProductQueryCleanup } from '@/hooks/use-product-query-cleanup';
+import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewItem } from '@/lib/gtm';
 import { getProductRecommendations } from '@/services/product-recommendations';
@@ -73,6 +74,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 }
 
 export default function ProductScreen() {
+  useLifecycleRenderCount('product');
   const { handle } = useLocalSearchParams<{ handle: string }>();
   const navigation = useNavigation();
   const goBack = usePdpGoBack();

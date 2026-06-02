@@ -9,10 +9,14 @@ export {
 export {
   useCartStore,
   flushCartSync,
+  resetCartForSignOut,
+  clearRemoteCartInBackground,
   ensureCartSyncedForCheckout,
   isCartSettledForCheckout,
   getCartNetworkSyncMetrics,
   selectCartPricingForDisplay,
+  selectIsLineQuantityPricePending,
+  selectIsCartCheckoutPricingPending,
   type AddToCartInput,
   type CartLine,
   type CartDiscountCode,
@@ -23,6 +27,7 @@ export {
   useAppBenefitsStore,
   refreshAppBenefitsInBackground,
   scheduleAppBenefitsRefreshOnCartChange,
+  cancelAppBenefitsBackgroundRefresh,
   getIsFirstAppOrderSync,
 } from './app-benefits';
 export { useSearchHistoryStore } from './search-history';

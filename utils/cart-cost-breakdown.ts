@@ -176,7 +176,21 @@ export function resolveCartCostBreakdownForDisplay(options: {
     Boolean(shopifySubtotal?.amount) &&
     Boolean(shopifyTotal?.amount);
 
-  if (useShopifyTotals && shopifySubtotal && shopifyTotal) {
+  const localSubN = Number.parseFloat(localSubtotal.amount);
+  const shopifySubN = shopifySubtotal ? Number.parseFloat(shopifySubtotal.amount) : NaN;
+  const localShopifySubtotalMismatch =
+    hasLocalPricing &&
+    Number.isFinite(localSubN) &&
+    Number.isFinite(shopifySubN) &&
+    Math.abs(localSubN - shopifySubN) > 0.02;
+
+  /** Prefer line sum when footer API subtotal is stale vs optimistic qty (no discounts). */
+  const preferLocalLineSubtotal =
+    localShopifySubtotalMismatch &&
+    localSubN > shopifySubN &&
+    !(options.shopifyDiscountCodes ?? []).some((entry) => entry.code.trim());
+
+  if (useShopifyTotals && shopifySubtotal && shopifyTotal && !preferLocalLineSubtotal) {
     return deriveCartCostBreakdown(
       shopifySubtotal,
       shopifyTotal,

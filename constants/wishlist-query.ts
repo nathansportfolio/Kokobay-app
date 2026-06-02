@@ -2,3 +2,6 @@
 export const WISHLIST_PRODUCTS_STALE_TIME_MS = 60 * 60 * 1000;
 
 export const WISHLIST_PRODUCTS_GC_TIME_MS = 2 * 60 * 60 * 1000;
+
+/** Debounce wishlist handle churn before product preview network work. */
+export const WISHLIST_HANDLES_DEBOUNCE_MS = 400;

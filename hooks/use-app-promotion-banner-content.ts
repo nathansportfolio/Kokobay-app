@@ -1,48 +1,34 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
-import { AppState } from 'react-native';
+import { useCallback } from 'react';
 
 import { APP_PROMOTION_BANNER_STRIP_HEIGHT } from '@/constants/app-promotion-banner';
 import {
-  fetchAppPromotionBanner,
-  type AppPromotionBannerPayload,
-} from '@/services/kokobay-web/app-promotion-banner';
-import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
+  appPromotionBannerQueryOptions,
+  appPromotionBannerVisible,
+  invalidateAppPromotionBanner,
+  isAppPromotionBannerQueryEnabled,
+} from '@/lib/app-promotion-banner-query';
+import type { AppPromotionBannerPayload } from '@/services/kokobay-web/app-promotion-banner';
 
-const APP_PROMOTION_BANNER_QUERY_KEY = ['app-promotion-banner'] as const;
+export { APP_PROMOTION_BANNER_QUERY_KEY } from '@/lib/app-promotion-banner-query';
 
+/** Subscribe to promotion banner query — no AppState listeners (see AppPromotionBannerSync). */
 export function useAppPromotionBannerContent() {
   const queryClient = useQueryClient();
-  const enabled = isKokobayWebProductsConfigured();
+  const enabled = isAppPromotionBannerQueryEnabled();
 
   const query = useQuery<AppPromotionBannerPayload | null>({
-    queryKey: [...APP_PROMOTION_BANNER_QUERY_KEY],
+    ...appPromotionBannerQueryOptions,
     enabled,
-    staleTime: 60_000,
-    gcTime: 60 * 60_000,
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
     placeholderData: (previous) => previous,
-    queryFn: ({ signal }) => fetchAppPromotionBanner({ signal }),
   });
 
   const data = query.data ?? null;
-  const visible = Boolean(data?.active && data.message.trim());
+  const visible = appPromotionBannerVisible(data);
 
   const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: [...APP_PROMOTION_BANNER_QUERY_KEY] });
+    void invalidateAppPromotionBanner(queryClient, 'manual');
   }, [queryClient]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refresh();
-    });
-    return () => sub.remove();
-  }, [refresh]);
 
   return {
     visible,
@@ -52,7 +38,18 @@ export function useAppPromotionBannerContent() {
   };
 }
 
+/** Lightweight visibility subscriber — same cache, no side effects. */
+export function useAppPromotionBannerVisible(): boolean {
+  const enabled = isAppPromotionBannerQueryEnabled();
+  const query = useQuery<AppPromotionBannerPayload | null>({
+    ...appPromotionBannerQueryOptions,
+    enabled,
+    placeholderData: (previous) => previous,
+  });
+  return appPromotionBannerVisible(query.data ?? null);
+}
+
 export function useAppPromotionBannerChromeHeight(): number {
-  const { visible } = useAppPromotionBannerContent();
+  const visible = useAppPromotionBannerVisible();
   return visible ? APP_PROMOTION_BANNER_STRIP_HEIGHT : 0;
 }

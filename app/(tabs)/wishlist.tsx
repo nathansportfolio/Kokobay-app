@@ -1,5 +1,4 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
-import { useQuery } from '@tanstack/react-query';
 import { Link, usePathname } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -10,22 +9,14 @@ import { WishlistGridItem } from '@/components/wishlist/wishlist-grid-item';
 import { WishlistGridSkeleton } from '@/components/wishlist/wishlist-grid-skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import {
-  WISHLIST_PRODUCTS_GC_TIME_MS,
-  WISHLIST_PRODUCTS_STALE_TIME_MS,
-} from '@/constants/wishlist-query';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useWishlist } from '@/contexts/wishlist-context';
-import { useMarketQueryKey } from '@/hooks/use-market-query-key';
+import {
+  useWishlistProductsQuery,
+  type WishlistProductsMap,
+} from '@/hooks/use-wishlist-products-query';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
-import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
-import { fetchWishlistProductPreviews } from '@/services/kokobay-web/wishlist-products';
-import { getProduct } from '@/services/shopify';
-import type { Product } from '@/types/shopify';
 import { newInCollectionHref } from '@/utils/collection-handles';
-import { wishlistPreviewToProduct } from '@/utils/wishlist-product-mapper';
-import { wishlistProductsQueryKey } from '@/utils/wishlist-query-key';
-import { useMarketStore } from '@/store/market-preference';
 
 /** Horizontal inset — `px-5` luxury breathing room */
 const H_PAD = 20;
@@ -37,8 +28,6 @@ const LIST_BOTTOM_PAD = 48;
 
 /** Inline shell — NativeWind flex-1 on SafeAreaView / FlashList fails on Android. */
 const WISHLIST_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
-
-type WishlistProductsMap = Record<string, Product>;
 
 function useWishlistGridMetrics() {
   const { width: winW } = useWindowDimensions();
@@ -58,36 +47,9 @@ function WishlistHeader() {
   return <LuxuryTabScreenHeader title="Wishlist" />;
 }
 
-async function loadWishlistProductsMap(
-  handles: readonly string[],
-  currencyCode: string,
-  signal?: AbortSignal,
-): Promise<WishlistProductsMap> {
-  const map: WishlistProductsMap = {};
-
-  if (isKokobayWebProductsConfigured()) {
-    const previews = await fetchWishlistProductPreviews(handles, { signal });
-    for (const preview of previews) {
-      const product = wishlistPreviewToProduct(preview, currencyCode);
-      if (product) map[preview.handle] = product;
-    }
-    return map;
-  }
-
-  await Promise.all(
-    handles.map(async (handle) => {
-      const product = await getProduct(handle, { signal });
-      if (product) map[handle] = product;
-    }),
-  );
-  return map;
-}
-
 export default function WishlistScreen() {
   const pathname = usePathname();
   const tabBarHeight = useOptionalBottomTabBarHeight();
-  const marketKey = useMarketQueryKey();
-  const currencyCode = useMarketStore((s) => s.currencyCode);
   const { tileW, imageH, cellHeight } = useWishlistGridMetrics();
   const { wishlistHandles, wishlistHydrated } = useWishlist();
   const listRef = useRef<FlashListRef<string>>(null);
@@ -103,26 +65,12 @@ export default function WishlistScreen() {
   const listEnabled = wishlistHydrated && wishlistHandles.length > 0;
 
   const {
-    data: productsByHandle = {},
+    data: productsByHandle = {} as WishlistProductsMap,
     isPending: productsPending,
     isFetching: productsFetching,
     isError: productsError,
     refetch: refetchProducts,
-  } = useQuery({
-    queryKey: wishlistProductsQueryKey(marketKey, wishlistHandles),
-    queryFn: ({ signal }) => loadWishlistProductsMap(wishlistHandles, currencyCode, signal),
-    enabled: listEnabled,
-    staleTime: WISHLIST_PRODUCTS_STALE_TIME_MS,
-    gcTime: WISHLIST_PRODUCTS_GC_TIME_MS,
-    placeholderData: (previous) => {
-      if (!previous) return previous;
-      const next: WishlistProductsMap = {};
-      for (const handle of wishlistHandles) {
-        if (previous[handle]) next[handle] = previous[handle];
-      }
-      return next;
-    },
-  });
+  } = useWishlistProductsQuery(wishlistHandles, listEnabled);
 
   const listHeader = useMemo(
     () => (

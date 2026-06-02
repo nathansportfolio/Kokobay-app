@@ -22,6 +22,7 @@ export function usePushNotificationSetup(navigationReady = true): void {
   const user = useAuthStore((s) => s.user);
   const email = user?.email;
   const listenersAttached = useRef(false);
+  const previousEmailRef = useRef<string | undefined>(undefined);
   const isExpoGo = isExpoGoClient();
 
   useEffect(() => {
@@ -52,6 +53,15 @@ export function usePushNotificationSetup(navigationReady = true): void {
   useEffect(() => {
     if (isExpoGo) return;
     if (!hasHydrated) return;
+
+    const previousEmail = previousEmailRef.current;
+    previousEmailRef.current = email;
+
+    // Sign-out clears session first; performSignOut re-registers push after unregister.
+    if (previousEmail?.trim() && !email?.trim()) {
+      const removeTokenListener = addPushTokenRefreshListener(email);
+      return () => removeTokenListener();
+    }
 
     void registerPushNotifications(email);
     const removeTokenListener = addPushTokenRefreshListener(email);

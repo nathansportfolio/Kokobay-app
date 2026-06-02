@@ -49,6 +49,43 @@ describe('cart sync scheduler', () => {
     assert.equal(order.length, 3);
   });
 
+  it('skips foreground resume when shouldForegroundResume returns false', async () => {
+    let runs = 0;
+    const lifecycle = {
+      active: true,
+      listeners: [] as Array<(active: boolean) => void>,
+      isActive: () => lifecycle.active,
+      onStateChange: (listener: (active: boolean) => void) => {
+        lifecycle.listeners.push(listener);
+        return () => {
+          lifecycle.listeners = lifecycle.listeners.filter((l) => l !== listener);
+        };
+      },
+      deferAfterInteractions: (fn: () => void) => fn(),
+    };
+
+    const scheduler = createCartSyncScheduler(
+      async () => {
+        runs += 1;
+      },
+      {
+        debounceMs: 20,
+        shouldSync: () => true,
+        shouldForegroundResume: () => false,
+        lifecycle,
+      },
+    );
+
+    scheduler.scheduleSync();
+    lifecycle.active = false;
+    for (const listener of lifecycle.listeners) listener(false);
+    lifecycle.active = true;
+    for (const listener of lifecycle.listeners) listener(true);
+
+    await sleep(200);
+    assert.equal(runs, 0);
+  });
+
   it('rapid qty spam schedules one run after debounce window', async () => {
     let runs = 0;
     const scheduler = createCartSyncScheduler(async () => {

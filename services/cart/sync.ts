@@ -1,5 +1,9 @@
 import { cartPerfLog } from '@/lib/cart-perf-log';
-import { syncLocalCartToKokobayWeb, updateCartQuantityFast } from '@/services/kokobay-web/cart';
+import {
+  addCartLineFast,
+  syncLocalCartToKokobayWeb,
+  updateCartQuantityFast,
+} from '@/services/kokobay-web/cart';
 import { syncLocalCartToShopify, type ShopifyCartSnapshot } from '@/services/shopify/cart';
 import type { CartLine } from '@/types/cart';
 
@@ -28,6 +32,7 @@ export async function syncLocalCartToRemote(
   guestId: string | null,
   localLines: CartLine[],
   customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
 ): Promise<RemoteCartSyncResult | null> {
   if (!isRemoteCartConfigured()) return null;
 
@@ -45,7 +50,12 @@ export async function syncLocalCartToRemote(
 
   if (usesKokobayCartProxy()) {
     const remoteStart = performance.now();
-    const result = await syncLocalCartToKokobayWeb(guestId, localLines, customerEmail);
+    const result = await syncLocalCartToKokobayWeb(
+      guestId,
+      localLines,
+      customerEmail,
+      fallbackCheckoutUrl,
+    );
     cartPerfLog(`syncLocalCartToRemote (kokobay) took ${Math.round(performance.now() - remoteStart)}ms`);
     if (!result) return null;
     return {
@@ -67,16 +77,52 @@ export async function syncLocalCartToRemote(
 /**
  * PATCH line quantity via Koko Bay proxy — skips GET /api/cart and full reconcile.
  */
+/** POST a new line via Koko Bay proxy — skips GET /api/cart and full reconcile. */
+export async function postCartAddLineFast(
+  guestId: string | null,
+  variantId: string,
+  quantity: number,
+  localLines: CartLine[],
+  customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
+): Promise<RemoteCartSyncResult | null> {
+  if (!isRemoteCartConfigured() || !usesKokobayCartProxy()) return null;
+
+  const result = await addCartLineFast(
+    guestId,
+    variantId,
+    quantity,
+    localLines,
+    customerEmail,
+    fallbackCheckoutUrl,
+  );
+  if (!result) return null;
+  return {
+    snapshot: result.snapshot,
+    shopifyCartId: result.snapshot?.cartId ?? null,
+    guestId: result.guestId,
+    syncError: result.syncError ?? null,
+  };
+}
+
 export async function patchCartQuantityFast(
   guestId: string | null,
   lineId: string,
   quantity: number,
   localLines: CartLine[],
   customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
 ): Promise<RemoteCartSyncResult | null> {
   if (!isRemoteCartConfigured() || !usesKokobayCartProxy()) return null;
 
-  const result = await updateCartQuantityFast(guestId, lineId, quantity, localLines, customerEmail);
+  const result = await updateCartQuantityFast(
+    guestId,
+    lineId,
+    quantity,
+    localLines,
+    customerEmail,
+    fallbackCheckoutUrl,
+  );
   if (!result) return null;
   return {
     snapshot: result.snapshot,

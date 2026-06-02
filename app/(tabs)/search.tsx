@@ -14,7 +14,6 @@ import { CollectionProductTile } from '@/components/plp/collection-product-tile'
 import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-footer';
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
 import { PlpProductCountLabel } from '@/components/plp/plp-product-count-label';
-import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -413,7 +412,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   if (searchError && flatItems.length === 0) {
     return (
       <Screen scroll refreshing={searchRefetching} onRefresh={onRefresh}>
-        <LuxuryTabBodySpacer />
+        <View style={{ height: topInset + listHeaderPaddingTop }} />
         <EmptyState title="Something went wrong" message="We could not load results for this search. Try again.">
           <Button title="Try again" variant="primary" onPress={() => void refetchSearch()} />
         </EmptyState>

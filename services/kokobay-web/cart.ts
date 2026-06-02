@@ -91,6 +91,27 @@ function normalizeMoney(
   };
 }
 
+function hasPresentMoney(m: KokobayMoney | null | undefined): boolean {
+  if (m?.amount == null) return false;
+  const trimmed = String(m.amount).trim();
+  return trimmed !== '' && Number.isFinite(Number.parseFloat(trimmed));
+}
+
+function moneyFromApi(m: KokobayMoney | null | undefined, fallback?: Money): Money | null {
+  if (!hasPresentMoney(m)) return null;
+  return normalizeMoney(m, fallback);
+}
+
+function resolveSnapshotMoney(
+  api: KokobayMoney | null | undefined,
+  lineFallback: Money | null,
+  zeroFallback: Money,
+): Money {
+  if (hasPresentMoney(api)) return normalizeMoney(api!, zeroFallback);
+  if (lineFallback) return lineFallback;
+  return zeroFallback;
+}
+
 function logCartResponseInDev(
   _method: string,
   _path: string,
@@ -286,24 +307,52 @@ function sumCartLineCost(
   return { amount: sum.toFixed(2), currencyCode };
 }
 
-function snapshotFromCart(cart: KokobayCart, existing: CartLine[]): ShopifyCartSnapshot | null {
-  const checkoutUrl = cart.checkoutUrl?.trim();
+function snapshotFromCart(
+  cart: KokobayCart,
+  existing: CartLine[],
+  options?: { fallbackCheckoutUrl?: string | null },
+): ShopifyCartSnapshot | null {
   const cartId = cart.id?.trim();
-  if (!cartId || !checkoutUrl) return null;
+  if (!cartId) return null;
+  const checkoutUrl = cart.checkoutUrl?.trim() || options?.fallbackCheckoutUrl?.trim() || '';
+  if (!checkoutUrl) return null;
+
+  const currencyFallback = { amount: '0', currencyCode: getShopifyCurrencyCode() };
+  const lineMerchandiseSubtotal = sumCartLineCost(cart.lines, 'subtotalAmount');
+  const lineMerchandiseTotal = sumCartLineCost(cart.lines, 'totalAmount');
+  const hasLinePricing = Boolean(lineMerchandiseSubtotal || lineMerchandiseTotal);
+  const hasApiPricing =
+    hasPresentMoney(cart.cost?.subtotalAmount) || hasPresentMoney(cart.cost?.totalAmount);
+  const hasLocalLines = existing.some((line) => line.qty > 0);
+  const cartHasItems = (cart.lines?.length ?? 0) > 0 || hasLocalLines;
+
+  if (cartHasItems && !hasApiPricing && !hasLinePricing) {
+    return null;
+  }
+
+  const subtotal = resolveSnapshotMoney(
+    cart.cost?.subtotalAmount,
+    lineMerchandiseSubtotal,
+    currencyFallback,
+  );
+  const total = resolveSnapshotMoney(
+    cart.cost?.totalAmount,
+    lineMerchandiseTotal,
+    currencyFallback,
+  );
+
   const cartDiscountAmount = parseDiscountMoney(cart.cost?.discountAmount);
   return {
     cartId,
     checkoutUrl,
     lines: parseCartLines(cart, existing),
-    subtotal: normalizeMoney(cart.cost?.subtotalAmount),
-    total: normalizeMoney(cart.cost?.totalAmount),
-    totalTax: cart.cost?.totalTaxAmount
-      ? normalizeMoney(cart.cost.totalTaxAmount)
-      : null,
+    subtotal,
+    total,
+    totalTax: moneyFromApi(cart.cost?.totalTaxAmount),
     discountCodes: parseCartDiscountCodes(cart.discountCodes, cartDiscountAmount),
     cartDiscountAmount,
-    lineMerchandiseSubtotal: sumCartLineCost(cart.lines, 'subtotalAmount'),
-    lineMerchandiseTotal: sumCartLineCost(cart.lines, 'totalAmount'),
+    lineMerchandiseSubtotal,
+    lineMerchandiseTotal,
   };
 }
 
@@ -385,6 +434,16 @@ async function clearCart(guestId: string, customerEmail?: string): Promise<void>
   cartPerfLog(`clearCart took ${Math.round(performance.now() - start)}ms`);
 }
 
+/** DELETE remote cart only — no GET/reconcile (use on sign-out). */
+export async function clearRemoteKokobayCart(
+  guestId: string | null,
+  customerEmail?: string,
+): Promise<void> {
+  if (!isKokobayWebProductsConfigured()) return;
+  const sessionGuestId = guestId?.trim() || createGuestId();
+  await clearCart(sessionGuestId, customerEmail);
+}
+
 /** POST /api/cart/discount-code — apply a discount code to the remote cart. */
 export async function applyKokobayCartDiscountCode(
   guestId: string | null,
@@ -426,7 +485,11 @@ export async function applyKokobayCartDiscountCode(
     };
   }
 
-  const snapshot = res?.cart ? snapshotFromCart(res.cart, localLines) : null;
+  const snapshot = res?.cart
+    ? snapshotFromCart(res.cart, localLines, {
+        fallbackCheckoutUrl: res.cart.checkoutUrl,
+      })
+    : null;
   return { snapshot, guestId: sessionGuestId, syncError: null };
 }
 
@@ -446,6 +509,7 @@ export async function updateCartQuantityFast(
   quantity: number,
   localLines: CartLine[],
   customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
 ): Promise<KokobayCartSyncResult | null> {
   if (!isKokobayWebProductsConfigured()) return null;
 
@@ -467,8 +531,56 @@ export async function updateCartQuantityFast(
     };
   }
 
-  const snapshot = result.cart ? snapshotFromCart(result.cart, localLines) : null;
+  const snapshot = result.cart
+    ? snapshotFromCart(result.cart, localLines, { fallbackCheckoutUrl })
+    : null;
   return { snapshot, guestId: sessionGuestId, syncError: null };
+}
+
+/**
+ * POST a single line — no GET /api/cart and no reconcile diff.
+ * Use when adding a variant that is not yet on the remote cart (no local `shopifyLineId`).
+ */
+export async function addCartLineFast(
+  guestId: string | null,
+  variantId: string,
+  quantity: number,
+  localLines: CartLine[],
+  customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
+): Promise<KokobayCartSyncResult | null> {
+  if (!isKokobayWebProductsConfigured()) return null;
+
+  cartFastPathLog('add line started');
+  cartFastPathLog('reconciliation bypassed');
+
+  const sessionGuestId = guestId?.trim() || createGuestId();
+  const email = customerEmail?.trim() || getCartCustomerEmail();
+  const addStart = performance.now();
+  const result = await addItem(sessionGuestId, variantId.trim(), quantity, email);
+  cartFastPathLog(`addItem completed in ${Math.round(performance.now() - addStart)}ms`);
+
+  if (result.error) {
+    return {
+      snapshot: null,
+      guestId: sessionGuestId,
+      syncError: result.error,
+    };
+  }
+
+  const snapshot = result.cart
+    ? snapshotFromCart(result.cart, localLines, { fallbackCheckoutUrl })
+    : null;
+  return { snapshot, guestId: sessionGuestId, syncError: null };
+}
+
+/** Test helper — builds a Shopify snapshot from Koko Bay `/api/cart` JSON. */
+export function buildKokobayCartSnapshotForTest(
+  cart: KokobayCart,
+  existing: CartLine[],
+  options?: { fallbackCheckoutUrl?: string | null },
+): ShopifyCartSnapshot | null {
+  return snapshotFromCart(cart, existing, options);
 }
 
 /**
@@ -478,6 +590,7 @@ export async function syncLocalCartToKokobayWeb(
   guestId: string | null,
   localLines: CartLine[],
   customerEmail?: string,
+  fallbackCheckoutUrl?: string | null,
 ): Promise<KokobayCartSyncResult | null> {
   if (!isKokobayWebProductsConfigured()) return null;
 
@@ -593,7 +706,22 @@ export async function syncLocalCartToKokobayWeb(
     if (fresh) next = fresh;
   }
 
-  const snapshot = snapshotFromCart(next, localLines);
+  const snapshotOptions = {
+    fallbackCheckoutUrl: next.checkoutUrl ?? fallbackCheckoutUrl,
+  };
+  let snapshot = snapshotFromCart(next, localLines, snapshotOptions);
+  if (!snapshot && next) {
+    const refreshStart = performance.now();
+    const fresh = await getCart(sessionGuestId, email);
+    cartPerfLog(
+      `sync snapshot refresh getCart took ${Math.round(performance.now() - refreshStart)}ms`,
+    );
+    if (fresh) {
+      snapshot = snapshotFromCart(fresh, localLines, {
+        fallbackCheckoutUrl: fresh.checkoutUrl ?? fallbackCheckoutUrl,
+      });
+    }
+  }
 
   cartPerfLog(
     `syncLocalCartToKokobayWeb completed in ${Math.round(performance.now() - syncStart)}ms` +

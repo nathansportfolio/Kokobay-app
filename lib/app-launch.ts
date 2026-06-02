@@ -5,6 +5,7 @@ import { APP_HOME_HERO_QUERY_KEY } from '@/constants/app-home-hero-cms';
 import { homeNewInHeroImageUri } from '@/constants/home-hero';
 import { getQueryClient } from '@/hooks/use-query-client';
 import { fetchAppHomeHero } from '@/services/kokobay-web/app-home-hero';
+import { initDeliveryThresholdOnStartup } from '@/services/delivery-threshold';
 import { fetchHomeCatalogData } from '@/services/home-catalog';
 import { useMarketStore } from '@/store/market-preference';
 import { homeHeroDisplayImageUri } from '@/utils/home-hero-image';
@@ -61,7 +62,7 @@ export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
     await Image.prefetch(uri).catch(() => {});
   }
 
-  await prefetchHomeHeroImage();
+  await Promise.all([prefetchHomeHeroImage(), initDeliveryThresholdOnStartup()]);
 
   const cms = queryClient.getQueryData<Awaited<ReturnType<typeof fetchAppHomeHero>>>([
     ...APP_HOME_HERO_QUERY_KEY,

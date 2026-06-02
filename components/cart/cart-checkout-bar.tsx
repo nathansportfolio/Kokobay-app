@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { useCartPricingAuditCheckoutBar } from '@/hooks/use-cart-pricing-audit';
 import { useCallback, useState } from 'react';
 import { Platform, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -92,6 +93,12 @@ export function CartCheckoutBar({
   bottomInset,
 }: Props) {
   const [checkingOut, setCheckingOut] = useState(false);
+
+  useCartPricingAuditCheckoutBar({
+    subtotal,
+    total: merchandiseTotal ?? subtotal,
+    appliedDiscountCount: appliedDiscounts.length,
+  });
 
   const freeDeliveryThreshold =
     freeDeliveryThresholdGbp != null &&

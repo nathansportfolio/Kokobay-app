@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import { recordHydration } from '@/lib/lifecycle-perf';
+
 import { loadSearchHistory, persistSearchHistory } from './search-history-persist';
 
 const MAX_ENTRIES = 14;
@@ -23,6 +25,8 @@ export const useSearchHistoryStore = create<SearchHistoryState>((set, get) => ({
   hasHydrated: false,
 
   hydrate: async () => {
+    if (__DEV__) recordHydration('searchHistory', get().hasHydrated);
+    if (get().hasHydrated) return;
     const loaded = await loadSearchHistory();
     set({ entries: loaded, hasHydrated: true });
   },

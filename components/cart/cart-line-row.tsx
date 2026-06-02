@@ -1,6 +1,8 @@
 import { Link } from 'expo-router';
 import { Minus, Plus, Trash2 } from 'lucide-react-native';
-import { memo, useMemo } from 'react';
+import { logCartAuditLineItem } from '@/lib/cart-pricing-audit';
+import { memo, useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Pressable, View } from 'react-native';
 
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
@@ -10,6 +12,8 @@ import { useProductHref } from '@/hooks/use-product-href';
 import { showToast, useCartStore } from '@/store';
 import type { CartLine } from '@/types/cart';
 import { isLikelyRemoteImageUrl } from '@/utils/catalog-image';
+import { selectIsLineQuantityPricePending } from '@/store/cart';
+import { cartLineStockLabel, isCartLineOverServerSubtotal } from '@/utils/cart-line-stock';
 import { lineSubtotalMoney, resolveCartLineUnitPrice } from '@/utils/cart-line-pricing';
 import { inventoryLimitToast } from '@/utils/cart-inventory';
 import { variantSnapshotValueLines } from '@/utils/cart-display';
@@ -31,6 +35,16 @@ function resolveImageUrl(line: CartLine) {
   return undefined;
 }
 
+function CartLineSubtotal({ line }: { line: CartLine }) {
+  const lineMoney = lineSubtotalMoney(line);
+
+  return (
+    <Text className="font-sans-semibold text-[15px] tracking-tight text-ink">
+      {lineMoney ? formatCartMoney(lineMoney) : '—'}
+    </Text>
+  );
+}
+
 function CartLineRowInner({ line }: CartLineRowProps) {
   const productLink = useProductHref(line.handle);
   const imageUrl = resolveImageUrl(line);
@@ -48,9 +62,25 @@ function CartLineRowInner({ line }: CartLineRowProps) {
   }, [line.variantTitle]);
 
   const unit = resolveCartLineUnitPrice(line);
-  const lineMoney = lineSubtotalMoney(line);
   const atCatalogCap = line.maxQty != null && line.qty >= line.maxQty;
   const atHardCap = line.qty >= 99;
+  const qtySyncPending = useCartStore(selectIsLineQuantityPricePending(line.variantId));
+  const stockLabel = useMemo(() => cartLineStockLabel(line), [line.maxQty, line.qty]);
+  const overServerSubtotal = useCartStore(
+    useShallow((s) =>
+      isCartLineOverServerSubtotal(
+        line,
+        s.lines,
+        s.shopifySubtotal,
+        s.shopifyDiscountCodes,
+      ),
+    ),
+  );
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    logCartAuditLineItem(line);
+  }, [line.variantId, line.qty, line.unitPrice?.amount, line.listUnitPrice?.amount]);
 
   const bumpQty = (delta: number) => {
     hapticLight();
@@ -59,7 +89,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
         useCartStore.getState().removeItem(line.variantId);
         showToast({ variant: 'success', title: 'Removed from Bag' });
       } else {
-        useCartStore.getState().updateQuantity(line.variantId, line.qty - 1);
+        useCartStore.getState().nudgeCartLineQuantity(line.variantId, -1);
       }
       return;
     }
@@ -67,7 +97,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
       if (line.maxQty != null) showToast(inventoryLimitToast(line.maxQty, { kind: 'max' }));
       return;
     }
-    useCartStore.getState().updateQuantity(line.variantId, line.qty + 1);
+    useCartStore.getState().nudgeCartLineQuantity(line.variantId, 1);
   };
 
   return (
@@ -122,6 +152,28 @@ function CartLineRowInner({ line }: CartLineRowProps) {
                     {formatCartMoney(unit)}
                   </Text>
                 ) : null}
+                {stockLabel ? (
+                  <Text
+                    className="mt-2 font-sans-md text-[13px] leading-5 text-amber-900/90"
+                    accessibilityRole="text">
+                    {stockLabel}
+                  </Text>
+                ) : null}
+                {!stockLabel && overServerSubtotal && !qtySyncPending ? (
+                  <Text
+                    className="mt-2 font-sans-md text-[13px] leading-5 text-amber-900/90"
+                    accessibilityRole="text">
+                    Not enough stock for this quantity
+                  </Text>
+                ) : null}
+                {qtySyncPending ? (
+                  <Text
+                    className="mt-2 font-sans text-[13px] leading-5 text-muted"
+                    style={{ color: 'rgba(148, 147, 142, 0.92)' }}
+                    accessibilityRole="text">
+                    Checking availability…
+                  </Text>
+                ) : null}
               </View>
               <Pressable
                 onPress={() => {
@@ -160,13 +212,12 @@ function CartLineRowInner({ line }: CartLineRowProps) {
                 disabled={atHardCap || atCatalogCap}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel="Increase quantity">
+                accessibilityLabel="Increase quantity"
+                accessibilityState={{ disabled: atHardCap || atCatalogCap }}>
                 <Plus size={16} color={palette.ink} {...ICON} />
               </Pressable>
             </View>
-            <Text className="font-sans-semibold text-[15px] tracking-tight text-ink">
-              {lineMoney ? formatCartMoney(lineMoney) : '—'}
-            </Text>
+            <CartLineSubtotal line={line} />
           </View>
         </View>
       </View>
@@ -185,5 +236,8 @@ export const CartLineRow = memo(
     prev.line.imageUrl === next.line.imageUrl &&
     prev.line.unitPrice?.amount === next.line.unitPrice?.amount &&
     prev.line.unitPrice?.currencyCode === next.line.unitPrice?.currencyCode &&
+    prev.line.listUnitPrice?.amount === next.line.listUnitPrice?.amount &&
+    prev.line.listUnitPrice?.currencyCode === next.line.listUnitPrice?.currencyCode &&
+    prev.line.shopifyLineId === next.line.shopifyLineId &&
     prev.line.maxQty === next.line.maxQty,
 );

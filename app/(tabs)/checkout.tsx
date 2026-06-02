@@ -13,6 +13,7 @@ import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
 import { gtmCartValue, trackPurchase } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
+import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { ensureCartSyncedForCheckout, showToast, useAuthStore, useCartStore } from '@/store';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 import { accountAuthRoute } from '@/utils/account-navigation';
@@ -36,6 +37,7 @@ function resolveCheckoutUrl(
 }
 
 export default function CheckoutScreen() {
+  useLifecycleRenderCount('checkout');
   const router = useRouter();
   const { url: urlParam } = useLocalSearchParams<{ url?: string }>();
   const checkoutUrlFromStore = useCartStore((s) => s.checkoutUrl);

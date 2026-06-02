@@ -6,28 +6,119 @@ import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { persistCustomerSessionCookie } from '@/services/kokobay-web/customer-session';
 import type { AuthSession, AuthUser } from '@/types/auth';
 
+import { recordHydration } from '@/lib/lifecycle-perf';
 import { trackLogin, trackSignUp } from '@/lib/gtm';
-import { registerPushNotifications, unregisterPushNotifications } from '@/lib/pushNotifications';
+import {
+  pausePushRegistrationForSignOut,
+  registerPushNotifications,
+  resumePushRegistrationAfterSignOut,
+  unregisterPushNotifications,
+} from '@/lib/pushNotifications';
+import { teardownUserQueriesOnSignOut } from '@/lib/sign-out-query-teardown';
+import {
+  beginSignOutPerfRun,
+  finishSignOutPerfRun,
+  logSignOutPerf,
+  markSignOutPerf,
+} from '@/lib/sign-out-perf';
 import { invalidateMarketingConsentCache } from '@/services/kokobay-web/marketing-consent';
 
 import { loadPersistedSession, persistSession } from './auth-persist';
-import { refreshAppBenefitsInBackground, useAppBenefitsStore } from './app-benefits';
-import { flushCartSync } from './cart';
+import {
+  cancelAppBenefitsBackgroundRefresh,
+  refreshAppBenefitsInBackground,
+  useAppBenefitsStore,
+} from './app-benefits';
+import { clearRemoteCartInBackground, flushCartSync, resetCartForSignOut } from './cart';
 
-/** Sync guest cart to the new account, load benefits, then auto-apply first-order discount. */
+/** Attach session immediately; merge guest cart + benefits in the background (non-blocking UI). */
 async function completeAuthenticatedCartSetup(session: AuthSession): Promise<void> {
   const discount = await import('@/services/cart/auto-first-app-order-discount');
   discount.resetFirstAppOrderDiscountAutoApplyState();
   useAppBenefitsStore.getState().clear();
-
   useAuthStore.getState().setSession(session);
 
-  await flushCartSync(session.user.email);
-  await useAppBenefitsStore.getState().refresh(session.accessToken, {
-    force: true,
-    applyDiscount: false,
-  });
-  await discount.maybeAutoApplyFirstAppOrderDiscountAsync(session.user.email);
+  void (async () => {
+    try {
+      await flushCartSync(session.user.email);
+      await useAppBenefitsStore.getState().refresh(session.accessToken, {
+        force: true,
+        applyDiscount: false,
+      });
+      await discount.maybeAutoApplyFirstAppOrderDiscountAsync(session.user.email);
+    } catch {
+      /* Cart/benefits setup is best-effort; checkout calls ensureCartSyncedForCheckout. */
+    }
+  })();
+}
+
+type SignOutOptions = {
+  /** Skip `POST /api/customer/auth/logout` (account already deleted server-side). */
+  skipServerLogout?: boolean;
+};
+
+/**
+ * Clear local session + bag immediately; push/unregister and remote cart clear run in background.
+ * Wishlist is untouched (separate store).
+ */
+function performSignOut(options: SignOutOptions = {}): void {
+  const perfRunId = beginSignOutPerfRun();
+  const email = useAuthStore.getState().user?.email;
+  const accessToken = useAuthStore.getState().accessToken;
+
+  pausePushRegistrationForSignOut();
+  teardownUserQueriesOnSignOut();
+  markSignOutPerf('user_queries_cancelled');
+
+  const serverLogoutPromise =
+    !options.skipServerLogout && accessToken?.trim() ?
+      getAuthService()
+        .logout()
+        .catch(() => {})
+    : Promise.resolve();
+
+  resetCartForSignOut();
+  cancelAppBenefitsBackgroundRefresh();
+  useAppBenefitsStore.getState().clear();
+  void import('@/services/cart/auto-first-app-order-discount')
+    .then((mod) => {
+      mod.resetFirstAppOrderDiscountAutoApplyState();
+    })
+    .catch(() => {});
+  invalidateMarketingConsentCache();
+  useAuthStore.getState().clearSession();
+  markSignOutPerf('auth_state_cleared');
+
+  void (async () => {
+    try {
+      const pushStart = performance.now();
+      await unregisterPushNotifications(email).catch(() => {});
+      logSignOutPerf('push_unregister_complete', {
+        ms: Math.round(performance.now() - pushStart),
+      });
+
+      const logoutStart = performance.now();
+      await serverLogoutPromise;
+      logSignOutPerf('server_logout_complete', {
+        ms: Math.round(performance.now() - logoutStart),
+      });
+
+      const cartStart = performance.now();
+      await clearRemoteCartInBackground();
+      logSignOutPerf('cart_clear_complete', {
+        ms: Math.round(performance.now() - cartStart),
+      });
+    } finally {
+      resumePushRegistrationAfterSignOut();
+      const guestPushStart = performance.now();
+      const guestPush = await registerPushNotifications();
+      logSignOutPerf('push_guest_register_complete', {
+        ms: Math.round(performance.now() - guestPushStart),
+        skipped: Boolean(guestPush.ok && guestPush.skipped),
+      });
+      finishSignOutPerfRun(perfRunId);
+    }
+  })();
 }
 
 type AuthState = {
@@ -52,6 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hasHydrated: false,
 
   hydrate: async () => {
+    if (__DEV__) recordHydration('auth', get().hasHydrated);
     if (get().hasHydrated) return;
 
     const restored: RestoreSessionResult = await getAuthService().restoreSession();
@@ -63,6 +155,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasHydrated: true,
       });
       refreshAppBenefitsInBackground(restored.session.accessToken);
+      void flushCartSync(restored.session.user.email);
       return;
     }
 
@@ -72,6 +165,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (local) {
         set({ user: local.user, accessToken: local.accessToken, hasHydrated: true });
         refreshAppBenefitsInBackground(local.accessToken);
+        void flushCartSync(local.user.email);
         return;
       }
       set({ user: null, accessToken: null, hasHydrated: true });
@@ -91,6 +185,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session) {
         set({ user: session.user, accessToken: session.accessToken, hasHydrated: true });
         refreshAppBenefitsInBackground(session.accessToken);
+        void flushCartSync(session.user.email);
       } else {
         set({ user: null, accessToken: null, hasHydrated: true });
       }
@@ -137,33 +232,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   requestPasswordReset: (email) => getAuthService().requestPasswordReset(email),
 
   logout: async () => {
-    const email = get().user?.email;
-    await unregisterPushNotifications(email);
-    await getAuthService().logout();
-    invalidateMarketingConsentCache();
-    void import('@/services/cart/auto-first-app-order-discount')
-      .then((mod) => {
-        mod.resetFirstAppOrderDiscountAutoApplyState();
-      })
-      .catch(() => {});
-    useAppBenefitsStore.getState().clear();
-    get().clearSession();
-    await flushCartSync();
+    performSignOut();
   },
 
   clearSessionAfterAccountDeletion: async () => {
-    const email = get().user?.email;
-    await unregisterPushNotifications(email);
-    invalidateMarketingConsentCache();
-    void import('@/services/cart/auto-first-app-order-discount')
-      .then((mod) => {
-        mod.resetFirstAppOrderDiscountAutoApplyState();
-      })
-      .catch(() => {});
-    useAppBenefitsStore.getState().clear();
     await persistCustomerSessionCookie(null);
-    get().clearSession();
-    await flushCartSync();
+    performSignOut({ skipServerLogout: true });
   },
 }));
 

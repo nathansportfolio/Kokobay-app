@@ -132,7 +132,7 @@ async function ensureFirstAppOrderEligibilityLoaded(): Promise<boolean | null> {
     return null;
   }
 
-  const result = await fetchCustomerAppBenefits(token);
+  const result = await fetchCustomerAppBenefits(sessionToken);
   if (result.ok) {
     useAppBenefitsStore.setState({
       isFirstAppOrder: result.benefits.isFirstAppOrder,

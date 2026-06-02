@@ -98,6 +98,14 @@ export function refreshAppBenefitsInBackground(
   void useAppBenefitsStore.getState().refresh(sessionToken, options);
 }
 
+/** Cancel debounced benefits refresh (e.g. sign-out). */
+export function cancelAppBenefitsBackgroundRefresh(): void {
+  if (cartRefreshTimer) {
+    clearTimeout(cartRefreshTimer);
+    cartRefreshTimer = null;
+  }
+}
+
 /** Debounced refresh when cart lines change — avoids hammering the API. */
 export function scheduleAppBenefitsRefreshOnCartChange(sessionToken?: string | null): void {
   if (useAppBenefitsStore.getState().isFirstAppOrder === null) {

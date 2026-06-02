@@ -3,32 +3,57 @@ import { AppState } from 'react-native';
 
 import type { ShopifyCartSnapshot } from '@/services/shopify/cart';
 import { isRemoteCartConfigured, usesKokobayCartProxy } from '@/services/cart/remote-cart';
-import { patchCartQuantityFast, syncLocalCartToRemote } from '@/services/cart/sync';
+import { clearRemoteKokobayCart } from '@/services/kokobay-web/cart';
+import {
+  patchCartQuantityFast,
+  postCartAddLineFast,
+  syncLocalCartToRemote,
+} from '@/services/cart/sync';
 import { cartCoalesceLog } from '@/lib/cart-coalesce-log';
-import { cartPerfLog } from '@/lib/cart-perf-log';
+import { recordHydration } from '@/lib/lifecycle-perf';
+import {
+  cartPerfLog,
+  cartResumeSyncCompleted,
+  cartResumeSyncEvaluated,
+  cartResumeSyncSkipped,
+  cartResumeSyncStarted,
+  cartSyncTrace,
+  logCartSyncRevisionState,
+  logFastAddSuccess,
+  noteUnexpectedFullSyncAfterFastAdd,
+} from '@/lib/cart-perf-log';
+import {
+  decideCartForegroundResumeSync,
+  type CartResumeSyncDecision,
+} from '@/store/cart-resume-sync';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { trackRemoveFromCart } from '@/lib/gtm';
 import { showToast } from '@/store/toast';
 import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { clampCartQuantity, inventoryLimitToast, resolveQuantityCap } from '@/utils/cart-inventory';
-import {
-  ensureDeliveryThresholdLoaded,
-  getDeliveryThresholdGbpSync,
-} from '@/services/delivery-threshold';
+import { getDeliveryThresholdGbpSync } from '@/services/delivery-threshold';
 import {
   computeCartSubtotal,
   computeEstimatedTotal,
   computeShippingEstimate,
 } from '@/utils/cart-totals';
 import { hasCartLinePricing } from '@/utils/cart-line-pricing';
+import { reconcileLinesWithSnapshotSubtotal } from '@/utils/cart-line-stock';
 import { cartSyncErrorToast } from '@/utils/cart-sync-messages';
+import {
+  buildCartPricingAuditZustand,
+  logCartAuditOptimisticUpdate,
+  logCartAuditPricingSelector,
+  logCartAuditShopifyCart,
+  logCartAuditZustandState,
+  type CartPricingAuditRevision,
+} from '@/lib/cart-pricing-audit';
 import {
   deriveAppliedDiscountsFromCart,
   type CartAppliedDiscount,
 } from '@/utils/cart-cost-breakdown';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
-
 import { CART_SYNC_DEBOUNCE_MS, createCartSyncScheduler } from './cart-sync-scheduler';
 import { logAppFirstOrder } from '@/services/cart/app-first-order-log';
 import {
@@ -44,6 +69,10 @@ import {
   persistCartLines,
   persistShopifyCartId,
 } from './cart-persist';
+
+function cartLinesMatchVariant(line: CartLine, variantId: string): boolean {
+  return shopifyVariantKey(line.variantId) === shopifyVariantKey(variantId);
+}
 
 export type { CartDiscountCode } from '@/types/cart';
 
@@ -129,22 +158,20 @@ function optimisticCartTotals(lines: CartLine[]): {
   };
 }
 
-function refreshOptimisticCartTotalsAfterThresholdLoad(): void {
-  const { lines, shopifyTotalTax, shopifyDiscountCodes } = useCartStore.getState();
-  if (hasCartDiscountCodes(shopifyDiscountCodes)) return;
-  const totals = optimisticCartTotals(lines);
-  if (!totals) return;
-  useCartStore.setState({
-    shopifySubtotal: totals.shopifySubtotal,
-    shopifyTotal: totals.shopifyTotal,
-    shopifyTotalTax,
-  });
+/** Debounced remote sync for +/- qty (optimistic qty is still immediate). */
+const qtyChangeSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function markQuantitySyncPending(
+  pending: Record<string, true>,
+  variantId: string,
+): Record<string, true> {
+  const key = variantId.trim();
+  if (!key || pending[key]) return pending;
+  return { ...pending, [key]: true };
 }
 
-function requestDeliveryThresholdForCartEdits(): void {
-  void ensureDeliveryThresholdLoaded().then(() => {
-    refreshOptimisticCartTotalsAfterThresholdLoad();
-  });
+function clearAllQuantitySyncPending(): Record<string, true> {
+  return {};
 }
 
 function mergeCartLines(disk: CartLine[], memory: CartLine[]): CartLine[] {
@@ -187,7 +214,7 @@ function mergeSyncedCartLines(
       listUnitPrice: line.listUnitPrice ?? line.unitPrice,
       unitPrice: synced.unitPrice ?? line.unitPrice,
     };
-    if (options?.learnInventoryCap) {
+    if (synced.qty < line.qty || options?.learnInventoryCap) {
       next.maxQty = mergeMaxQty(line.maxQty, synced.qty);
     }
     return next;
@@ -225,6 +252,8 @@ type CartState = {
   displayAppliedDiscounts: CartAppliedDiscount[];
   isSyncingShopify: boolean;
   pendingCartSync: boolean;
+  /** Line variant ids with a qty mutation awaiting remote cart pricing. */
+  quantitySyncPendingByVariantId: Record<string, true>;
   hasHydrated: boolean;
   hydrate: () => Promise<void>;
   syncWithShopify: (customerEmail?: string) => Promise<void>;
@@ -233,6 +262,8 @@ type CartState = {
   addToBag: (params: AddToCartInput) => void;
   removeItem: (variantId: string) => void;
   updateQuantity: (variantId: string, qty: number) => void;
+  /** +/- stepper — reads latest qty from store so rapid taps debounce correctly. */
+  nudgeCartLineQuantity: (variantId: string, delta: number) => void;
   clear: () => void;
   applyRemoteSnapshot: (snapshot: ShopifyCartSnapshot, reconciledLines?: CartLine[]) => void;
 };
@@ -259,7 +290,14 @@ type CartPricingForDisplayState = Pick<
   | 'reservedDiscountPricing'
   | 'pendingCartSync'
   | 'isSyncingShopify'
+  | 'quantitySyncPendingByVariantId'
 >;
+
+function hasQuantitySyncPending(
+  pending: Record<string, true>,
+): boolean {
+  return Object.keys(pending).length > 0;
+}
 
 let cartPricingForDisplayCache: CartPricingForDisplay | null = null;
 
@@ -294,42 +332,125 @@ function cartPricingForDisplayEqual(a: CartPricingForDisplay, b: CartPricingForD
 }
 
 /** Keep last API discount pricing visible while cart sync is in flight. */
-function computeCartPricingForDisplay(state: CartPricingForDisplayState): CartPricingForDisplay {
-  if ((state.pendingCartSync || state.isSyncingShopify) && state.reservedDiscountPricing) {
+function computeCartPricingForDisplay(
+  state: CartPricingForDisplayState,
+): { pricing: CartPricingForDisplay; selectorPath: 'reserved_during_sync' | 'live_state' } {
+  const qtySyncPending = hasQuantitySyncPending(state.quantitySyncPendingByVariantId);
+  if (
+    (state.pendingCartSync || state.isSyncingShopify) &&
+    state.reservedDiscountPricing &&
+    !qtySyncPending
+  ) {
     const reserved = state.reservedDiscountPricing;
     return {
-      ...reserved,
-      shopifyDiscountCodes: mergeCartDiscountCodes(
-        state.shopifyDiscountCodes,
-        reserved.shopifyDiscountCodes,
-      ),
-      shopifyCartDiscountAmount:
-        pickDiscountAmount(state.shopifyCartDiscountAmount, reserved.shopifyCartDiscountAmount) ??
-        state.shopifyCartDiscountAmount ??
-        reserved.shopifyCartDiscountAmount ??
-        null,
+      selectorPath: 'reserved_during_sync',
+      pricing: {
+        ...reserved,
+        shopifyDiscountCodes: mergeCartDiscountCodes(
+          state.shopifyDiscountCodes,
+          reserved.shopifyDiscountCodes,
+        ),
+        shopifyCartDiscountAmount:
+          pickDiscountAmount(state.shopifyCartDiscountAmount, reserved.shopifyCartDiscountAmount) ??
+          state.shopifyCartDiscountAmount ??
+          reserved.shopifyCartDiscountAmount ??
+          null,
+      },
     };
   }
   return {
-    shopifySubtotal: state.shopifySubtotal,
-    shopifyTotal: state.shopifyTotal,
-    shopifyTotalTax: state.shopifyTotalTax,
-    shopifyDiscountCodes: state.shopifyDiscountCodes,
-    shopifyCartDiscountAmount: state.shopifyCartDiscountAmount,
-    shopifyLineMerchandiseSubtotal: state.shopifyLineMerchandiseSubtotal,
-    shopifyLineMerchandiseTotal: state.shopifyLineMerchandiseTotal,
+    selectorPath: 'live_state',
+    pricing: {
+      shopifySubtotal: state.shopifySubtotal,
+      shopifyTotal: state.shopifyTotal,
+      shopifyTotalTax: state.shopifyTotalTax,
+      shopifyDiscountCodes: state.shopifyDiscountCodes,
+      shopifyCartDiscountAmount: state.shopifyCartDiscountAmount,
+      shopifyLineMerchandiseSubtotal: state.shopifyLineMerchandiseSubtotal,
+      shopifyLineMerchandiseTotal: state.shopifyLineMerchandiseTotal,
+    },
   };
+}
+
+let lastCartPricingSelectorAuditKey = '';
+
+function auditCartPricingSelector(
+  state: CartPricingForDisplayState,
+  next: CartPricingForDisplay,
+  selectorPath: 'reserved_during_sync' | 'live_state',
+): void {
+  if (!__DEV__) return;
+  const auditKey = [
+    selectorPath,
+    state.pendingCartSync,
+    state.isSyncingShopify,
+    state.shopifySubtotal?.amount,
+    state.shopifyTotal?.amount,
+    state.reservedDiscountPricing?.shopifySubtotal?.amount,
+    next.shopifySubtotal?.amount,
+    next.shopifyTotal?.amount,
+  ].join('|');
+  if (auditKey === lastCartPricingSelectorAuditKey) return;
+  lastCartPricingSelectorAuditKey = auditKey;
+
+  logCartAuditPricingSelector({
+    revision: getCartRevisionSnapshot(),
+    pendingCartSync: state.pendingCartSync,
+    isSyncingShopify: state.isSyncingShopify,
+    hasReservedDiscountPricing: Boolean(state.reservedDiscountPricing),
+    raw: {
+      shopifySubtotal: state.shopifySubtotal,
+      shopifyTotal: state.shopifyTotal,
+      shopifyTotalTax: state.shopifyTotalTax,
+      shopifyLineMerchandiseSubtotal: state.shopifyLineMerchandiseSubtotal,
+      shopifyLineMerchandiseTotal: state.shopifyLineMerchandiseTotal,
+    },
+    reserved: state.reservedDiscountPricing
+      ? {
+          shopifySubtotal: state.reservedDiscountPricing.shopifySubtotal,
+          shopifyTotal: state.reservedDiscountPricing.shopifyTotal,
+        }
+      : null,
+    output: next,
+    selectorPath,
+  });
 }
 
 /**
  * Derived cart pricing for the bag screen. Returns a stable object reference when values
  * are unchanged so React 19 / useSyncExternalStore do not loop on new snapshots.
  */
+const lineQuantityPricePendingSelectorCache = new Map<
+  string,
+  (state: Pick<CartState, 'quantitySyncPendingByVariantId'>) => boolean
+>();
+
+export function selectIsLineQuantityPricePending(variantId: string) {
+  const key = variantId.trim();
+  if (!key) {
+    return (state: Pick<CartState, 'quantitySyncPendingByVariantId'>) => false;
+  }
+  let selector = lineQuantityPricePendingSelectorCache.get(key);
+  if (!selector) {
+    selector = (state) => Boolean(state.quantitySyncPendingByVariantId[key]);
+    lineQuantityPricePendingSelectorCache.set(key, selector);
+  }
+  return selector;
+}
+
+/** True while a qty change is awaiting confirmed line/checkout pricing (not login cart merge). */
+export function selectIsCartCheckoutPricingPending(
+  state: Pick<CartState, 'quantitySyncPendingByVariantId'>,
+): boolean {
+  return Object.keys(state.quantitySyncPendingByVariantId).length > 0;
+}
+
 export function selectCartPricingForDisplay(state: CartPricingForDisplayState): CartPricingForDisplay {
-  const next = computeCartPricingForDisplay(state);
+  const { pricing: next, selectorPath } = computeCartPricingForDisplay(state);
   if (cartPricingForDisplayCache && cartPricingForDisplayEqual(cartPricingForDisplayCache, next)) {
     return cartPricingForDisplayCache;
   }
+  auditCartPricingSelector(state, next, selectorPath);
   cartPricingForDisplayCache = next;
   return next;
 }
@@ -337,16 +458,31 @@ export function selectCartPricingForDisplay(state: CartPricingForDisplayState): 
 let cartRevision = 0;
 /** Revision last successfully pushed to Shopify — skips no-op syncs on resume. */
 let lastSyncedRevision = 0;
+
+export function getCartRevisionSnapshot(): CartPricingAuditRevision {
+  return {
+    cartRevision,
+    lastSyncedRevision,
+    isCartDirty: cartRevision !== lastSyncedRevision,
+  };
+}
+/** Timestamp of last successful remote sync (revision matched). */
+let lastSuccessfulCartSyncAtMs = 0;
 let forceNextSync = false;
 let activeSyncGeneration = 0;
 /** Variant ids queued for debounced PATCH-only quantity sync (Koko Bay proxy). */
 const pendingFastQuantityVariantIds = new Set<string>();
+/** Variant ids queued for POST /api/cart/items — new lines without `shopifyLineId`. */
+const pendingFastAddVariantIds = new Set<string>();
+
+type CartNetworkSyncKind = 'full' | 'fast' | 'fast_add';
 
 let cartNetworkChain: Promise<void> = Promise.resolve();
 let cartNetworkQueueDepth = 0;
 let cartNetworkMaxQueueDepth = 0;
 let cartSyncRunnerInFlight = false;
 let cartSyncFollowUpPending = false;
+let cartNetworkSyncInFlight: Promise<void> | null = null;
 let debounceRevisionBaseline = 0;
 let debounceCoalescedUpdates = 0;
 let cartSyncCount = 0;
@@ -368,7 +504,7 @@ function enqueueCartNetwork(task: () => Promise<void>): Promise<void> {
 }
 
 function noteSyncScheduled(): void {
-  if (cartSyncScheduler.isDebouncePending() || fastQuantityScheduler.isDebouncePending()) {
+  if (cartSyncScheduler.isDebouncePending()) {
     const delta = cartRevision - debounceRevisionBaseline;
     if (delta > 0) {
       debounceCoalescedUpdates += delta;
@@ -379,23 +515,105 @@ function noteSyncScheduled(): void {
   }
 }
 
-async function runCartNetworkSync(
-  kind: 'full' | 'fast',
-  customerEmail?: string,
-): Promise<void> {
-  if (cartSyncRunnerInFlight) {
-    cartSyncFollowUpPending = true;
-    cartCoalesceLog('pending sync detected');
-    return;
+function recordCartSyncSuccess(): void {
+  lastSuccessfulCartSyncAtMs = Date.now();
+}
+
+function cartResumeSyncLogPayload(
+  extra?: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    isCartDirty: isCartDirty(),
+    cartRevision,
+    lastSyncedRevision,
+    lastSyncAgeMs:
+      lastSuccessfulCartSyncAtMs > 0 ? Date.now() - lastSuccessfulCartSyncAtMs : null,
+    ...extra,
+  };
+}
+
+function hasPendingLocalCartMutations(): boolean {
+  const state = useCartStore.getState();
+  return (
+    state.pendingCartSync ||
+    state.isSyncingShopify ||
+    pendingFastQuantityVariantIds.size > 0 ||
+    Object.keys(state.quantitySyncPendingByVariantId).length > 0 ||
+    cartSyncScheduler.isDebouncePending()
+  );
+}
+
+function buildCartForegroundResumeDecision(): CartResumeSyncDecision {
+  return decideCartForegroundResumeSync({
+    isCartDirty: isCartDirty(),
+    cartRevision,
+    lastSyncedRevision,
+    lastSyncAgeMs:
+      lastSuccessfulCartSyncAtMs > 0 ? Date.now() - lastSuccessfulCartSyncAtMs : null,
+    hasPendingMutations: hasPendingLocalCartMutations(),
+  });
+}
+
+function applyForegroundResumeSkipSideEffects(reason: string): void {
+  if (reason !== 'stale_pending_flags_recently_synced') return;
+  cartSyncScheduler.cancelDebounce();
+  finalizePendingCartSync();
+}
+
+let cachedForegroundResumeGate: boolean | null = null;
+let cachedForegroundResumeGateMs = 0;
+
+function shouldForegroundResumeCartSync(): boolean {
+  const now = Date.now();
+  if (cachedForegroundResumeGate !== null && now - cachedForegroundResumeGateMs < 250) {
+    return cachedForegroundResumeGate;
   }
 
+  const decision = buildCartForegroundResumeDecision();
+  cartResumeSyncEvaluated({
+    ...cartResumeSyncLogPayload(),
+    reason: decision.reason,
+    skip: decision.skip,
+    hasPendingMutations: decision.hasPendingMutations,
+  });
+
+  if (decision.skip) {
+    applyForegroundResumeSkipSideEffects(decision.reason);
+    cartResumeSyncSkipped({
+      ...cartResumeSyncLogPayload(),
+      reason: decision.reason,
+    });
+    cachedForegroundResumeGate = false;
+    cachedForegroundResumeGateMs = now;
+    return false;
+  }
+
+  if (!isCartDirty()) {
+    cartResumeSyncSkipped({
+      ...cartResumeSyncLogPayload(),
+      reason: 'should_sync_false',
+    });
+    cachedForegroundResumeGate = false;
+    cachedForegroundResumeGateMs = now;
+    return false;
+  }
+
+  cachedForegroundResumeGate = true;
+  cachedForegroundResumeGateMs = now;
+  return true;
+}
+
+async function runCartNetworkSyncBody(
+  kind: CartNetworkSyncKind,
+  customerEmail?: string,
+): Promise<void> {
   cartSyncRunnerInFlight = true;
   let passes = 0;
 
   try {
     do {
       passes += 1;
-      if (passes > 2) break;
+      if (passes > 4) break;
 
       if (debounceCoalescedUpdates > 0) {
         cartCoalesceLog(`coalesced ${debounceCoalescedUpdates} updates`);
@@ -405,8 +623,15 @@ async function runCartNetworkSync(
 
       cartSyncFollowUpPending = false;
       const syncStart = performance.now();
+      cartResumeSyncStarted({
+        ...cartResumeSyncLogPayload(),
+        kind,
+        coalesced: debounceCoalescedUpdates,
+      });
 
-      if (kind === 'fast' && pendingFastQuantityVariantIds.size > 0) {
+      if (kind === 'fast_add') {
+        await syncAddFast(customerEmail);
+      } else if (kind === 'fast') {
         await syncQuantityFast(customerEmail);
       } else {
         await useCartStore.getState().syncWithShopify(customerEmail);
@@ -414,11 +639,22 @@ async function runCartNetworkSync(
 
       const durationMs = Math.round(performance.now() - syncStart);
       cartCoalesceLog(`sync duration ${durationMs}ms`);
+      cartResumeSyncCompleted({
+        ...cartResumeSyncLogPayload(),
+        kind,
+        duration_ms: durationMs,
+      });
       cartSyncCount += 1;
       cartSyncTotalDurationMs += durationMs;
 
       if (cartSyncFollowUpPending && isCartDirty()) {
         cartCoalesceLog('pending sync detected');
+        cartSyncTrace('follow_up_full_sync', {
+          reason: 'cartSyncFollowUpPending_and_dirty',
+          cartRevision,
+          lastSyncedRevision,
+          priorKind: kind,
+        });
         kind = 'full';
         continue;
       }
@@ -426,6 +662,39 @@ async function runCartNetworkSync(
     } while (true);
   } finally {
     cartSyncRunnerInFlight = false;
+  }
+}
+
+async function runCartNetworkSync(
+  kind: CartNetworkSyncKind,
+  customerEmail?: string,
+): Promise<void> {
+  for (;;) {
+    if (cartNetworkSyncInFlight) {
+      cartCoalesceLog('await in-flight cart sync');
+      await cartNetworkSyncInFlight;
+      if (!isCartDirty()) return;
+      cartCoalesceLog('cart still dirty after in-flight sync — running follow-up');
+      cartSyncTrace('follow_up_full_sync', {
+        reason: 'dirty_after_in_flight_sync',
+        cartRevision,
+        lastSyncedRevision,
+        priorKind: kind,
+      });
+      kind = 'full';
+      continue;
+    }
+
+    const run = runCartNetworkSyncBody(kind, customerEmail);
+    cartNetworkSyncInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (cartNetworkSyncInFlight === run) {
+        cartNetworkSyncInFlight = null;
+      }
+    }
+    return;
   }
 }
 
@@ -452,51 +721,177 @@ function isCartDirty(): boolean {
 function isCartSyncPending(): boolean {
   return (
     cartSyncScheduler.isDebouncePending() ||
-    fastQuantityScheduler.isDebouncePending() ||
-    pendingFastQuantityVariantIds.size > 0
+    pendingFastQuantityVariantIds.size > 0 ||
+    pendingFastAddVariantIds.size > 0
   );
 }
 
+function resolveCartSyncKind(caller: string): CartNetworkSyncKind {
+  let kind: CartNetworkSyncKind = 'full';
+  if (isCartDirty()) {
+    if (pendingFastAddVariantIds.size > 0) {
+      kind = 'fast_add';
+    } else if (pendingFastQuantityVariantIds.size > 0) {
+      kind = 'fast';
+    }
+  }
+
+  if (kind === 'full') {
+    noteUnexpectedFullSyncAfterFastAdd(caller, {
+      isCartDirty: isCartDirty(),
+      cartRevision,
+      lastSyncedRevision,
+      debouncePending: cartSyncScheduler.isDebouncePending(),
+    });
+  }
+
+  cartSyncTrace('resolve_cart_sync_kind', {
+    caller,
+    kind,
+    pendingFastAddCount: pendingFastAddVariantIds.size,
+    pendingFastAddVariantIds: [...pendingFastAddVariantIds],
+    pendingFastQuantityCount: pendingFastQuantityVariantIds.size,
+    pendingFastVariantIds: [...pendingFastQuantityVariantIds],
+    isCartDirty: isCartDirty(),
+    cartRevision,
+    lastSyncedRevision,
+  });
+  return kind;
+}
+
+/** Single debounce queue + one AppState listener for foreground resume. */
 const cartSyncScheduler = createCartSyncScheduler(
   async (customerEmail) => {
-    await enqueueCartNetwork(() => runCartNetworkSync('full', customerEmail));
-  },
-  { shouldSync: isCartDirty, debounceMs: CART_SYNC_DEBOUNCE_MS },
-);
-
-const fastQuantityScheduler = createCartSyncScheduler(
-  async (customerEmail) => {
-    await enqueueCartNetwork(() => runCartNetworkSync('fast', customerEmail));
+    await enqueueCartNetwork(() =>
+      runCartNetworkSync(resolveCartSyncKind('cart_sync_scheduler'), customerEmail),
+    );
   },
   {
-    shouldSync: () => pendingFastQuantityVariantIds.size > 0 && isCartDirty(),
+    shouldSync: isCartDirty,
+    shouldForegroundResume: shouldForegroundResumeCartSync,
     debounceMs: CART_SYNC_DEBOUNCE_MS,
+    lifecycleListenerId: 'cart-sync-scheduler',
   },
 );
 
 function finalizePendingCartSync(): void {
   const { isSyncingShopify } = useCartStore.getState();
   if (!isSyncingShopify && !isCartSyncPending()) {
-    useCartStore.setState({ pendingCartSync: false });
+    useCartStore.setState({
+      pendingCartSync: false,
+      quantitySyncPendingByVariantId: clearAllQuantitySyncPending(),
+    });
   }
 }
 
-function scheduleSync(): void {
+function scheduleSync(source: string): void {
+  cartSyncTrace('schedule_sync_called', {
+    source,
+    isCartDirty: isCartDirty(),
+    cartRevision,
+    lastSyncedRevision,
+    debouncePending: cartSyncScheduler.isDebouncePending(),
+  });
   if (!isRemoteCartConfigured() || !isCartDirty()) return;
   noteSyncScheduled();
-  pendingFastQuantityVariantIds.clear();
-  fastQuantityScheduler.cancelDebounce();
+  if (!cartSyncRunnerInFlight) {
+    pendingFastQuantityVariantIds.clear();
+    pendingFastAddVariantIds.clear();
+  }
   useCartStore.setState({ pendingCartSync: true });
   cartSyncScheduler.scheduleSync();
+}
+
+function scheduleFastAddSync(variantId: string): void {
+  if (!isRemoteCartConfigured() || !isCartDirty()) return;
+  const key = variantId.trim();
+  if (!key) return;
+  noteSyncScheduled();
+  pendingFastAddVariantIds.add(key);
+  useCartStore.setState({ pendingCartSync: true });
+  cartSyncScheduler.cancelDebounce();
+  void cartSyncScheduler.flushSync();
+}
+
+function flushFastQuantitySyncForVariant(variantId: string): void {
+  if (!isRemoteCartConfigured() || !isCartDirty()) return;
+  const key = variantId.trim();
+  if (!key) return;
+  noteSyncScheduled();
+  pendingFastAddVariantIds.delete(key);
+  pendingFastQuantityVariantIds.add(key);
+  useCartStore.setState({ pendingCartSync: true });
+  cartSyncScheduler.cancelDebounce();
+  void cartSyncScheduler.flushSync();
 }
 
 function scheduleFastQuantitySync(variantId: string): void {
   if (!isRemoteCartConfigured() || !isCartDirty()) return;
   noteSyncScheduled();
   pendingFastQuantityVariantIds.add(variantId);
-  cartSyncScheduler.cancelDebounce();
   useCartStore.setState({ pendingCartSync: true });
-  fastQuantityScheduler.scheduleSync();
+  cartSyncScheduler.scheduleSync();
+}
+
+function cancelQtyChangeSyncTimer(variantId: string): void {
+  const key = variantId.trim();
+  const timer = qtyChangeSyncTimers.get(key);
+  if (timer) clearTimeout(timer);
+  qtyChangeSyncTimers.delete(key);
+}
+
+function cancelAllQtyChangeSyncTimers(): void {
+  for (const timer of qtyChangeSyncTimers.values()) {
+    clearTimeout(timer);
+  }
+  qtyChangeSyncTimers.clear();
+}
+
+/** Run PATCH/full sync immediately (decreases, checkout, post-debounce increases). */
+function flushQuantitySyncForVariant(variantId: string): void {
+  if (!isRemoteCartConfigured() || !isCartDirty()) return;
+
+  const line = useCartStore
+    .getState()
+    .lines.find((l) => cartLinesMatchVariant(l, variantId));
+  const qty = line?.qty ?? 0;
+
+  noteSyncScheduled();
+  useCartStore.setState((s) => ({
+    pendingCartSync: true,
+    quantitySyncPendingByVariantId: markQuantitySyncPending(
+      s.quantitySyncPendingByVariantId,
+      variantId,
+    ),
+  }));
+
+  if (canFastPathQuantitySync(line, qty)) {
+    pendingFastQuantityVariantIds.add(variantId);
+    cartSyncScheduler.cancelDebounce();
+    void cartSyncScheduler.flushSync();
+    return;
+  }
+
+  pendingFastQuantityVariantIds.clear();
+  void cartSyncScheduler.flushSync();
+}
+
+/** Coalesce rapid +/- taps — one network sync 500ms after the last change. */
+function scheduleDebouncedQuantitySync(variantId: string): void {
+  if (!isRemoteCartConfigured()) return;
+  const key = variantId.trim();
+  if (!key) return;
+
+  /** Drop a pending full-sync debounce (e.g. from addToCart) — qty will flush via fast path. */
+  cartSyncScheduler.cancelDebounce();
+
+  cancelQtyChangeSyncTimer(key);
+  cartPerfLog(`qty change sync debounced ${CART_SYNC_DEBOUNCE_MS}ms`);
+  const timer = setTimeout(() => {
+    qtyChangeSyncTimers.delete(key);
+    flushQuantitySyncForVariant(key);
+  }, CART_SYNC_DEBOUNCE_MS);
+  qtyChangeSyncTimers.set(key, timer);
 }
 
 function canFastPathQuantitySync(line: CartLine | undefined, qty: number): boolean {
@@ -507,14 +902,63 @@ function canFastPathQuantitySync(line: CartLine | undefined, qty: number): boole
   );
 }
 
+/** Cancel debounced syncs and invalidate in-flight cart network work. */
+function cancelCartBackgroundWork(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  activeSyncGeneration += 1;
+  cartSyncFollowUpPending = false;
+  forceNextSync = false;
+  debounceCoalescedUpdates = 0;
+  cartNetworkSyncInFlight = null;
+  cancelAllQtyChangeSyncTimers();
+  cartSyncScheduler.cancelDebounce();
+  pendingFastQuantityVariantIds.clear();
+  pendingFastAddVariantIds.clear();
+  cartPricingForDisplayCache = null;
+}
+
+/**
+ * Immediate local bag reset on sign-out — does not block on Shopify/Koko Bay network.
+ * Call before clearing auth session so in-flight syncs cannot repopulate the cart.
+ */
+export function resetCartForSignOut(): void {
+  cancelCartBackgroundWork();
+  useCartStore.getState().clear();
+  lastSyncedRevision = cartRevision;
+  lastSuccessfulCartSyncAtMs = 0;
+  void persistCartLines([]);
+}
+
+/** Best-effort remote cart clear after sign-out (single DELETE, no reconcile). */
+export function clearRemoteCartInBackground(): Promise<void> {
+  if (!isRemoteCartConfigured()) return Promise.resolve();
+  return (async () => {
+    try {
+      const guestId = await loadCartGuestId();
+      if (usesKokobayCartProxy()) {
+        await clearRemoteKokobayCart(guestId, undefined);
+        return;
+      }
+      await syncLocalCartToRemote(null, guestId, [], undefined);
+    } catch {
+      /* non-fatal */
+    }
+  })();
+}
+
 /** Bypass debounce — use at checkout and login only. */
 export function flushCartSync(customerEmail?: string): Promise<void> {
   if (!isRemoteCartConfigured()) return Promise.resolve();
   forceNextSync = true;
   cartSyncScheduler.cancelDebounce();
-  fastQuantityScheduler.cancelDebounce();
   useCartStore.setState({ pendingCartSync: true });
   return enqueueCartNetwork(async () => {
+    if (pendingFastAddVariantIds.size > 0) {
+      await runCartNetworkSync('fast_add', customerEmail);
+    }
     if (pendingFastQuantityVariantIds.size > 0) {
       await runCartNetworkSync('fast', customerEmail);
     }
@@ -554,8 +998,29 @@ export async function ensureCartSyncedForCheckout(customerEmail?: string): Promi
   await flushCartSync(customerEmail);
 }
 
-function bumpCartRevision(): void {
+function bumpCartRevision(source: string): void {
+  const prev = cartRevision;
   cartRevision += 1;
+  cartSyncTrace('cart_revision_bump', {
+    source,
+    cartRevision,
+    lastSyncedRevision,
+    isCartDirty: cartRevision !== lastSyncedRevision,
+    prevRevision: prev,
+  });
+}
+
+function markCartRevisionSynced(source: string): void {
+  const prev = lastSyncedRevision;
+  lastSyncedRevision = cartRevision;
+  recordCartSyncSuccess();
+  cartSyncTrace('cart_revision_synced', {
+    source,
+    cartRevision,
+    lastSyncedRevision,
+    prevLastSyncedRevision: prev,
+    isCartDirty: false,
+  });
 }
 
 /** Empty bag or no codes on cart — first-order discount can be auto-applied again this session. */
@@ -577,19 +1042,51 @@ function applyOptimisticLineUpdate(
   lines: CartLine[],
   previous: Pick<
     CartState,
-    'shopifySubtotal' | 'shopifyTotal' | 'shopifyTotalTax' | 'shopifyDiscountCodes'
+    | 'shopifySubtotal'
+    | 'shopifyTotal'
+    | 'shopifyTotalTax'
+    | 'shopifyDiscountCodes'
+    | 'quantitySyncPendingByVariantId'
   >,
+  options?: { quantitySyncVariantId?: string },
 ): Partial<CartState> {
-  if (hasCartDiscountCodes(previous.shopifyDiscountCodes)) {
-    return { lines };
-  }
   const totals = optimisticCartTotals(lines);
-  if (!totals) return { lines };
+  const quantitySyncPendingByVariantId = options?.quantitySyncVariantId
+    ? markQuantitySyncPending(previous.quantitySyncPendingByVariantId, options.quantitySyncVariantId)
+    : previous.quantitySyncPendingByVariantId;
+
+  if (!totals) {
+    return options?.quantitySyncVariantId ? { lines, quantitySyncPendingByVariantId } : { lines };
+  }
+
+  if (__DEV__) {
+    logCartAuditOptimisticUpdate({
+      revision: getCartRevisionSnapshot(),
+      variantId: options?.quantitySyncVariantId,
+      optimisticSubtotal: totals.shopifySubtotal,
+      optimisticTotal: hasCartDiscountCodes(previous.shopifyDiscountCodes)
+        ? null
+        : totals.shopifyTotal,
+      hasDiscountCodes: hasCartDiscountCodes(previous.shopifyDiscountCodes),
+      previousSubtotal: previous.shopifySubtotal,
+      previousTotal: previous.shopifyTotal,
+    });
+  }
+
+  if (hasCartDiscountCodes(previous.shopifyDiscountCodes)) {
+    return {
+      lines,
+      shopifySubtotal: totals.shopifySubtotal,
+      quantitySyncPendingByVariantId,
+    };
+  }
+
   return {
     lines,
     shopifySubtotal: totals.shopifySubtotal,
     shopifyTotal: totals.shopifyTotal,
     shopifyTotalTax: previous.shopifyTotalTax,
+    quantitySyncPendingByVariantId,
   };
 }
 
@@ -601,6 +1098,22 @@ function resolveClampedQty(
   return capped && maxQty != null ? { qty, capped, cap: maxQty } : { qty, capped: false };
 }
 
+/** Remote cart accepted fewer units than the optimistic local qty. */
+function findInventoryQtyReduction(
+  local: CartLine[],
+  reconciled: CartLine[],
+): { actual: number; requested: number } | null {
+  const reconciledByVariant = new Map(
+    reconciled.map((line) => [shopifyVariantKey(line.variantId), line]),
+  );
+  for (const line of local) {
+    const synced = reconciledByVariant.get(shopifyVariantKey(line.variantId));
+    if (!synced || synced.qty >= line.qty) continue;
+    return { actual: synced.qty, requested: line.qty };
+  }
+  return null;
+}
+
 async function applyRemoteCartSyncResult(
   revisionAtStart: number,
   syncGeneration: number,
@@ -609,37 +1122,108 @@ async function applyRemoteCartSyncResult(
 ): Promise<void> {
   if (syncGeneration !== activeSyncGeneration) return;
   if (revisionAtStart !== cartRevision) {
+    cartSyncTrace('apply_remote_result_revision_mismatch', {
+      revisionAtStart,
+      cartRevision,
+      lastSyncedRevision,
+      cartSyncRunnerInFlight,
+      isCartDirty: isCartDirty(),
+    });
     if (cartSyncRunnerInFlight) {
       cartSyncFollowUpPending = true;
       cartCoalesceLog('pending sync detected');
     } else {
-      scheduleSync();
+      scheduleSync('apply_remote_cart_sync_result:revision_mismatch');
     }
     return;
   }
-  if (!result) return;
+  if (!result) {
+    if (isCartDirty() && cartSyncRunnerInFlight) {
+      cartSyncFollowUpPending = true;
+    }
+    return;
+  }
   if (result.guestId) {
     await persistCartGuestId(result.guestId);
   }
   const snapshot = result.snapshot;
-  if (!snapshot) return;
+  if (!snapshot) {
+    useCartStore.setState({
+      quantitySyncPendingByVariantId: clearAllQuantitySyncPending(),
+    });
+    if (isCartDirty() && cartSyncRunnerInFlight) {
+      cartSyncFollowUpPending = true;
+    }
+    return;
+  }
 
+  const localLines = useCartStore.getState().lines;
   const learnInventoryCap = result.syncError?.code === 'insufficient_inventory';
-  const reconciledLines = mergeSyncedCartLines(useCartStore.getState().lines, snapshot.lines, {
+  const reconciledLines = mergeSyncedCartLines(localLines, snapshot.lines, {
     dropLinesMissingOnRemote: Boolean(result.syncError),
     learnInventoryCap,
+  });
+  const inventoryReduction = findInventoryQtyReduction(localLines, reconciledLines);
+  const lineIdentity = localLines.map((line) => {
+    const synced = reconciledLines.find((row) =>
+      cartLinesMatchVariant(row, line.variantId),
+    );
+    return {
+      variantId: line.variantId,
+      localQty: line.qty,
+      reconciledQty: synced?.qty,
+      localShopifyLineId: line.shopifyLineId ?? null,
+      reconciledShopifyLineId: synced?.shopifyLineId ?? null,
+      shopifyLineIdChanged:
+        (line.shopifyLineId ?? '') !== (synced?.shopifyLineId ?? line.shopifyLineId ?? ''),
+    };
   });
   useCartStore.getState().applyRemoteSnapshot(snapshot, reconciledLines);
   await persistShopifyCartId(snapshot.cartId);
 
   if (result.syncError) {
+    cartSyncTrace('apply_remote_result_stays_dirty', {
+      reason: 'sync_error',
+      code: result.syncError.code,
+      revisionAtStart,
+      cartRevision,
+      lastSyncedRevision,
+      lineIdentity,
+    });
     reportOperationalFailure(result.syncError.message, {
       source: 'cart_sync',
       code: result.syncError.code,
     });
     showToast(cartSyncErrorToast(result.syncError, reconciledLines));
   } else if (revisionAtStart === cartRevision) {
-    lastSyncedRevision = cartRevision;
+    markCartRevisionSynced('apply_remote_cart_sync_result');
+    if (inventoryReduction != null) {
+      cartSyncTrace('apply_remote_result_inventory_cap', {
+        actual: inventoryReduction.actual,
+        requested: inventoryReduction.requested,
+        lineIdentity,
+      });
+      showToast(
+        inventoryLimitToast(inventoryReduction.actual, {
+          requested: inventoryReduction.requested,
+          kind: 'set',
+        }),
+      );
+    } else {
+      cartSyncTrace('apply_remote_result_marked_clean', {
+        revisionAtStart,
+        cartRevision,
+        lineIdentity,
+      });
+    }
+  } else {
+    cartSyncTrace('apply_remote_result_stays_dirty', {
+      reason: 'revision_changed_during_apply',
+      revisionAtStart,
+      cartRevision,
+      lastSyncedRevision,
+      lineIdentity,
+    });
   }
 
   if (!result.syncError) {
@@ -648,6 +1232,132 @@ async function applyRemoteCartSyncResult(
         mod.maybeAutoApplyFirstAppOrderDiscount(customerEmail);
       })
       .catch(() => {});
+  }
+}
+
+/** POST new line(s) — bypasses GET /api/cart and reconcile. */
+async function syncAddFast(customerEmail?: string): Promise<void> {
+  if (!isRemoteCartConfigured()) return;
+
+  const variantIds = [...pendingFastAddVariantIds];
+  pendingFastAddVariantIds.clear();
+  if (!variantIds.length) return;
+
+  if (AppState.currentState !== 'active') {
+    for (const id of variantIds) pendingFastAddVariantIds.add(id);
+    for (const id of variantIds) scheduleFastAddSync(id);
+    return;
+  }
+
+  const revisionAtStart = cartRevision;
+  const syncGeneration = ++activeSyncGeneration;
+  useCartStore.setState({ isSyncingShopify: true, pendingCartSync: true });
+
+  cartSyncTrace('sync_add_fast_start', {
+    revisionAtStart,
+    cartRevision,
+    lastSyncedRevision,
+    variantIds,
+  });
+
+  let appliedCount = 0;
+
+  try {
+    let guestId = await loadCartGuestId();
+
+    for (const variantId of variantIds) {
+      if (syncGeneration !== activeSyncGeneration || revisionAtStart !== cartRevision) {
+        cartSyncTrace('sync_add_fast_abort', {
+          reason: 'generation_or_revision_changed',
+          revisionAtStart,
+          cartRevision,
+        });
+        break;
+      }
+
+      const { lines, checkoutUrl } = useCartStore.getState();
+      const line = lines.find((l) => cartLinesMatchVariant(l, variantId));
+      if (!line || line.qty < 1) {
+        cartSyncTrace('sync_add_fast_fallback_full', {
+          reason: 'missing_line',
+          variantId,
+        });
+        scheduleSync('sync_add_fast:missing_line');
+        return;
+      }
+
+      cartSyncTrace('sync_add_fast_post', {
+        variantId,
+        qty: line.qty,
+        hadShopifyLineId: Boolean(line.shopifyLineId?.trim()),
+      });
+
+      const lastResult = await postCartAddLineFast(
+        guestId,
+        variantId,
+        line.qty,
+        lines,
+        customerEmail,
+        checkoutUrl,
+      );
+      if (lastResult?.guestId) guestId = lastResult.guestId;
+
+      if (lastResult?.syncError) {
+        cartSyncTrace('sync_add_fast_fallback_full', {
+          reason: 'post_sync_error',
+          code: lastResult.syncError.code,
+        });
+        reportOperationalFailure(lastResult.syncError.message, {
+          source: 'cart_fast_add',
+          code: lastResult.syncError.code,
+        });
+        scheduleSync('sync_add_fast:post_sync_error');
+        return;
+      }
+      if (!lastResult?.snapshot) {
+        cartSyncTrace('sync_add_fast_fallback_full', { reason: 'post_no_snapshot' });
+        if (cartSyncRunnerInFlight) {
+          cartSyncFollowUpPending = true;
+        } else {
+          scheduleSync('sync_add_fast:no_snapshot');
+        }
+        return;
+      }
+
+      await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, lastResult, customerEmail);
+      appliedCount += 1;
+    }
+
+    const syncState = {
+      isCartDirty: isCartDirty(),
+      cartRevision,
+      lastSyncedRevision,
+    };
+
+    const completedClean =
+      appliedCount === variantIds.length &&
+      syncState.isCartDirty === false &&
+      cartRevision === revisionAtStart &&
+      !cartSyncFollowUpPending;
+
+    if (completedClean) {
+      logFastAddSuccess(syncState);
+      cartSyncFollowUpPending = false;
+    } else {
+      cartSyncTrace('sync_add_fast_complete_not_clean', {
+        revisionAtStart,
+        appliedCount,
+        expectedCount: variantIds.length,
+        cartSyncFollowUpPending,
+        ...syncState,
+      });
+      logCartSyncRevisionState('fast_add_complete_not_clean', syncState);
+    }
+  } finally {
+    if (syncGeneration === activeSyncGeneration) {
+      useCartStore.setState({ isSyncingShopify: false });
+    }
+    finalizePendingCartSync();
   }
 }
 
@@ -669,20 +1379,51 @@ async function syncQuantityFast(customerEmail?: string): Promise<void> {
   const syncGeneration = ++activeSyncGeneration;
   useCartStore.setState({ isSyncingShopify: true, pendingCartSync: true });
 
+  cartSyncTrace('sync_quantity_fast_start', {
+    revisionAtStart,
+    cartRevision,
+    lastSyncedRevision,
+    variantIds,
+  });
+
   try {
     let guestId = await loadCartGuestId();
     let lastResult: Awaited<ReturnType<typeof patchCartQuantityFast>> = null;
 
     for (const variantId of variantIds) {
-      if (syncGeneration !== activeSyncGeneration || revisionAtStart !== cartRevision) break;
+      if (syncGeneration !== activeSyncGeneration || revisionAtStart !== cartRevision) {
+        cartSyncTrace('sync_quantity_fast_abort', {
+          reason: 'generation_or_revision_changed',
+          revisionAtStart,
+          cartRevision,
+          syncGeneration,
+          activeSyncGeneration,
+        });
+        break;
+      }
 
       const lines = useCartStore.getState().lines;
-      const line = lines.find((l) => l.variantId === variantId);
+      const line = lines.find((l) => cartLinesMatchVariant(l, variantId));
       const lineId = line?.shopifyLineId?.trim();
       if (!line || !lineId || line.qty < 1) {
-        scheduleSync();
+        cartSyncTrace('sync_quantity_fast_fallback_full', {
+          reason: 'missing_line_or_shopify_line_id',
+          variantId,
+          hasLine: Boolean(line),
+          lineId: lineId ?? null,
+          qty: line?.qty,
+        });
+        scheduleSync('sync_quantity_fast:missing_line_or_line_id');
         return;
       }
+
+      cartSyncTrace('sync_quantity_fast_patch', {
+        variantId,
+        qty: line.qty,
+        shopifyLineId: lineId,
+        revisionAtStart,
+        cartRevision,
+      });
 
       lastResult = await patchCartQuantityFast(
         guestId,
@@ -690,25 +1431,45 @@ async function syncQuantityFast(customerEmail?: string): Promise<void> {
         line.qty,
         lines,
         customerEmail,
+        useCartStore.getState().checkoutUrl,
       );
       if (lastResult?.guestId) guestId = lastResult.guestId;
 
       if (lastResult?.syncError) {
+        cartSyncTrace('sync_quantity_fast_fallback_full', {
+          reason: 'patch_sync_error',
+          code: lastResult.syncError.code,
+        });
         reportOperationalFailure(lastResult.syncError.message, {
           source: 'cart_fast_sync',
           code: lastResult.syncError.code,
         });
-        showToast(cartSyncErrorToast(lastResult.syncError, lines));
-        scheduleSync();
+        scheduleSync('sync_quantity_fast:patch_sync_error');
         return;
       }
       if (!lastResult?.snapshot) {
-        scheduleSync();
+        cartSyncTrace('sync_quantity_fast_fallback_full', { reason: 'patch_no_snapshot' });
+        useCartStore.setState({
+          quantitySyncPendingByVariantId: clearAllQuantitySyncPending(),
+        });
+        if (cartSyncRunnerInFlight) {
+          cartSyncFollowUpPending = true;
+        } else {
+          scheduleSync('sync_quantity_fast:no_snapshot');
+        }
         return;
       }
 
       await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, lastResult, customerEmail);
     }
+
+    cartSyncTrace('sync_quantity_fast_complete', {
+      revisionAtStart,
+      cartRevision,
+      lastSyncedRevision,
+      isCartDirty: isCartDirty(),
+      cartSyncFollowUpPending,
+    });
   } finally {
     if (syncGeneration === activeSyncGeneration) {
       useCartStore.setState({ isSyncingShopify: false });
@@ -732,26 +1493,46 @@ export const useCartStore = create<CartState>((set, get) => ({
   displayAppliedDiscounts: [],
   isSyncingShopify: false,
   pendingCartSync: false,
+  quantitySyncPendingByVariantId: {},
   hasHydrated: false,
 
   hydrate: async () => {
+    if (__DEV__) recordHydration('cart', get().hasHydrated);
     if (get().hasHydrated) return;
     const [loaded, shopifyCartId] = await Promise.all([loadPersistedCart(), loadShopifyCartId()]);
-    bumpCartRevision();
     set((s) => ({
       lines: mergeCartLines(loaded, s.lines),
       shopifyCartId,
       hasHydrated: true,
     }));
-    requestDeliveryThresholdForCartEdits();
-    scheduleSync();
+
+    const lines = get().lines;
+    const needsRemoteHydrateSync =
+      isRemoteCartConfigured() &&
+      lines.length > 0 &&
+      (!shopifyCartId || lines.some((line) => !line.shopifyLineId?.trim()));
+
+    if (needsRemoteHydrateSync) {
+      bumpCartRevision('hydrate');
+      scheduleSync('hydrate');
+      return;
+    }
+
+    if (lines.length > 0) {
+      cartSyncTrace('hydrate_skip_sync', {
+        reason: 'persisted_session_trusted',
+        lineCount: lines.length,
+        shopifyCartId: shopifyCartId ?? null,
+      });
+      markCartRevisionSynced('hydrate:trusted_persisted');
+    }
   },
 
   syncWithShopify: async (customerEmail?: string) => {
     if (!isRemoteCartConfigured()) return;
 
     if (AppState.currentState !== 'active') {
-      scheduleSync();
+      scheduleSync('sync_with_shopify:background');
       finalizePendingCartSync();
       return;
     }
@@ -765,7 +1546,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
     const syncStoreStart = performance.now();
     const revisionAtStart = cartRevision;
-    const { lines, shopifyCartId } = get();
+    const { lines, shopifyCartId, checkoutUrl } = get();
     const guestId = await loadCartGuestId();
     cartPerfLog(
       `syncWithShopify start lines=${lines.length} revision=${revisionAtStart} ` +
@@ -793,6 +1574,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       await persistShopifyCartId(null);
       if (revisionAtStart === cartRevision) {
         lastSyncedRevision = cartRevision;
+        recordCartSyncSuccess();
       }
       finalizePendingCartSync();
       notifyFirstAppOrderDiscountRetryAllowed(get);
@@ -802,7 +1584,13 @@ export const useCartStore = create<CartState>((set, get) => ({
     const syncGeneration = ++activeSyncGeneration;
     set({ isSyncingShopify: true, pendingCartSync: true });
     try {
-      const result = await syncLocalCartToRemote(shopifyCartId, guestId, lines, customerEmail);
+      const result = await syncLocalCartToRemote(
+        shopifyCartId,
+        guestId,
+        lines,
+        customerEmail,
+        checkoutUrl,
+      );
       await applyRemoteCartSyncResult(revisionAtStart, syncGeneration, result, customerEmail);
     } finally {
       if (syncGeneration === activeSyncGeneration) {
@@ -830,7 +1618,12 @@ export const useCartStore = create<CartState>((set, get) => ({
     const catalogCap = resolveQuantityCap(quantityAvailable);
     logCartDebug('addToCart', { lineItemId: variantId, quantity: safeQty, handle });
     const wasEmpty = get().lines.length === 0;
-    bumpCartRevision();
+    const existing = get().lines.find(
+      (l) => l.handle === handle && cartLinesMatchVariant(l, variantId),
+    );
+    const isNewLine = !existing;
+    const hadShopifyLineId = Boolean(existing?.shopifyLineId?.trim());
+    bumpCartRevision('add_to_cart');
     const snapshot = {
       ...(title !== undefined ? { title } : {}),
       ...(variantTitle !== undefined ? { variantTitle } : {}),
@@ -846,7 +1639,9 @@ export const useCartStore = create<CartState>((set, get) => ({
       kind: 'add' | 'max';
     } | null = null;
     set((s) => {
-      const idx = s.lines.findIndex((l) => l.handle === handle && l.variantId === variantId);
+      const idx = s.lines.findIndex(
+        (l) => l.handle === handle && cartLinesMatchVariant(l, variantId),
+      );
       const lines =
         idx >= 0
           ? s.lines.map((l, i) => {
@@ -894,12 +1689,30 @@ export const useCartStore = create<CartState>((set, get) => ({
         showToast(inventoryLimitToast(added, { kind: 'max' }));
       }
     }
-    requestDeliveryThresholdForCartEdits();
     if (wasEmpty) {
       notifyFirstAppOrderDiscountRetryAllowed(get);
     }
     scheduleAppBenefitsRefreshOnCartChange();
-    scheduleSync();
+
+    if (!isRemoteCartConfigured()) return;
+
+    if (!isNewLine && hadShopifyLineId) {
+      cartSyncTrace('add_to_cart_fast_patch', { variantId, isNewLine, hadShopifyLineId });
+      flushFastQuantitySyncForVariant(variantId);
+      return;
+    }
+
+    if (isNewLine && usesKokobayCartProxy()) {
+      cartSyncTrace('add_to_cart_fast_post', { variantId, isNewLine, hadShopifyLineId });
+      scheduleFastAddSync(variantId);
+      return;
+    }
+
+    scheduleSync(
+      !isNewLine && !hadShopifyLineId
+        ? 'add_to_cart:missing_shopify_line_id'
+        : 'add_to_cart:shopify_graphql',
+    );
   },
 
   addToBag: (params) => {
@@ -907,12 +1720,12 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   removeItem: (variantId) => {
-    const removed = get().lines.find((l) => l.variantId === variantId);
+    const removed = get().lines.find((l) => cartLinesMatchVariant(l, variantId));
     logCartDebug('removeItem', { lineItemId: variantId, quantity: 0, handle: removed?.handle });
     if (removed) trackRemoveFromCart(removed);
-    bumpCartRevision();
+    bumpCartRevision('remove_item');
     set((s) => {
-      const lines = s.lines.filter((l) => l.variantId !== variantId);
+      const lines = s.lines.filter((l) => !cartLinesMatchVariant(l, variantId));
       if (!lines.length) {
         return {
           lines,
@@ -929,17 +1742,16 @@ export const useCartStore = create<CartState>((set, get) => ({
           displayAppliedDiscounts: [],
         };
       }
-      return applyOptimisticLineUpdate(lines, s);
+      return applyOptimisticLineUpdate(lines, s, { quantitySyncVariantId: variantId });
     });
-    requestDeliveryThresholdForCartEdits();
     if (!get().lines.length) {
       notifyFirstAppOrderDiscountRetryAllowed(get);
     }
-    scheduleSync();
+    scheduleSync('remove_item');
   },
 
   updateQuantity: (variantId, qty) => {
-    const existing = get().lines.find((l) => l.variantId === variantId);
+    const existing = get().lines.find((l) => cartLinesMatchVariant(l, variantId));
     logCartDebug('updateQuantity', {
       lineItemId: variantId,
       quantity: qty,
@@ -952,16 +1764,16 @@ export const useCartStore = create<CartState>((set, get) => ({
       const removed = existing;
       if (removed) trackRemoveFromCart(removed);
     }
-    bumpCartRevision();
+    bumpCartRevision('update_quantity');
     const inventoryCapNoticeRef: {
       current: { added: number; requested: number; kind: 'set' } | null;
     } = { current: null };
     set((s) => {
       const lines =
         qty < 1
-          ? s.lines.filter((l) => l.variantId !== variantId)
+          ? s.lines.filter((l) => !cartLinesMatchVariant(l, variantId))
           : s.lines.map((l) => {
-              if (l.variantId !== variantId) return l;
+              if (!cartLinesMatchVariant(l, variantId)) return l;
               const clamped = resolveClampedQty(qty, l.maxQty);
               if (clamped.capped) {
                 inventoryCapNoticeRef.current = {
@@ -999,22 +1811,37 @@ export const useCartStore = create<CartState>((set, get) => ({
         }),
       );
     }
-    const lineAfter = get().lines.find((l) => l.variantId === variantId);
-    requestDeliveryThresholdForCartEdits();
     if (!get().lines.length) {
       notifyFirstAppOrderDiscountRetryAllowed(get);
     }
-    if (canFastPathQuantitySync(lineAfter, qty)) {
-      scheduleFastQuantitySync(variantId);
-    } else {
-      scheduleSync();
+    if (qty < 1) {
+      cancelQtyChangeSyncTimer(variantId);
+      scheduleSync('update_quantity:removed');
+      return;
     }
+    scheduleDebouncedQuantitySync(variantId);
+  },
+
+  nudgeCartLineQuantity: (variantId, delta) => {
+    if (delta === 0) return;
+    const existing = get().lines.find((l) => cartLinesMatchVariant(l, variantId));
+    if (!existing) return;
+    const nextQty = existing.qty + delta;
+    if (delta < 0 && nextQty < 1) {
+      get().removeItem(variantId);
+      return;
+    }
+    get().updateQuantity(variantId, nextQty);
   },
 
   applyRemoteSnapshot: (snapshot, reconciledLines) => {
-    const lines =
+    const merged =
       reconciledLines ??
       mergeSyncedCartLines(useCartStore.getState().lines, snapshot.lines);
+    const { lines, qtyReduced: subtotalQtyReduced } = reconcileLinesWithSnapshotSubtotal(
+      merged,
+      snapshot,
+    );
     const discountCodes = snapshot.discountCodes ?? [];
     const pricing = {
       shopifySubtotal: snapshot.subtotal,
@@ -1043,15 +1870,50 @@ export const useCartStore = create<CartState>((set, get) => ({
       reservedDiscountPricing: hasCartDiscountCodes(discountCodes)
         ? pricing
         : null,
+      quantitySyncPendingByVariantId: clearAllQuantitySyncPending(),
     });
+    if (subtotalQtyReduced != null) {
+      showToast(
+        inventoryLimitToast(subtotalQtyReduced.actual, {
+          requested: subtotalQtyReduced.requested,
+          kind: 'set',
+        }),
+      );
+    }
+    if (__DEV__) {
+      const after = get();
+      logCartAuditShopifyCart(snapshot, {
+        origin: usesKokobayCartProxy() ? 'kokobay_api' : 'shopify_graphql',
+        lines: after.lines,
+      });
+      logCartAuditZustandState(
+        buildCartPricingAuditZustand({
+          revision: getCartRevisionSnapshot(),
+          lines: after.lines,
+          marketCurrency: after.lines[0]?.unitPrice?.currencyCode ?? 'GBP',
+          shopifySubtotal: after.shopifySubtotal,
+          shopifyTotal: after.shopifyTotal,
+          shopifyTotalTax: after.shopifyTotalTax,
+          shopifyLineMerchandiseSubtotal: after.shopifyLineMerchandiseSubtotal,
+          shopifyLineMerchandiseTotal: after.shopifyLineMerchandiseTotal,
+          shopifyCartDiscountAmount: after.shopifyCartDiscountAmount,
+          shopifyDiscountCodes: after.shopifyDiscountCodes,
+          reservedDiscountPricing: after.reservedDiscountPricing,
+          pendingCartSync: after.pendingCartSync,
+          isSyncingShopify: after.isSyncingShopify,
+          displayAppliedDiscounts: after.displayAppliedDiscounts,
+        }),
+      );
+    }
     void persistShopifyCartId(snapshot.cartId);
     notifyFirstAppOrderDiscountRetryAllowed(get);
   },
 
   clear: () => {
     pendingFastQuantityVariantIds.clear();
-    fastQuantityScheduler.cancelDebounce();
-    bumpCartRevision();
+    pendingFastAddVariantIds.clear();
+    cartSyncScheduler.cancelDebounce();
+    bumpCartRevision('clear');
     set({
       lines: [],
       shopifyCartId: null,
@@ -1066,6 +1928,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       reservedDiscountPricing: null,
       displayAppliedDiscounts: [],
       pendingCartSync: false,
+      quantitySyncPendingByVariantId: clearAllQuantitySyncPending(),
     });
     void persistShopifyCartId(null);
     void persistCartGuestId(null);
