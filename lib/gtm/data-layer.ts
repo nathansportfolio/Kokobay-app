@@ -6,6 +6,7 @@ import { gtmLiveReceiver } from '@/lib/gtm/receivers/gtm-receiver';
 import { mockGtmReceiver } from '@/lib/gtm/receivers/mock-receiver';
 import type { GtmDataLayerEvent } from '@/lib/gtm/types';
 import { trackDataLayerEventForFirebase } from '@/src/services/analytics';
+import { trackDataLayerEventForKlaviyo } from '@/src/services/klaviyo-analytics';
 
 function appMeta() {
   return {
@@ -39,4 +40,5 @@ export function pushToDataLayer(event: GtmDataLayerEvent): void {
   }
 
   trackDataLayerEventForFirebase(payload);
+  trackDataLayerEventForKlaviyo(payload);
 }

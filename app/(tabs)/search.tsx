@@ -144,7 +144,9 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   }, [isWebCatalog, kokobaySearch.filterFacets, allProducts]);
 
   const serverSideFiltersActive =
-    isWebCatalog && hasActivePlpFilters(filters, priceMeta.min, priceMeta.max);
+    isWebCatalog &&
+    hasActivePlpFilters(filters, priceMeta.min, priceMeta.max) &&
+    kokobaySearch.serverSideFiltersCapable;
   const hasSelectedFilters = countActivePlpFilters(filters, priceMeta.min, priceMeta.max) > 0;
 
   const { rows: flatItems, totalFiltered } = usePlpDisplayProducts(allProducts, filters, sort, {
@@ -171,7 +173,9 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     isFetchingNextPage: kokobaySearch.isFetchingNextPage,
   });
 
-  const listLoading = searchPending || (trimmedQ.length >= 1 && allProducts === undefined);
+  const listLoading =
+    !hasSelectedFilters &&
+    (searchPending || (trimmedQ.length >= 1 && allProducts === undefined));
 
   const searchTrackedRef = useRef<string | null>(null);
   useEffect(() => {

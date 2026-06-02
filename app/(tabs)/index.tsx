@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { usePathname } from 'expo-router';
+import type { Href } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { ScrollView, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
+import { useHomeRenderTrace } from '@/hooks/use-home-render-trace';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
@@ -47,7 +48,6 @@ function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDi
 
 export default function HomeScreen() {
   useLifecycleRenderCount('home');
-  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const mainScrollRef = useRef<ScrollView>(null);
@@ -68,8 +68,8 @@ export default function HomeScreen() {
     [heroQuery.data?.buttonLink],
   );
   const viewAllHref = useMemo(
-    () => collectionHref(newInHandle, pathname),
-    [newInHandle, pathname],
+    () => collectionHref(newInHandle) as Href,
+    [newInHandle],
   );
 
   const { data, isPending, isError, refetch, isRefetching } = useHomeCatalogQuery();
@@ -78,6 +78,18 @@ export default function HomeScreen() {
     queryKey: ['collections-cms'],
     staleTime: COLLECTIONS_CMS_STALE_MS,
     queryFn: ({ signal }) => getCollectionsCms({ signal }),
+  });
+
+  useHomeRenderTrace({
+    isPending,
+    isError,
+    hasData: Boolean(data),
+    isRefetching,
+    cmsTilesCount: cmsTiles?.length ?? 0,
+    appErrorBannerHeight,
+    width,
+    newInHandle,
+    heroPending: heroQuery.isPending,
   });
 
   const { onScroll: onScrollLoading } = useBindScrollToTop(scrollToTopLoading, isPending);

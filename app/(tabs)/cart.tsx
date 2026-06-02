@@ -18,6 +18,7 @@ import { useCartPricingAuditScreen } from '@/hooks/use-cart-pricing-audit';
 import { useDeliveryThreshold } from '@/hooks/use-delivery-threshold';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewCart } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
@@ -42,6 +43,7 @@ const CART_SCROLL_CONTENT = {
 
 export default function CartScreen() {
   useLifecycleRenderCount('cart');
+  useRenderTrace('Cart');
   const insets = useSafeAreaInsets();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const cartPricingForDisplay = useCartStore(selectCartPricingForDisplay);

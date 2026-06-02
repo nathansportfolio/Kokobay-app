@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -10,11 +10,13 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { QuickAddToBag } from '@/components/cart/quick-add-to-bag';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { LuxuryCardActionSurface } from '@/components/ui/luxury-card-action-surface';
-import { useWishlist } from '@/contexts/wishlist-context';
+import { ProductCardWishlistHeart } from '@/components/ui/product-card-wishlist-heart';
 import { palette } from '@/constants/theme';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
+import {
+  productCardPropsEqual,
+  useProductCardRenderTrace,
+} from '@/hooks/use-product-card-render-trace';
 import { useProductHref } from '@/hooks/use-product-href';
 import { logPlpFirstImageLoad } from '@/lib/plp-perf-trace';
 import type { Product } from '@/types/shopify';
@@ -22,7 +24,6 @@ import { firstValidProductImage } from '@/utils/catalog-image';
 import { productCardTypoPreset } from '@/constants/product-card-typography';
 import { cn } from '@/utils/cn';
 import { isProductFullySoldOut } from '@/utils/product-availability';
-import { hapticLight } from '@/utils/haptics';
 import { formatMoney } from '@/utils/money';
 import { productTileImageUri } from '@/utils/product-tile-image-uri';
 
@@ -61,6 +62,16 @@ function ProductCardInner({
   perfTraceScreen = 'plp',
   disableImageTransition = true,
 }: ProductCardProps) {
+  useProductCardRenderTrace({
+    product,
+    className,
+    imagePriority,
+    gridColumns,
+    tileWidth,
+    perfTraceIndex,
+    perfTraceScreen,
+    disableImageTransition,
+  });
   const prefetch = usePrefetchProduct();
   const productLink = useProductHref(product.handle);
   const sourceImage = firstValidProductImage(product);
@@ -75,14 +86,7 @@ function ProductCardInner({
     });
   }, [product.handle, sourceImage, tileWidth]);
   const priceLabel = formatMoney(product.priceRange.minVariantPrice);
-  const { wishlistHandles, toggleWishlist } = useWishlist();
-  const wishlisted = wishlistHandles.includes(product.handle);
   const soldOut = isProductFullySoldOut(product);
-  const heartPressed = useSharedValue(0);
-  const heartPressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(heartPressed.value, [0, 1], [1, 0.96]) }],
-    opacity: interpolate(heartPressed.value, [0, 1], [1, 0.92]),
-  }));
   const imagePressed = useSharedValue(0);
   const imagePressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(imagePressed.value, [0, 1], [1, 1.018]) }],
@@ -92,11 +96,6 @@ function ProductCardInner({
   const titlePressStyle = useAnimatedStyle(() => ({
     opacity: interpolate(titlePressed.value, [0, 1], [1, 0.92]),
   }));
-
-  const onHeartPress = useCallback(() => {
-    hapticLight();
-    toggleWishlist(product.handle);
-  }, [product.handle, toggleWishlist]);
 
   const imageInner = imageUrl ? (
     <CatalogCoverImage
@@ -203,30 +202,7 @@ function ProductCardInner({
             </Text>
           </View>
         ) : null}
-        <Pressable
-          onPressIn={() => {
-            heartPressed.value = withTiming(1, { duration: 110, easing: easeOutCubic });
-          }}
-          onPressOut={() => {
-            heartPressed.value = withTiming(0, { duration: 200, easing: easeOutCubic });
-          }}
-          onPress={onHeartPress}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-          accessibilityState={{ selected: wishlisted }}
-          className="absolute right-4 top-4 z-10">
-          <Animated.View style={heartPressStyle}>
-            <LuxuryCardActionSurface size={actionSize}>
-              <IconSymbol
-                name={wishlisted ? 'heart.fill' : 'heart'}
-                size={18}
-                color={wishlisted ? palette.accent : palette.ink}
-                weight="regular"
-              />
-            </LuxuryCardActionSurface>
-          </Animated.View>
-        </Pressable>
+        <ProductCardWishlistHeart handle={product.handle} actionSize={actionSize} />
         {!soldOut ? <QuickAddToBag product={product} relaxed={comfort} /> : null}
       </View>
       <Link href={productLink} asChild>
@@ -253,6 +229,6 @@ function ProductCardInner({
   );
 }
 
-export const ProductCard = memo(ProductCardInner);
+export const ProductCard = memo(ProductCardInner, productCardPropsEqual);
 
 ProductCard.displayName = 'ProductCard';

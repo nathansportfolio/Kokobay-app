@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
 import { useCartPricingAuditCheckoutBar } from '@/hooks/use-cart-pricing-audit';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useCallback, useState } from 'react';
 import { Platform, StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
@@ -92,6 +93,7 @@ export function CartCheckoutBar({
   marketCountryCode,
   bottomInset,
 }: Props) {
+  useRenderTrace('CheckoutBar');
   const [checkingOut, setCheckingOut] = useState(false);
 
   useCartPricingAuditCheckoutBar({

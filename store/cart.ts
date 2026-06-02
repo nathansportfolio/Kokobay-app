@@ -62,6 +62,7 @@ import {
 } from '@/services/cart/first-order-discount-settled';
 import { getIsFirstAppOrderSync, scheduleAppBenefitsRefreshOnCartChange } from './app-benefits';
 import {
+  cartLineMissingPersistedDisplay,
   loadCartGuestId,
   loadPersistedCart,
   loadShopifyCartId,
@@ -1507,14 +1508,19 @@ export const useCartStore = create<CartState>((set, get) => ({
     }));
 
     const lines = get().lines;
+    const missingDisplayLines = lines.filter(cartLineMissingPersistedDisplay);
     const needsRemoteHydrateSync =
       isRemoteCartConfigured() &&
       lines.length > 0 &&
-      (!shopifyCartId || lines.some((line) => !line.shopifyLineId?.trim()));
+      (!shopifyCartId ||
+        lines.some((line) => !line.shopifyLineId?.trim()) ||
+        missingDisplayLines.length > 0);
 
     if (needsRemoteHydrateSync) {
       bumpCartRevision('hydrate');
-      scheduleSync('hydrate');
+      scheduleSync(
+        missingDisplayLines.length > 0 ? 'hydrate:missing_display' : 'hydrate',
+      );
       return;
     }
 

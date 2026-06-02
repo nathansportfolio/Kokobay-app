@@ -1,5 +1,5 @@
 import { useInfiniteQuery, type InfiniteData } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
 import {
@@ -22,6 +22,7 @@ import { resolveCollectionHandleForApi } from '@/utils/collection-handles';
 import { flattenCatalogProductPages } from '@/utils/kokobay-catalog-products';
 import { keepPreviousInfiniteDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
 import {
+  canApplyStorefrontPlpFilters,
   facetsFromStorefrontFilters,
   hasActivePlpFilters,
   storefrontFilterPriceMeta,
@@ -105,30 +106,38 @@ function useStableFilterFacets(storefrontFilters: KokobayStorefrontFilter[], res
 function useStorefrontFilterRefs(resetKey: string) {
   const latestFiltersRef = useRef<KokobayStorefrontFilter[]>([]);
   const baselineFiltersRef = useRef<KokobayStorefrontFilter[]>([]);
+  /** Fallback when React Query serves cached pages without re-running `queryFn`. */
+  const pageFiltersRef = useRef<KokobayStorefrontFilter[]>([]);
 
   useEffect(() => {
     latestFiltersRef.current = [];
     baselineFiltersRef.current = [];
+    pageFiltersRef.current = [];
   }, [resetKey]);
 
-  const rememberFilters = (filters: KokobayStorefrontFilter[], plpFilters: PlpFilters) => {
-    if (!filters.length) return;
-    latestFiltersRef.current = filters;
-    if (!hasActivePlpFilters(plpFilters, 0, 0)) {
-      baselineFiltersRef.current = filters;
-      return;
-    }
-    if (!baselineFiltersRef.current.length) {
-      baselineFiltersRef.current = filters;
-    }
-  };
+  const rememberFilters = useCallback(
+    (filters: KokobayStorefrontFilter[], plpFilters: PlpFilters) => {
+      if (!filters.length) return;
+      latestFiltersRef.current = filters;
+      pageFiltersRef.current = filters;
+      if (!hasActivePlpFilters(plpFilters, 0, 0)) {
+        baselineFiltersRef.current = filters;
+        return;
+      }
+      if (!baselineFiltersRef.current.length) {
+        baselineFiltersRef.current = filters;
+      }
+    },
+    [],
+  );
 
-  const filtersForLookup = () =>
-    baselineFiltersRef.current.length > 0
-      ? baselineFiltersRef.current
-      : latestFiltersRef.current;
+  const filtersForLookup = useCallback(() => {
+    if (baselineFiltersRef.current.length > 0) return baselineFiltersRef.current;
+    if (latestFiltersRef.current.length > 0) return latestFiltersRef.current;
+    return pageFiltersRef.current;
+  }, []);
 
-  return { rememberFilters, filtersForLookup, baselineFiltersRef };
+  return { rememberFilters, filtersForLookup, baselineFiltersRef, pageFiltersRef };
 }
 
 /** `totalCount` usually arrives on page 1 — retain after `maxPages` drops the oldest page. */
@@ -185,7 +194,9 @@ export function useKokobayCollectionCatalog(
 ) {
   const apiHandle = resolveCollectionHandleForApi(handle.trim());
   const marketKey = useMarketQueryKey();
-  const { rememberFilters, filtersForLookup, baselineFiltersRef } = useStorefrontFilterRefs(apiHandle);
+  const { rememberFilters, filtersForLookup, baselineFiltersRef, pageFiltersRef } =
+    useStorefrontFilterRefs(apiHandle);
+  const plpFiltersActive = hasActivePlpFilters(options.plpFilters, 0, 0);
 
   const queryKey = [
     'kokobay',
@@ -207,11 +218,13 @@ export function useKokobayCollectionCatalog(
     queryKey,
     enabled: enabled && Boolean(apiHandle),
     staleTime: 5 * 60_000,
-    placeholderData: keepPreviousInfiniteDataForQueryKeyMatch<
-      CatalogPage,
-      string | null,
-      CollectionCatalogQueryKey
-    >(2, apiHandle),
+    placeholderData: plpFiltersActive
+      ? undefined
+      : keepPreviousInfiniteDataForQueryKeyMatch<
+          CatalogPage,
+          string | null,
+          CollectionCatalogQueryKey
+        >(2, apiHandle),
     queryFn: async ({ pageParam }): Promise<CatalogPage> => {
       const safe = apiHandle;
       if (safe === ALL_PRODUCTS_COLLECTION_HANDLE) {
@@ -246,6 +259,13 @@ export function useKokobayCollectionCatalog(
   const products = useMemo(() => flattenCatalogProductPages(pages), [pages]);
   const totalProductCount = useRetainedTotalCount(pages, apiHandle);
   const storefrontFilters = useMemo(() => storefrontFiltersFromPages(pages), [pages]);
+
+  useEffect(() => {
+    if (!storefrontFilters.length) return;
+    pageFiltersRef.current = storefrontFilters;
+    rememberFilters(storefrontFilters, options.plpFilters);
+  }, [storefrontFilters, options.plpFilters, rememberFilters]);
+
   const facetSourceFilters = useMemo(() => {
     if (baselineFiltersRef.current.length > 0) {
       return baselineFiltersRef.current;
@@ -253,8 +273,16 @@ export function useKokobayCollectionCatalog(
     return storefrontFilters;
   }, [storefrontFilters, query.dataUpdatedAt]);
   const filterFacets = useStableFilterFacets(facetSourceFilters, apiHandle);
+  const serverSideFiltersCapable = canApplyStorefrontPlpFilters(facetSourceFilters);
 
-  return { ...query, products, storefrontFilters, filterFacets, totalProductCount };
+  return {
+    ...query,
+    products,
+    storefrontFilters,
+    filterFacets,
+    totalProductCount,
+    serverSideFiltersCapable,
+  };
 }
 
 export function useKokobaySearchCatalog(
@@ -264,7 +292,9 @@ export function useKokobaySearchCatalog(
 ) {
   const trimmed = queryText.trim();
   const marketKey = useMarketQueryKey();
-  const { rememberFilters, filtersForLookup, baselineFiltersRef } = useStorefrontFilterRefs(trimmed);
+  const { rememberFilters, filtersForLookup, baselineFiltersRef, pageFiltersRef } =
+    useStorefrontFilterRefs(trimmed);
+  const plpFiltersActive = hasActivePlpFilters(options.plpFilters, 0, 0);
 
   const queryKey = [
     'kokobay',
@@ -286,11 +316,13 @@ export function useKokobaySearchCatalog(
     queryKey,
     enabled: enabled && trimmed.length >= 1,
     staleTime: 2 * 60_000,
-    placeholderData: keepPreviousInfiniteDataForQueryKeyMatch<
-      CatalogPage,
-      string | null,
-      SearchCatalogQueryKey
-    >(2, trimmed),
+    placeholderData: plpFiltersActive
+      ? undefined
+      : keepPreviousInfiniteDataForQueryKeyMatch<
+          CatalogPage,
+          string | null,
+          SearchCatalogQueryKey
+        >(2, trimmed),
     queryFn: async ({ pageParam }): Promise<CatalogPage> => {
       const page = await fetchKokobaySearchPage(trimmed, {
         first: KOKOBAY_CATALOG_PAGE_SIZE,
@@ -312,6 +344,13 @@ export function useKokobaySearchCatalog(
   const products = useMemo(() => flattenCatalogProductPages(pages), [pages]);
   const totalProductCount = useRetainedTotalCount(pages, trimmed);
   const storefrontFilters = useMemo(() => storefrontFiltersFromPages(pages), [pages]);
+
+  useEffect(() => {
+    if (!storefrontFilters.length) return;
+    pageFiltersRef.current = storefrontFilters;
+    rememberFilters(storefrontFilters, options.plpFilters);
+  }, [storefrontFilters, options.plpFilters, rememberFilters]);
+
   const facetSourceFilters = useMemo(() => {
     if (baselineFiltersRef.current.length > 0) {
       return baselineFiltersRef.current;
@@ -319,8 +358,16 @@ export function useKokobaySearchCatalog(
     return storefrontFilters;
   }, [storefrontFilters, query.dataUpdatedAt]);
   const filterFacets = useStableFilterFacets(facetSourceFilters, trimmed);
+  const serverSideFiltersCapable = canApplyStorefrontPlpFilters(facetSourceFilters);
 
-  return { ...query, products, storefrontFilters, filterFacets, totalProductCount };
+  return {
+    ...query,
+    products,
+    storefrontFilters,
+    filterFacets,
+    totalProductCount,
+    serverSideFiltersCapable,
+  };
 }
 
 export { storefrontFilterPriceMeta };

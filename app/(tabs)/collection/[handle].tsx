@@ -170,7 +170,9 @@ export default function CollectionScreen() {
   }, [isWebCatalog, kokobayCatalog.filterFacets, allProducts]);
 
   const serverSideFiltersActive =
-    isWebCatalog && hasActivePlpFilters(filters, priceMeta.min, priceMeta.max);
+    isWebCatalog &&
+    hasActivePlpFilters(filters, priceMeta.min, priceMeta.max) &&
+    kokobayCatalog.serverSideFiltersCapable;
   const hasSelectedFilters = countActivePlpFilters(filters, priceMeta.min, priceMeta.max) > 0;
 
   const { rows: flatItems, totalFiltered } = usePlpDisplayProducts(allProducts, filters, sort, {
@@ -197,7 +199,8 @@ export default function CollectionScreen() {
     isFetchingNextPage: kokobayCatalog.isFetchingNextPage,
   });
 
-  const listLoading = catalogPending || allProducts === undefined;
+  const listLoading =
+    !hasSelectedFilters && (catalogPending || allProducts === undefined);
 
   const plpScrollEnabled = Boolean(
     collection &&

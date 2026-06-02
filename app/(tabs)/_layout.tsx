@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { Platform, StyleSheet, type TextStyle, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { LuxuryTabHeader } from '@/components/navigation/luxury-tab-header';
 import { useBagState } from '@/contexts/bag-context';
 import { useWishlist } from '@/contexts/wishlist-context';
@@ -37,6 +38,7 @@ const cartBadgeStyle: TextStyle = {
 };
 
 export default function TabLayout() {
+  useRenderTrace('BottomTabs');
   const { bagUnitCount } = useBagState();
   const { wishlistCount } = useWishlist();
 

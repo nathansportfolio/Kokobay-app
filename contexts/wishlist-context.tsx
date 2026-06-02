@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type PropsWithChildren,
 } from 'react';
 
@@ -31,6 +32,25 @@ export type WishlistContextValue = {
 
 const WishlistContext = createContext<WishlistContextValue | null>(null);
 
+type WishlistActionsContextValue = {
+  toggleWishlist: (handle: string) => void;
+};
+
+const WishlistActionsContext = createContext<WishlistActionsContextValue | null>(null);
+
+const wishlistHandleListeners = new Set<() => void>();
+let wishlistHandleSetSnapshot = new Set<string>();
+
+function subscribeWishlistHandles(listener: () => void): () => void {
+  wishlistHandleListeners.add(listener);
+  return () => wishlistHandleListeners.delete(listener);
+}
+
+function publishWishlistHandleSet(handles: string[]): void {
+  wishlistHandleSetSnapshot = new Set(handles);
+  for (const listener of wishlistHandleListeners) listener();
+}
+
 let wishlistPersistTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function WishlistProvider({ children }: PropsWithChildren) {
@@ -41,6 +61,10 @@ export function WishlistProvider({ children }: PropsWithChildren) {
     () => wishlistHandlesFromEntries(wishlistEntries),
     [wishlistEntries],
   );
+
+  useEffect(() => {
+    publishWishlistHandleSet(wishlistHandles);
+  }, [wishlistHandles]);
 
   const wishlistSet = useMemo(() => new Set(wishlistHandles), [wishlistHandles]);
 
@@ -127,7 +151,32 @@ export function WishlistProvider({ children }: PropsWithChildren) {
     ],
   );
 
-  return <WishlistContext.Provider value={value}>{children}</WishlistContext.Provider>;
+  const actionsValue = useMemo(() => ({ toggleWishlist }), [toggleWishlist]);
+
+  return (
+    <WishlistActionsContext.Provider value={actionsValue}>
+      <WishlistContext.Provider value={value}>{children}</WishlistContext.Provider>
+    </WishlistActionsContext.Provider>
+  );
+}
+
+/** Per-handle subscription — only re-renders when this product's wishlist state changes. */
+export function useIsWishlistedHandle(handle: string): boolean {
+  const normalized = handle.trim();
+  return useSyncExternalStore(
+    subscribeWishlistHandles,
+    () => (normalized ? wishlistHandleSetSnapshot.has(normalized) : false),
+    () => false,
+  );
+}
+
+/** Stable toggle action — does not subscribe to wishlist membership changes. */
+export function useWishlistToggle(): (handle: string) => void {
+  const ctx = useContext(WishlistActionsContext);
+  if (!ctx) {
+    throw new Error('useWishlistToggle must be used within WishlistProvider');
+  }
+  return ctx.toggleWishlist;
 }
 
 export function useWishlist(): WishlistContextValue {

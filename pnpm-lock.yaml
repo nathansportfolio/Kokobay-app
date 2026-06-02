@@ -92,6 +92,12 @@ importers:
       expo-web-browser:
         specifier: ~15.0.10
         version: 15.0.11(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))
+      klaviyo-expo-plugin:
+        specifier: ^0.4.0
+        version: 0.4.0(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      klaviyo-react-native-sdk:
+        specifier: ^2.4.1
+        version: 2.4.1(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       lucide-react-native:
         specifier: ^1.14.0
         version: 1.14.0(react-native-svg@15.15.4(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
@@ -3569,6 +3575,23 @@ packages:
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
+
+  klaviyo-expo-plugin@0.4.0:
+    resolution: {integrity: sha512-M1p2z0+Ja4FcT3gM7t99osOAB9D3eit/5g0GfJYQqB1/ami86hiQyj0sUj/ZhspHchAOvAMEe1F4zTGHknDGTw==}
+    peerDependencies:
+      expo: '*'
+      expo-location: '>=16.0.0'
+      react: '>=18.0.0 <20.0.0'
+      react-native: '>=0.70.0 <1.0.0'
+    peerDependenciesMeta:
+      expo-location:
+        optional: true
+
+  klaviyo-react-native-sdk@2.4.1:
+    resolution: {integrity: sha512-T3PvhKP17dcohJFfFC6ce+Zyhcq43QmZ83lRSUuNefqQ14woxU2oHxg8UQuN7bSJIRrD6X9FVR5YahM5V0+CtA==}
+    peerDependencies:
+      react: '*'
+      react-native: '*'
 
   kleur@3.0.3:
     resolution: {integrity: sha512-eTIzlVOSUR+JxdDFepEYcBMtZ9Qqdef+rnzWdRZuMbOywu5tO2w2N7rqjoANZ5k9vywhL6Br1VRjUIgTQx4E8w==}
@@ -9518,6 +9541,17 @@ snapshots:
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
+
+  klaviyo-expo-plugin@0.4.0(expo@54.0.34)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+    dependencies:
+      expo: 54.0.34(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native-webview@13.15.0(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)(typescript@5.9.3)
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
+
+  klaviyo-react-native-sdk@2.4.1(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
 
   kleur@3.0.3: {}
 

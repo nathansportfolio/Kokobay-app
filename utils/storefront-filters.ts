@@ -244,6 +244,13 @@ export function hasActivePlpFilters(
   );
 }
 
+/** True when Shopify filter inputs can be mapped from a prior collection/search response. */
+export function canApplyStorefrontPlpFilters(
+  storefrontFilters: KokobayStorefrontFilter[],
+): boolean {
+  return storefrontFilters.length > 0;
+}
+
 /** Price slider bounds for PLP filters — fixed £0–£120 (not derived from catalog). */
 export function storefrontFilterPriceMeta(
   _facets: StorefrontFilterFacets,

@@ -27,6 +27,13 @@ function isFirebaseCrashlyticsEnabledFromEnv(): boolean {
   return value === '1' || value === 'true' || value === 'yes';
 }
 
+function isKlaviyoEnabledFromEnv(): boolean {
+  const value = readFirebaseEnv('EXPO_PUBLIC_KLAVIYO_ENABLED');
+  if (value === undefined) return false;
+  if (value === '0' || value === 'false' || value === 'no') return false;
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
 /**
  * Dynamic Expo config — extends static `app.json` and adds push notification plugin
  * settings required for EAS / TestFlight / production (APNs + FCM via Expo).
@@ -39,6 +46,7 @@ const APP_DISPLAY_NAME = 'Koko Bay';
 
 const firebaseAnalyticsEnabled = isFirebaseAnalyticsEnabledFromEnv();
 const firebaseCrashlyticsEnabled = isFirebaseCrashlyticsEnabledFromEnv();
+const klaviyoEnabled = isKlaviyoEnabledFromEnv();
 const iosGoogleServicesFile =
   readFirebaseEnv('EXPO_PUBLIC_FIREBASE_IOS_GOOGLE_SERVICES_FILE') ?? './GoogleService-Info.plist';
 const androidGoogleServicesFile =
@@ -69,6 +77,29 @@ const firebasePlugins: NonNullable<ExpoConfig['plugins']> = useFirebaseNative
           ios: {
             useFrameworks: 'static',
             forceStaticLinking: firebaseStaticLinkModules,
+          },
+        },
+      ],
+    ]
+  : [];
+
+/** Analytics + profiles only — Expo push and Koko Bay `/api/push/*` stay unchanged. */
+const klaviyoPlugins: NonNullable<ExpoConfig['plugins']> = klaviyoEnabled
+  ? [
+      [
+        'klaviyo-expo-plugin',
+        {
+          android: {
+            logLevel: 2,
+            openTracking: false,
+            geofencingEnabled: false,
+            formsEnabled: true,
+          },
+          ios: {
+            badgeAutoclearing: false,
+            includeNotificationServiceExtension: false,
+            formsEnabled: true,
+            geofencingEnabled: false,
           },
         },
       ],
@@ -110,7 +141,7 @@ const config: ExpoConfig = {
     ...(hasAndroidGoogleServices ? { googleServicesFile: androidGoogleServicesFile } : {}),
     intentFilters: [...(expo.android?.intentFilters ?? []), ...androidIntentFilters],
   },
-  plugins: [...basePlugins, ...firebasePlugins, ['expo-notifications', {
+  plugins: [...basePlugins, ...firebasePlugins, ...klaviyoPlugins, ['expo-notifications', {
     icon: './assets/images/icon.png',
     color: '#8E6E66',
     defaultChannel: 'default',
