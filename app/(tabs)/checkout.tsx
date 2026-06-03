@@ -14,11 +14,14 @@ import { palette } from '@/constants/theme';
 import { gtmCartValue, trackPurchase } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
+import { openCheckoutExternallyOrShowUnavailable } from '@/lib/open-checkout';
 import { ensureCartSyncedForCheckout, showToast, useAuthStore, useCartStore } from '@/store';
+import { showCheckoutUnavailableModal } from '@/store/checkout-unavailable-modal';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 import { accountAuthRoute } from '@/utils/account-navigation';
 import { hapticLight } from '@/utils/haptics';
-import { resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
+import { assertCheckoutAvailable } from '@/utils/checkout-health';
+import { logCheckoutUrl, resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
 
 function resolveCheckoutUrl(
   param: string | string[] | undefined,
@@ -40,7 +43,7 @@ export default function CheckoutScreen() {
   useLifecycleRenderCount('checkout');
   const router = useRouter();
   const { url: urlParam } = useLocalSearchParams<{ url?: string }>();
-  const checkoutUrlFromStore = useCartStore((s) => s.checkoutUrl);
+  const checkoutUrlFromStore = useCartStore((s) => s.storeCheckoutUrl ?? s.checkoutUrl);
   const lines = useCartStore((s) => s.lines);
   const pendingCartSync = useCartStore((s) => s.pendingCartSync);
   const isSyncingShopify = useCartStore((s) => s.isSyncingShopify);
@@ -49,6 +52,7 @@ export default function CheckoutScreen() {
   const isAppLoggedIn = Boolean(customerEmail?.trim());
   const [bootstrapping, setBootstrapping] = useState(true);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
+  const [checkoutUnavailable, setCheckoutUnavailable] = useState(false);
   const orderConfirmedRef = useRef(false);
   /** Keeps the WebView mounted after the bag is cleared post-purchase. */
   const checkoutSessionUrlRef = useRef<string | null>(null);
@@ -125,6 +129,52 @@ export default function CheckoutScreen() {
   const webViewUrl = purchaseComplete
     ? checkoutSessionUrlRef.current ?? checkoutUrl
     : checkoutUrl;
+  const bagIsEmpty = lines.length === 0;
+
+  const retryCheckoutOpen = useCallback(() => {
+    setCheckoutUnavailable(false);
+    initialCartSyncDoneRef.current = false;
+    setBootstrapping(true);
+    void (async () => {
+      const hasLines = useCartStore.getState().lines.length > 0;
+      if (hasLines) {
+        await ensureCartSyncedForCheckout(customerEmail ?? undefined);
+      }
+      setBootstrapping(false);
+    })();
+  }, [customerEmail]);
+
+  useEffect(() => {
+    if (checkoutBusy || purchaseComplete) return;
+    if (!webViewUrl) {
+      if (!bagIsEmpty && !checkoutBusy) {
+        setCheckoutUnavailable(true);
+        showCheckoutUnavailableModal({ onTryAgain: retryCheckoutOpen });
+      }
+      return;
+    }
+    if (!assertCheckoutAvailable(webViewUrl, { source: 'checkout_screen' })) {
+      setCheckoutUnavailable(true);
+      showCheckoutUnavailableModal({ onTryAgain: retryCheckoutOpen });
+      return;
+    }
+    setCheckoutUnavailable(false);
+    logCheckoutUrl('checkout_screen', webViewUrl, {
+      storeCheckoutUrl: checkoutUrlFromStore,
+      fromParam: Boolean(urlParam),
+      isAppLoggedIn,
+      checkoutBusy,
+    });
+  }, [
+    webViewUrl,
+    checkoutUrlFromStore,
+    urlParam,
+    isAppLoggedIn,
+    checkoutBusy,
+    purchaseComplete,
+    bagIsEmpty,
+    retryCheckoutOpen,
+  ]);
 
   useEffect(() => {
     if (!orderConfirmed) return;
@@ -178,7 +228,6 @@ export default function CheckoutScreen() {
   );
 
   const isLoading = checkoutBusy && !purchaseComplete;
-  const bagIsEmpty = lines.length === 0;
   const backLabel = purchaseComplete ? 'Continue shopping' : 'Your bag';
 
   return (
@@ -206,7 +255,7 @@ export default function CheckoutScreen() {
               Preparing checkout…
             </Text>
           </View>
-        ) : webViewUrl ? (
+        ) : webViewUrl && !checkoutUnavailable ? (
           <CheckoutWebView
             url={webViewUrl}
             lines={lines}
@@ -215,6 +264,12 @@ export default function CheckoutScreen() {
             onNavigateToCart={goToAppCartFromWebView}
             onNavigateToHome={goToAppHomeFromWebView}
             onNavigateToLogin={goToAppLoginFromWebView}
+            onCheckoutOpenFailed={() => {
+              setCheckoutUnavailable(true);
+              void openCheckoutExternallyOrShowUnavailable(webViewUrl, {
+                onTryAgain: retryCheckoutOpen,
+              });
+            }}
           />
         ) : (
           <View className="flex-1 items-center justify-center gap-4 px-8">

@@ -63,7 +63,7 @@ export function usePushNotificationSetup(navigationReady = true): void {
       return () => removeTokenListener();
     }
 
-    void registerPushNotifications(email);
+    void registerPushNotifications(email, 'auth_effect');
     const removeTokenListener = addPushTokenRefreshListener(email);
     return () => removeTokenListener();
   }, [email, hasHydrated, isExpoGo]);

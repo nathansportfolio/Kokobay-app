@@ -319,7 +319,7 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
           });
           await refreshPermission();
           if (status === 'granted') {
-            const result = await registerPushNotifications(user?.email);
+            const result = await registerPushNotifications(user?.email, 'account_settings_enable');
             if (result.ok) {
               showToast(
                 result.skipped

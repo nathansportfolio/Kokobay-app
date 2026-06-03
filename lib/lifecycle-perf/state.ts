@@ -1,4 +1,5 @@
 import { recordForegroundNetworkRequest } from '@/lib/foreground-perf';
+import { notifyForegroundAuditTimerRegistered } from '@/lib/foreground-audit/state';
 import type {
   ActiveTimerInfo,
   AppStateTransition,
@@ -94,6 +95,7 @@ export function registerTimer(
     createdAtMs: Date.now(),
     label,
   });
+  notifyForegroundAuditTimerRegistered();
   return id;
 }
 

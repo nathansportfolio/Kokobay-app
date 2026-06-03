@@ -139,6 +139,12 @@ const config: ExpoConfig = {
   android: {
     ...expo.android,
     ...(hasAndroidGoogleServices ? { googleServicesFile: androidGoogleServicesFile } : {}),
+    blockedPermissions: [
+      ...(expo.android?.blockedPermissions ?? []),
+      'android.permission.ACCESS_BACKGROUND_LOCATION',
+      'android.permission.ACCESS_FINE_LOCATION',
+      'android.permission.ACCESS_COARSE_LOCATION',
+    ],
     intentFilters: [...(expo.android?.intentFilters ?? []), ...androidIntentFilters],
   },
   plugins: [...basePlugins, ...firebasePlugins, ...klaviyoPlugins, ['expo-notifications', {

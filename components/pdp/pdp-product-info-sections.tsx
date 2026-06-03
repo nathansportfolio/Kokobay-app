@@ -14,6 +14,7 @@ export function PdpProductInfoSections() {
           slug={section.slug}
           fallbackTitle={section.title}
           countryCode={countryCode}
+          footerLink={'footerLink' in section ? section.footerLink : undefined}
         />
       ))}
     </>

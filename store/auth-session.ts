@@ -29,7 +29,31 @@ import {
   refreshAppBenefitsInBackground,
   useAppBenefitsStore,
 } from './app-benefits';
-import { clearRemoteCartInBackground, flushCartSync, resetCartForSignOut } from './cart';
+import {
+  clearRemoteCartInBackground,
+  getCartRevisionSnapshot,
+  mergeGuestCartOnLogin,
+  resetCartForSignOut,
+  useCartStore,
+} from './cart';
+import { logCartStateTransition } from '@/lib/cart-perf-log';
+
+function logAuthHydrateCartFlush(source: string, customerEmail?: string): void {
+  const { lines, hasHydrated } = useCartStore.getState();
+  const { cartRevision, lastSyncedRevision, isCartDirty } = getCartRevisionSnapshot();
+  logCartStateTransition(source, lines.length, cartRevision, {
+    hasHydrated,
+    lastSyncedRevision,
+    isCartDirty,
+    customerEmail: customerEmail ?? null,
+  });
+}
+
+function authHydrateFlushCartSync(customerEmail?: string): void {
+  logAuthHydrateCartFlush('auth_hydrate:mergeGuestCart', customerEmail);
+  if (!customerEmail?.trim()) return;
+  void mergeGuestCartOnLogin(customerEmail);
+}
 
 /** Attach session immediately; merge guest cart + benefits in the background (non-blocking UI). */
 async function completeAuthenticatedCartSetup(session: AuthSession): Promise<void> {
@@ -40,7 +64,7 @@ async function completeAuthenticatedCartSetup(session: AuthSession): Promise<voi
 
   void (async () => {
     try {
-      await flushCartSync(session.user.email);
+      await mergeGuestCartOnLogin(session.user.email);
       await useAppBenefitsStore.getState().refresh(session.accessToken, {
         force: true,
         applyDiscount: false,
@@ -111,7 +135,7 @@ function performSignOut(options: SignOutOptions = {}): void {
     } finally {
       resumePushRegistrationAfterSignOut();
       const guestPushStart = performance.now();
-      const guestPush = await registerPushNotifications();
+      const guestPush = await registerPushNotifications(undefined, 'sign_out_guest');
       logSignOutPerf('push_guest_register_complete', {
         ms: Math.round(performance.now() - guestPushStart),
         skipped: Boolean(guestPush.ok && guestPush.skipped),
@@ -155,7 +179,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         hasHydrated: true,
       });
       refreshAppBenefitsInBackground(restored.session.accessToken);
-      void flushCartSync(restored.session.user.email);
+      authHydrateFlushCartSync(restored.session.user.email);
       return;
     }
 
@@ -165,7 +189,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (local) {
         set({ user: local.user, accessToken: local.accessToken, hasHydrated: true });
         refreshAppBenefitsInBackground(local.accessToken);
-        void flushCartSync(local.user.email);
+        authHydrateFlushCartSync(local.user.email);
         return;
       }
       set({ user: null, accessToken: null, hasHydrated: true });
@@ -185,7 +209,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (session) {
         set({ user: session.user, accessToken: session.accessToken, hasHydrated: true });
         refreshAppBenefitsInBackground(session.accessToken);
-        void flushCartSync(session.user.email);
+        authHydrateFlushCartSync(session.user.email);
       } else {
         set({ user: null, accessToken: null, hasHydrated: true });
       }
@@ -198,7 +222,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setSession: (session) => {
     set({ user: session.user, accessToken: session.accessToken });
     void persistCustomerSessionCookie(session.accessToken);
-    void registerPushNotifications(session.user.email);
+    void registerPushNotifications(session.user.email, 'set_session');
   },
 
   patchUser: (patch) => {

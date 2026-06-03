@@ -1,6 +1,6 @@
 import { recordRenderTrace, type RenderTraceLabel } from '@/lib/render-trace';
 
-/** Dev-only — logs `[RENDER] Label` when `EXPO_PUBLIC_RENDER_TRACE=1`. */
+/** Dev-only — logs `[RENDER] Label` (on by default in dev). */
 export function useRenderTrace(label: RenderTraceLabel): void {
   recordRenderTrace(label);
 }

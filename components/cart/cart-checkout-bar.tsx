@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useCartPricingAuditCheckoutBar } from '@/hooks/use-cart-pricing-audit';
 import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useCallback, useState } from 'react';
@@ -8,13 +7,11 @@ import { BlurView } from 'expo-blur';
 const BLUR_SUPPORTED = Platform.OS === 'ios';
 
 import { Button } from '@/components/ui/button';
+import { openCheckoutFromBag } from '@/lib/open-checkout';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
-import { trackBeginCheckout } from '@/lib/gtm';
-import { ensureCartSyncedForCheckout, showToast, useAuthStore, useCartStore } from '@/store';
 import { DEFAULT_FREE_DELIVERY_THRESHOLD_GBP } from '@/constants/delivery-threshold';
 import { formatCartDiscountRowLabel } from '@/constants/first-app-order-discount';
 import { formatCartMoney } from '@/utils/money';
-import { resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
 import type { CartAppliedDiscount } from '@/utils/cart-cost-breakdown';
 
 type Money = { amount: string; currencyCode: string };
@@ -128,27 +125,7 @@ export function CartCheckoutBar({
     if (!isRemoteCartConfigured()) return;
     setCheckingOut(true);
     try {
-      const customerEmail = useAuthStore.getState().user?.email?.trim();
-      const isLoggedIn = Boolean(customerEmail);
-      await ensureCartSyncedForCheckout(customerEmail ?? undefined);
-
-      const { lines, checkoutUrl, pendingCartSync, isSyncingShopify } = useCartStore.getState();
-      const checkoutStillPending = pendingCartSync || isSyncingShopify;
-      const checkoutTarget = resolveCheckoutWebViewUrl(checkoutUrl, lines, {
-        isLoggedIn,
-        awaitingCheckoutUrl: checkoutStillPending || (isLoggedIn && !checkoutUrl?.trim()),
-      });
-
-      if (!checkoutTarget) {
-        showToast({
-          variant: 'error',
-          title: 'Couldn\u2019t start checkout',
-          description: 'Check your bag and try again.',
-        });
-        return;
-      }
-      trackBeginCheckout(lines);
-      router.push('/checkout');
+      await openCheckoutFromBag();
     } finally {
       setCheckingOut(false);
     }

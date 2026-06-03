@@ -1,10 +1,13 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PropsWithChildren, useEffect } from 'react';
 
+import { CheckoutUnavailableModal } from '@/components/checkout/checkout-unavailable-modal';
 import { AppGlobalShell } from '@/components/providers/app-global-shell';
 import { AppErrorBannerSync } from '@/components/providers/app-error-banner-sync';
 import { AppPromotionBannerSync } from '@/components/providers/app-promotion-banner-sync';
 import { DeliveryThresholdSync } from '@/components/providers/delivery-threshold-sync';
+import { ForegroundAuditSync } from '@/components/providers/foreground-audit-sync';
+import { JsFreezeAuditSync } from '@/components/providers/js-freeze-audit-sync';
 import { RenderTraceSync } from '@/components/providers/render-trace-sync';
 import { LifecyclePerfSync } from '@/components/providers/lifecycle-perf-sync';
 import { ResumePerfSync } from '@/components/providers/resume-perf-sync';
@@ -55,9 +58,14 @@ export function AppProviders({ children }: PropsWithChildren) {
   useEffect(() => {
     void (async () => {
       await useMarketStore.getState().hydrate();
-      await useAuthStore.getState().hydrate();
+      if (__DEV__) console.log('[CART_STATE_TRANSITION] source=app_hydrate:market_done');
+      await Promise.all([
+        useAuthStore.getState().hydrate(),
+        useSearchHistoryStore.getState().hydrate(),
+      ]);
+      if (__DEV__) console.log('[CART_STATE_TRANSITION] source=app_hydrate:auth_done');
       await useCartStore.getState().hydrate();
-      await useSearchHistoryStore.getState().hydrate();
+      if (__DEV__) console.log('[CART_STATE_TRANSITION] source=app_hydrate:cart_done');
 
       const pendingCurrencyToast = useMarketStore.getState().pendingLocaleCurrencyToast;
       if (pendingCurrencyToast) {
@@ -72,6 +80,8 @@ export function AppProviders({ children }: PropsWithChildren) {
       <AppErrorRouteTracker />
       <LifecyclePerfSync />
       <ResumePerfSync />
+      <ForegroundAuditSync />
+      <JsFreezeAuditSync />
       <DeliveryThresholdSync />
       <RenderTraceSync />
       <AppPromotionBannerSync />
@@ -82,6 +92,7 @@ export function AppProviders({ children }: PropsWithChildren) {
         <BagProvider>
           <ScrollToTopProvider>
             <AppGlobalShell>{children}</AppGlobalShell>
+            <CheckoutUnavailableModal />
           </ScrollToTopProvider>
         </BagProvider>
       </WishlistProvider>

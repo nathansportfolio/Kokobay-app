@@ -15,9 +15,13 @@ import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
+import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
+import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { getCollections } from '@/services/shopify';
+import { collectionHandlesMatch } from '@/utils/collection-handles';
 import { cmsCollectionTilesToDisplayItems } from '@/utils/cms-collection-tiles';
+import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
 
 const SHOP_SCROLL_CONTENT = {
@@ -52,6 +56,15 @@ export default function CategoriesScreen() {
   useEffect(() => {
     resetShopTabPerfTrace({ routeKey: 'categories-tab' });
   }, []);
+
+  const isWebCatalog = isKokobayWebProductsConfigured();
+
+  const { data: catalogCollections } = useQuery({
+    queryKey: ['kokobay', 'api', 'collections'],
+    enabled: isWebCatalog,
+    queryFn: async () => (await getKokobayWebCollections(500)) ?? [],
+    staleTime: 4 * 60_000,
+  });
 
   const {
     data: cmsTiles,
@@ -90,7 +103,26 @@ export default function CategoriesScreen() {
     }));
   }, [cmsError, fallbackCollections]);
 
-  const displayItems = cmsDisplayItems.length > 0 ? cmsDisplayItems : fallbackDisplayItems;
+  const displayItems = useMemo((): CmsCollectionDisplayItem[] => {
+    const items = cmsDisplayItems.length > 0 ? cmsDisplayItems : fallbackDisplayItems;
+    if (!catalogCollections?.length) return items;
+    return items.map((item) => {
+      const hit = catalogCollections.find(
+        (c) =>
+          c.handle === item.collection.handle ||
+          collectionHandlesMatch(c.handle, item.collection.handle),
+      );
+      if (!hit) return item;
+      return {
+        ...item,
+        collection: {
+          ...item.collection,
+          description: hit.description ?? item.collection.description,
+          descriptionHtml: hit.descriptionHtml ?? item.collection.descriptionHtml,
+        },
+      };
+    });
+  }, [catalogCollections, cmsDisplayItems, fallbackDisplayItems]);
 
   const showCollectionsSkeleton =
     (cmsPending && cmsTiles === undefined) || (cmsError && fallbackPending && fallbackCollections === undefined);

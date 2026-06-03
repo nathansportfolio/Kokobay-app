@@ -122,6 +122,8 @@ export function storefrontCollectionSummaryToCollection(
     id: node.id,
     handle: node.handle,
     title: node.title,
+    description: node.description ?? undefined,
+    descriptionHtml: node.descriptionHtml ?? undefined,
     image: mapImage(node.image),
   };
 }

@@ -12,12 +12,14 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
+import { isAndroidDevClient } from '@/lib/dev-android-network';
 import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
 import { useHomeRenderTrace } from '@/hooks/use-home-render-trace';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
@@ -48,6 +50,7 @@ function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDi
 
 export default function HomeScreen() {
   useLifecycleRenderCount('home');
+  useRenderTrace('Home');
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const mainScrollRef = useRef<ScrollView>(null);
@@ -72,7 +75,9 @@ export default function HomeScreen() {
     [newInHandle],
   );
 
-  const { data, isPending, isError, refetch, isRefetching } = useHomeCatalogQuery();
+  const { data, isPending, isError, refetch, isRefetching, isFetching } = useHomeCatalogQuery();
+  const showHomeSkeleton =
+    data === undefined && (isPending || isFetching || isRefetching);
 
   const { data: cmsTiles } = useQuery({
     queryKey: ['collections-cms'],
@@ -92,10 +97,10 @@ export default function HomeScreen() {
     heroPending: heroQuery.isPending,
   });
 
-  const { onScroll: onScrollLoading } = useBindScrollToTop(scrollToTopLoading, isPending);
+  const { onScroll: onScrollLoading } = useBindScrollToTop(scrollToTopLoading, showHomeSkeleton);
   const { onScroll: onScrollMain } = useBindScrollToTop(
     scrollToTopMain,
-    !isPending && !isError && Boolean(data),
+    !showHomeSkeleton && !isError && Boolean(data),
   );
 
   const newInProducts = useMemo(
@@ -113,7 +118,7 @@ export default function HomeScreen() {
     return homeCollectionFallbackItems(data.collections);
   }, [cmsTiles, data]);
 
-  if (isPending) {
+  if (showHomeSkeleton) {
     return (
       <View className="flex-1 bg-canvas">
         <ScrollView
@@ -142,15 +147,17 @@ export default function HomeScreen() {
   }
 
   if (isError || !data) {
+    const connectionMessage =
+      __DEV__ && isAndroidDevClient()
+        ? 'The Android emulator often cannot reach external APIs (timeouts). Try a physical device, cold-boot the emulator, or use EXPO_PUBLIC_KOKOBAY_USE_LOCALHOST=true with http://10.0.2.2:3000.'
+        : 'We could not reach the catalog. Check your connection and try again.';
+
     return (
       <ScrollView
         className="flex-1 bg-canvas"
         contentContainerStyle={{ flexGrow: 1, paddingTop: headerStack, paddingBottom: 48 }}>
         <View className="px-5">
-          <EmptyState
-            title="The bay is quiet"
-            message="We could not reach the catalog. Check your connection and try again."
-          />
+          <EmptyState title="The bay is quiet" message={connectionMessage} />
           <Button
             title={isRefetching ? 'Refreshing…' : 'Retry'}
             variant="secondary"

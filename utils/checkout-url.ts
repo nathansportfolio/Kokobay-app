@@ -1,7 +1,18 @@
 import type { CartLine } from '@/types/cart';
+import { isCheckoutAvailable } from '@/utils/checkout-health';
 
 /** Checkout/cart attribution — appended to every app-generated checkout URL. */
 export const APP_CHECKOUT_SOURCE = 'app';
+
+/** Dev-only — filter Metro with `[CHECKOUT URL]`. */
+export function logCheckoutUrl(
+  source: string,
+  url: string | null,
+  extra?: Record<string, unknown>,
+): void {
+  if (!__DEV__) return;
+  console.log('[CHECKOUT URL]', { source, url, ...(extra ?? {}) });
+}
 
 /** Hostnames allowed inside the in-app checkout WebView. */
 export function isAllowedCheckoutHost(hostname: string): boolean {
@@ -102,8 +113,8 @@ export function isOnlineStoreCartPermalinkPath(pathname: string): boolean {
 }
 
 /**
- * Replaces the Online Store cart and opens theme checkout (`?checkout`).
- * Prefer this over `/cart/add` in the WebView — shared cookies would otherwise inflate qty.
+ * Replaces the Online Store cart and opens theme checkout.
+ * Prefer Storefront `checkoutUrl` when available — this is a last-resort fallback only.
  */
 export function buildOnlineStoreCartPermalinkUrl(
   lines: CartLine[],
@@ -122,7 +133,6 @@ export function buildOnlineStoreCartPermalinkUrl(
   if (!segments.length) return null;
   const params = new URLSearchParams();
   params.set('source', APP_CHECKOUT_SOURCE);
-  params.set('checkout', '');
   return `${origin}/cart/${segments.join(',')}?${params.toString()}`;
 }
 
@@ -250,7 +260,11 @@ export function normalizeStorefrontCheckoutUrl(
 
 function finalizeAppCheckoutUrl(url: string | null): string | null {
   if (!url) return null;
-  return withAppCheckoutSource(url);
+  const withSource = withAppCheckoutSource(url);
+  if (!isCheckoutAvailable(withSource)) {
+    return null;
+  }
+  return withSource;
 }
 
 export type ResolveCheckoutWebViewUrlOptions = {
@@ -287,18 +301,25 @@ export function resolveCheckoutWebViewUrl(
   }
 
   if (normalizedCheckoutUrl) {
+    console.log('[CHECKOUT] using Shopify checkoutUrl');
     return finalizeAppCheckoutUrl(normalizedCheckoutUrl);
   }
 
   if (options?.awaitingCheckoutUrl) {
+    console.log('[CHECKOUT] missing checkoutUrl after sync');
     return null;
   }
 
-  return finalizeAppCheckoutUrl(
-    buildOnlineStoreCartPermalinkUrl(lines, {
-      storeOrigin: resolveOnlineStoreOrigin(checkoutUrl),
-    }),
-  );
+  const fallback = buildOnlineStoreCartPermalinkUrl(lines, {
+    storeOrigin: resolveOnlineStoreOrigin(checkoutUrl),
+  });
+  if (fallback) {
+    console.log('[CHECKOUT] fallback cart permalink used');
+    return finalizeAppCheckoutUrl(fallback);
+  }
+
+  console.log('[CHECKOUT] missing checkoutUrl after sync');
+  return null;
 }
 
 /** Shopify order confirmation — safe point to clear the local bag. */

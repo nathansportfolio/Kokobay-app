@@ -32,11 +32,14 @@ import { ALL_PRODUCTS_COLLECTION, ALL_PRODUCTS_COLLECTION_HANDLE } from '@/const
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
+import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
 import { useKokobayCollectionCatalog } from '@/hooks/use-kokobay-catalog-pages';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
+import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
 import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
 import { useReturnToGoBack } from '@/hooks/use-return-to-go-back';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
@@ -49,7 +52,7 @@ import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { getCollectionProducts } from '@/services/shopify';
 import { showToast, useMarketStore } from '@/store';
 import { defaultPlpFilters, type PlpFilters, type PlpSort } from '@/types/plp';
-import type { Product } from '@/types/shopify';
+import type { Collection, Product } from '@/types/shopify';
 import {
   countActivePlpFilters,
   extractFacets,
@@ -58,12 +61,13 @@ import {
 } from '@/utils/plp';
 import { collectionHandlesMatch, resolveCollectionHandleForApi } from '@/utils/collection-handles';
 import { navigateToHomeTab } from '@/utils/collection-navigation';
-import { collectionEditorialEyebrow } from '@/utils/collection-text';
+import { collectionBlurb, collectionEditorialEyebrow } from '@/utils/collection-text';
 import { collectionProductCellHeight } from '@/utils/plp-layout';
 import { keepPreviousDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
 import { hasActivePlpFilters } from '@/utils/storefront-filters';
 
 export default function CollectionScreen() {
+  useRenderTrace('Collection');
   const { handle } = useLocalSearchParams<{ handle: string }>();
   const router = useRouter();
   const navigation = useNavigation();
@@ -84,32 +88,12 @@ export default function CollectionScreen() {
     staleTime: 4 * 60_000,
   });
 
-  const collection = useMemo(() => {
-    if (!safeHandle) return undefined;
-    if (kokobayCollectionIndex?.length) {
-      const hit = kokobayCollectionIndex.find(
-        (c) => c.handle === safeHandle || collectionHandlesMatch(c.handle, safeHandle),
-      );
-      if (hit) return hit;
-    }
-    if (safeHandle === ALL_PRODUCTS_COLLECTION_HANDLE || apiHandle === ALL_PRODUCTS_COLLECTION_HANDLE) {
-      return ALL_PRODUCTS_COLLECTION;
-    }
-    return {
-      id: `collection:${safeHandle}`,
-      handle: safeHandle,
-      title: collectionEditorialEyebrow(safeHandle),
-      image: null,
-    };
-  }, [safeHandle, apiHandle, kokobayCollectionIndex]);
-
   const [filters, setFilters] = useState<PlpFilters>(defaultPlpFilters);
   const [sort, setSort] = useState<PlpSort>('featured');
   const [numColumns, setNumColumns] = useState<1 | 2>(2);
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const listRef = useRef<FlashListRef<Product>>(null);
-  const plpScrollDidMountRef = useRef(false);
   const emptyCollectionHandledRef = useRef(false);
 
   const horizontalPad = PLP_HORIZONTAL_PAD;
@@ -130,6 +114,54 @@ export default function CollectionScreen() {
     sort,
   });
 
+  const collection = useMemo(() => {
+    if (!safeHandle) return undefined;
+
+    let base: Collection | undefined;
+    if (kokobayCollectionIndex?.length) {
+      const hit = kokobayCollectionIndex.find(
+        (c) => c.handle === safeHandle || collectionHandlesMatch(c.handle, safeHandle),
+      );
+      if (hit) base = hit;
+    }
+    if (!base) {
+      if (safeHandle === ALL_PRODUCTS_COLLECTION_HANDLE || apiHandle === ALL_PRODUCTS_COLLECTION_HANDLE) {
+        base = ALL_PRODUCTS_COLLECTION;
+      } else {
+        base = {
+          id: `collection:${safeHandle}`,
+          handle: safeHandle,
+          title: collectionEditorialEyebrow(safeHandle),
+          image: null,
+        };
+      }
+    }
+
+    const fromCatalog = isWebCatalog ? kokobayCatalog.collectionSummary : null;
+    if (!fromCatalog) return base;
+
+    return {
+      ...base,
+      id: fromCatalog.id || base.id,
+      handle: fromCatalog.handle || base.handle,
+      title: fromCatalog.title?.trim() || base.title,
+      description: fromCatalog.description ?? base.description,
+      descriptionHtml: fromCatalog.descriptionHtml ?? base.descriptionHtml,
+      image: fromCatalog.image ?? base.image,
+    };
+  }, [
+    safeHandle,
+    apiHandle,
+    kokobayCollectionIndex,
+    isWebCatalog,
+    kokobayCatalog.collectionSummary,
+  ]);
+
+  const collectionBlurbText = useMemo(
+    () => (collection ? collectionBlurb(collection) : undefined),
+    [collection],
+  );
+
   const marketKey = useMarketQueryKey();
   const marketCurrency = useMarketStore((s) => s.currencyCode);
 
@@ -139,6 +171,7 @@ export default function CollectionScreen() {
     isError: legacyCatalogError,
     isRefetching: legacyCatalogRefetching,
     refetch: refetchLegacyCatalog,
+    dataUpdatedAt: legacyCatalogDataUpdatedAt,
   } = useQuery({
     queryKey: ['collection', 'products', safeHandle, marketKey],
     enabled: Boolean(safeHandle) && !isWebCatalog,
@@ -179,6 +212,30 @@ export default function CollectionScreen() {
     skipClientFilters: serverSideFiltersActive,
   });
 
+  const plpTraceReason = useMemo(() => {
+    const parts: string[] = [];
+    if (hasSelectedFilters) parts.push('filters');
+    if (sort !== 'featured') parts.push('sort');
+    if (catalogPending) parts.push('catalog_pending');
+    if (catalogRefetching) parts.push('catalog_refetching');
+    if (isWebCatalog) parts.push('web_catalog');
+    else parts.push('legacy_catalog');
+    return parts.length ? parts.join('+') : 'stable';
+  }, [hasSelectedFilters, sort, catalogPending, catalogRefetching, isWebCatalog]);
+
+  const catalogDataUpdatedAt = isWebCatalog
+    ? kokobayCatalog.dataUpdatedAt
+    : legacyCatalogDataUpdatedAt;
+
+  useCollectionPlpRenderTrace({
+    screen: 'collection',
+    allProducts,
+    flatItems,
+    queryDataUpdatedAt: catalogDataUpdatedAt,
+    isFetching: catalogRefetching,
+    reason: plpTraceReason,
+  });
+
   const displayProductCount =
     isWebCatalog && kokobayCatalog.totalProductCount != null
       ? kokobayCatalog.totalProductCount
@@ -199,8 +256,14 @@ export default function CollectionScreen() {
     isFetchingNextPage: kokobayCatalog.isFetchingNextPage,
   });
 
+  const catalogQueryFetching =
+    isWebCatalog && kokobayCatalog.isFetching && !kokobayCatalog.isFetchingNextPage;
+
   const listLoading =
     !hasSelectedFilters && (catalogPending || allProducts === undefined);
+
+  const showPlpSkeleton =
+    flatItems.length === 0 && (listLoading || catalogQueryFetching);
 
   const plpScrollEnabled = Boolean(
     collection &&
@@ -263,13 +326,12 @@ export default function CollectionScreen() {
     });
   }, [collection?.title, flatItems, listLoading, marketCurrency, safeHandle]);
 
-  useEffect(() => {
-    if (!plpScrollDidMountRef.current) {
-      plpScrollDidMountRef.current = true;
-      return;
-    }
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [filters, sort, safeHandle]);
+  usePlpScrollToTop(listRef, {
+    sort,
+    filters,
+    scopeKey: safeHandle,
+    dataEpoch: catalogDataUpdatedAt,
+  });
 
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false, title: collection?.title ?? '' });
@@ -321,8 +383,8 @@ export default function CollectionScreen() {
   const keyExtractor = useCallback((item: Product) => item.id, []);
 
   const listExtra = useMemo(
-    () => `${itemWidth}:${cellHeight}:${numColumns}`,
-    [itemWidth, cellHeight, numColumns],
+    () => `${itemWidth}:${cellHeight}:${numColumns}:${sort}`,
+    [itemWidth, cellHeight, numColumns, sort],
   );
 
   const overrideItemLayout = useCallback(
@@ -353,7 +415,7 @@ export default function CollectionScreen() {
               className="absolute bottom-0 left-4 top-0 z-10 justify-center p-1 active:opacity-70">
               <IconSymbol name="chevron.left" size={18} color={palette.ink} />
             </Pressable>
-            <View className="items-center">
+            <View className="items-center px-2">
               <Text
                 variant="body"
                 className="text-center font-sans text-[13px] font-normal leading-5 tracking-wide"
@@ -361,6 +423,15 @@ export default function CollectionScreen() {
                 style={{ color: palette.ink }}>
                 {collection.title}
               </Text>
+              {collectionBlurbText ? (
+                <Text
+                  variant="caption"
+                  className="mt-2 text-center font-sans text-[12px] leading-[18px]"
+                  numberOfLines={3}
+                  style={{ color: 'rgba(120, 118, 114, 0.9)' }}>
+                  {collectionBlurbText}
+                </Text>
+              ) : null}
               <PlpProductCountLabel
                 count={displayProductCount}
                 visible={allProducts !== undefined}
@@ -379,6 +450,7 @@ export default function CollectionScreen() {
     );
   }, [
     collection,
+    collectionBlurbText,
     goBack,
     openFilter,
     toggleGrid,
@@ -413,7 +485,7 @@ export default function CollectionScreen() {
   let renderBranch = 'content';
   if (!collection) renderBranch = 'not-found';
   else if (catalogError && flatItems.length === 0) renderBranch = 'error';
-  else if (listLoading && flatItems.length === 0) renderBranch = 'skeleton';
+  else if (showPlpSkeleton) renderBranch = 'skeleton';
   else if (!catalogPending && allProducts !== undefined && allProducts.length === 0 && !hasSelectedFilters) {
     renderBranch = 'empty';
   }
@@ -427,6 +499,8 @@ export default function CollectionScreen() {
     extra: {
       isWebCatalog,
       listLoading,
+      showPlpSkeleton,
+      catalogQueryFetching,
       flatItemsCount: flatItems.length,
       allProductsUndefined: allProducts === undefined,
       catalogPending,
@@ -483,7 +557,7 @@ export default function CollectionScreen() {
 
   const listBottomPad = tabBarHeight + PLP_LIST_BOTTOM_PAD;
 
-  if (listLoading && flatItems.length === 0) {
+  if (showPlpSkeleton) {
     return (
       <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
         <ScrollView
@@ -515,7 +589,7 @@ export default function CollectionScreen() {
       <FlashList<Product>
         ref={listRef}
         style={plpScreenShell}
-        key={`${safeHandle}-${numColumns}`}
+        key={`${safeHandle}-${numColumns}-${sort}`}
         data={flatItems}
         numColumns={numColumns}
         keyExtractor={keyExtractor}

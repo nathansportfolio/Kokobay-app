@@ -6,9 +6,11 @@ import { AccountSettingsRow } from '@/components/account/account-settings-row';
 import { palette } from '@/constants/theme';
 import { hapticLight } from '@/utils/haptics';
 
-export const TERMS_AND_CONDITIONS_URL =
-  'https://www.kokobay.co.uk/pages/terms-conditions';
-export const PRIVACY_POLICY_URL = 'https://www.kokobay.co.uk/pages/privacy-policy';
+import {
+  HOW_TO_RETURN_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_AND_CONDITIONS_URL,
+} from '@/constants/legal-urls';
 
 function openLegalUrl(url: string) {
   hapticLight();
@@ -25,6 +27,13 @@ export function AccountLegalLinks() {
         onPress={() => openLegalUrl(TERMS_AND_CONDITIONS_URL)}
         showDivider
         accessibilityLabel="Terms and conditions, opens in browser"
+        trailing={chevron}
+      />
+      <AccountSettingsRow
+        label="Returns"
+        onPress={() => openLegalUrl(HOW_TO_RETURN_URL)}
+        showDivider
+        accessibilityLabel="Returns, opens in browser"
         trailing={chevron}
       />
       <AccountSettingsRow

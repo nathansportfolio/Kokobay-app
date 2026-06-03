@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 
+import { isRenderTraceEnabled } from '@/lib/render-trace';
+
 type HomeRenderSnapshot = {
   isPending: boolean;
   isError: boolean;
@@ -30,9 +32,9 @@ function diffHomeRenderReasons(
   return reasons.length ? reasons.join(',') : 'unknown';
 }
 
-/** Dev-only — logs `[HOME_RENDER]` with the subscription that changed. */
+/** Dev-only — logs `[HOME_RENDER]` when `EXPO_PUBLIC_RENDER_TRACE=1`. */
 export function useHomeRenderTrace(snapshot: HomeRenderSnapshot): void {
-  if (!__DEV__) return;
+  if (!isRenderTraceEnabled()) return;
   const prevRef = useRef<HomeRenderSnapshot | null>(null);
   const reason = diffHomeRenderReasons(prevRef.current, snapshot);
   console.log('[HOME_RENDER]', `reason=${reason}`);

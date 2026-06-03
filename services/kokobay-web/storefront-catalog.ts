@@ -153,6 +153,8 @@ export async function fetchKokobayCollectionPage(
           id: body.collection.id,
           handle: body.collection.handle,
           title: body.collection.title,
+          description: body.collection.description,
+          descriptionHtml: body.collection.descriptionHtml,
           image: body.collection.image ?? null,
         }
       : null,

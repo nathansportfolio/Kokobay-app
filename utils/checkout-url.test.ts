@@ -39,20 +39,21 @@ describe('resolveCheckoutWebViewUrl', () => {
     assert.equal(new URL(url!).searchParams.get('source'), APP_CHECKOUT_SOURCE);
   });
 
-  it('tags cart permalink fallback', () => {
+  it('tags cart permalink fallback without empty checkout param', () => {
     const url = resolveCheckoutWebViewUrl(null, [sampleLine]);
     assert.ok(url);
     assert.equal(new URL(url!).searchParams.get('source'), APP_CHECKOUT_SOURCE);
-    assert.ok(new URL(url!).searchParams.has('checkout'));
+    assert.equal(new URL(url!).searchParams.has('checkout'), false);
+    assert.match(url!, /\/cart\/123456789:1\?source=app$/);
   });
 });
 
 describe('buildOnlineStoreCartPermalinkUrl', () => {
-  it('includes source=app and checkout', () => {
+  it('includes source=app only (no empty checkout param)', () => {
     const url = buildOnlineStoreCartPermalinkUrl([sampleLine]);
     assert.ok(url);
     const parsed = new URL(url!);
     assert.equal(parsed.searchParams.get('source'), APP_CHECKOUT_SOURCE);
-    assert.ok(parsed.searchParams.has('checkout'));
+    assert.equal(parsed.searchParams.has('checkout'), false);
   });
 });

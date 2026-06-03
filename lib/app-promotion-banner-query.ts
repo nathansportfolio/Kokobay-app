@@ -6,6 +6,7 @@ import {
 } from '@/services/kokobay-web/app-promotion-banner';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { recordPromotionInvalidate } from '@/lib/resume-perf';
+import { isJsFreezeAuditEnabled, isJsFreezeSessionActive, traceLongTask } from '@/lib/js-freeze-audit';
 
 export const APP_PROMOTION_BANNER_QUERY_KEY = ['app-promotion-banner'] as const;
 
@@ -39,5 +40,9 @@ export function invalidateAppPromotionBanner(
   source: string,
 ): Promise<void> {
   recordPromotionInvalidate(source);
-  return queryClient.invalidateQueries({ queryKey: [...APP_PROMOTION_BANNER_QUERY_KEY] });
+  const run = () => queryClient.invalidateQueries({ queryKey: [...APP_PROMOTION_BANNER_QUERY_KEY] });
+  if (isJsFreezeAuditEnabled() && isJsFreezeSessionActive()) {
+    return traceLongTask(`promotion.invalidate:${source}`, () => run());
+  }
+  return run();
 }

@@ -162,6 +162,10 @@ let pendingPushNavigation: PendingPushNavigation | null = null;
 let activePushNavigate: PushNotificationNavigate | null = null;
 let coldStartNotificationHandled = false;
 
+/** Temporary instrumentation — throttle rapid registerPushNotifications calls. */
+let lastRegisterPushCall = 0;
+const REGISTER_PUSH_THROTTLE_MS = 10_000;
+
 function pushApiOrigin(): string {
   return resolveKokobayApiBaseUrl({ fallbackToDefault: true })!;
 }
@@ -330,6 +334,8 @@ export async function obtainExpoPushToken(): Promise<
   | { ok: true; token: string }
   | { ok: false; reason: PushRegistrationFailureReason; message: string }
 > {
+  console.log('[OBTAIN_EXPO_PUSH_TOKEN]', { timestamp: Date.now() });
+
   if (isExpoGoClient()) {
     return {
       ok: false,
@@ -440,7 +446,24 @@ async function postPushRegister(payload: PushRegistrationPayload): Promise<boole
  */
 export async function registerPushNotifications(
   emailInput?: string | null,
+  reason = 'unknown',
 ): Promise<PushRegistrationResult> {
+  console.log('[REGISTER_PUSH]', {
+    timestamp: Date.now(),
+    reason,
+    email: emailInput ?? null,
+  });
+
+  if (Date.now() - lastRegisterPushCall < REGISTER_PUSH_THROTTLE_MS) {
+    console.warn('[REGISTER_PUSH_SKIPPED_THROTTLE]');
+    return {
+      ok: true,
+      expoPushToken: '',
+      skipped: true,
+    };
+  }
+  lastRegisterPushCall = Date.now();
+
   if (pushRegistrationPausedForSignOut) {
     return {
       ok: true,
@@ -1067,8 +1090,12 @@ export function addPushTokenRefreshListener(
     return () => {};
   }
 
-  const sub = Notifications.addPushTokenListener(() => {
-    void registerPushNotifications(emailInput);
+  const sub = Notifications.addPushTokenListener((token) => {
+    console.log('[REGISTER_PUSH_TOKEN_EVENT]', {
+      timestamp: Date.now(),
+      token: typeof token.data === 'string' ? token.data : JSON.stringify(token.data),
+    });
+    void registerPushNotifications(emailInput, 'push_token_listener');
   });
 
   return () => sub.remove();

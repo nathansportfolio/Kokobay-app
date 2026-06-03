@@ -225,7 +225,7 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
           });
           await refreshPermission();
           if (status === 'granted') {
-            const result = await registerPushNotifications(user?.email);
+            const result = await registerPushNotifications(user?.email, 'account_preferences_enable');
             if (result.ok) {
               showToast(
                 result.skipped

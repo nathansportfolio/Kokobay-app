@@ -1,5 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 
+import { installQuerySubscriberTrace } from '@/lib/query-subscriber-trace';
+
 let client: QueryClient | null = null;
 
 export function getQueryClient() {
@@ -16,6 +18,7 @@ export function getQueryClient() {
         },
       },
     });
+    installQuerySubscriberTrace(client);
   }
   return client;
 }

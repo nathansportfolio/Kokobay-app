@@ -1,7 +1,7 @@
-import { recordRender, type LifecycleScreenId } from '@/lib/lifecycle-perf';
+import { isLifecyclePerfEnabled, recordRender, type LifecycleScreenId } from '@/lib/lifecycle-perf';
 
-/** Dev-only — increments render count for lifecycle perf dashboard. */
+/** Dev-only screen render counter for lifecycle dashboard (`[lifecycle]`). */
 export function useLifecycleRenderCount(screen: LifecycleScreenId): void {
-  if (!__DEV__) return;
+  if (!isLifecyclePerfEnabled()) return;
   recordRender(screen);
 }

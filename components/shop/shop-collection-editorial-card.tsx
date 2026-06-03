@@ -163,6 +163,22 @@ function ShopCollectionEditorialCardInner({
                   }}>
                   {collection.title}
                 </Text>
+                {description ? (
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      marginTop: 4,
+                      fontFamily: 'InstrumentSans',
+                      fontSize: 12,
+                      lineHeight: 16,
+                      color: 'rgba(255, 255, 255, 0.88)',
+                      textShadowColor: 'rgba(0, 0, 0, 0.55)',
+                      textShadowOffset: { width: 0, height: 1 },
+                      textShadowRadius: 4,
+                    }}>
+                    {description}
+                  </Text>
+                ) : null}
               </View>
             </View>
           </View>

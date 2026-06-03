@@ -23,11 +23,6 @@ export function AppPromotionBannerSync() {
 
   useEffect(() => {
     if (!enabled) return;
-    void invalidateAppPromotionBanner(queryClient, 'mount');
-  }, [enabled, queryClient]);
-
-  useEffect(() => {
-    if (!enabled) return;
 
     return registerTrackedAppStateListener('app-promotion-banner-sync', (state) => {
       const prev = prevStateRef.current;

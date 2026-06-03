@@ -1,3 +1,7 @@
+import { isLifecyclePerfEnabled } from '@/lib/lifecycle-perf/enabled';
+
+export { isLifecyclePerfEnabled } from '@/lib/lifecycle-perf/enabled';
+
 export type {
   LifecyclePerfSnapshot,
   LifecycleScreenId,
@@ -28,6 +32,6 @@ export {
 export function logLifecyclePerfDashboard(
   snapshot: import('@/lib/lifecycle-perf/types').LifecyclePerfSnapshot,
 ): void {
-  if (!__DEV__) return;
+  if (!__DEV__ || !isLifecyclePerfEnabled()) return;
   console.log('[lifecycle] dashboard', snapshot);
 }

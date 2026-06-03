@@ -65,6 +65,8 @@ export type KokobayStorefrontCollectionSummary = {
   id: string;
   handle: string;
   title: string;
+  description?: string | null;
+  descriptionHtml?: string | null;
   image: KokobayStorefrontImage;
 };
 

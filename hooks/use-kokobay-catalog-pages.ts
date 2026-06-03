@@ -17,7 +17,7 @@ import {
   fetchKokobaySearchPage,
 } from '@/services/kokobay-web/storefront-catalog';
 import type { PlpFilters, PlpSort } from '@/types/plp';
-import type { Product } from '@/types/shopify';
+import type { Collection, Product } from '@/types/shopify';
 import { resolveCollectionHandleForApi } from '@/utils/collection-handles';
 import { flattenCatalogProductPages } from '@/utils/kokobay-catalog-products';
 import { keepPreviousInfiniteDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
@@ -52,6 +52,8 @@ export type CatalogPage = {
   pageInfo: KokobayPageInfo;
   filters: KokobayStorefrontFilter[];
   totalCount?: number;
+  /** Collection summary from `GET /api/collections/{handle}` (first page only). */
+  collection?: Collection | null;
 };
 
 type KokobayCatalogOptions = {
@@ -175,6 +177,7 @@ function catalogPageFromCollection(page: KokobayCollectionPage): CatalogPage {
     pageInfo: page.pageInfo,
     filters: page.filters,
     totalCount: page.totalCount,
+    collection: page.collection,
   };
 }
 
@@ -196,7 +199,6 @@ export function useKokobayCollectionCatalog(
   const marketKey = useMarketQueryKey();
   const { rememberFilters, filtersForLookup, baselineFiltersRef, pageFiltersRef } =
     useStorefrontFilterRefs(apiHandle);
-  const plpFiltersActive = hasActivePlpFilters(options.plpFilters, 0, 0);
 
   const queryKey = [
     'kokobay',
@@ -218,13 +220,11 @@ export function useKokobayCollectionCatalog(
     queryKey,
     enabled: enabled && Boolean(apiHandle),
     staleTime: 5 * 60_000,
-    placeholderData: plpFiltersActive
-      ? undefined
-      : keepPreviousInfiniteDataForQueryKeyMatch<
-          CatalogPage,
-          string | null,
-          CollectionCatalogQueryKey
-        >(2, apiHandle),
+    placeholderData: keepPreviousInfiniteDataForQueryKeyMatch<
+      CatalogPage,
+      string | null,
+      CollectionCatalogQueryKey
+    >(2, apiHandle),
     queryFn: async ({ pageParam }): Promise<CatalogPage> => {
       const safe = apiHandle;
       if (safe === ALL_PRODUCTS_COLLECTION_HANDLE) {
@@ -257,6 +257,10 @@ export function useKokobayCollectionCatalog(
 
   const pages = query.data?.pages;
   const products = useMemo(() => flattenCatalogProductPages(pages), [pages]);
+  const collectionSummary = useMemo(
+    () => pages?.find((page) => page.collection)?.collection ?? null,
+    [pages],
+  );
   const totalProductCount = useRetainedTotalCount(pages, apiHandle);
   const storefrontFilters = useMemo(() => storefrontFiltersFromPages(pages), [pages]);
 
@@ -278,6 +282,7 @@ export function useKokobayCollectionCatalog(
   return {
     ...query,
     products,
+    collectionSummary,
     storefrontFilters,
     filterFacets,
     totalProductCount,
@@ -294,7 +299,6 @@ export function useKokobaySearchCatalog(
   const marketKey = useMarketQueryKey();
   const { rememberFilters, filtersForLookup, baselineFiltersRef, pageFiltersRef } =
     useStorefrontFilterRefs(trimmed);
-  const plpFiltersActive = hasActivePlpFilters(options.plpFilters, 0, 0);
 
   const queryKey = [
     'kokobay',
@@ -316,13 +320,11 @@ export function useKokobaySearchCatalog(
     queryKey,
     enabled: enabled && trimmed.length >= 1,
     staleTime: 2 * 60_000,
-    placeholderData: plpFiltersActive
-      ? undefined
-      : keepPreviousInfiniteDataForQueryKeyMatch<
-          CatalogPage,
-          string | null,
-          SearchCatalogQueryKey
-        >(2, trimmed),
+    placeholderData: keepPreviousInfiniteDataForQueryKeyMatch<
+      CatalogPage,
+      string | null,
+      SearchCatalogQueryKey
+    >(2, trimmed),
     queryFn: async ({ pageParam }): Promise<CatalogPage> => {
       const page = await fetchKokobaySearchPage(trimmed, {
         first: KOKOBAY_CATALOG_PAGE_SIZE,

@@ -6,6 +6,8 @@ import {
   logResumeCartSyncSkipped,
   logResumeCartSyncStarted,
 } from '@/lib/resume-perf';
+import { recordForegroundAuditCart } from '@/lib/foreground-audit';
+import { isJsFreezeAuditEnabled, isJsFreezeSessionActive, markJsFreezeTimeline } from '@/lib/js-freeze-audit';
 
 export function cartPerfLog(message: string): void {
   if (__DEV__) console.log(`[cart] ${message}`);
@@ -13,6 +15,7 @@ export function cartPerfLog(message: string): void {
 
 export {
   cartSyncTrace,
+  logCartStateTransition,
   logCartSyncRevisionState,
   logFastAddSuccess,
   noteUnexpectedFullSyncAfterFastAdd,
@@ -34,16 +37,34 @@ export function cartResumeRefreshComplete(
 
 export function cartResumeSyncEvaluated(detail: Record<string, unknown>): void {
   logResumeCartSyncEvaluated(detail);
+  recordForegroundAuditCart('foreground_resume_evaluated', detail);
 }
 
 export function cartResumeSyncSkipped(detail: Record<string, unknown>): void {
   logResumeCartSyncSkipped(detail);
+  recordForegroundAuditCart('foreground_resume_skipped', detail);
 }
 
 export function cartResumeSyncStarted(detail: Record<string, unknown>): void {
   logResumeCartSyncStarted(detail);
+  recordForegroundAuditCart('syncWithShopify', {
+    reason: 'foreground_resume',
+    kind: detail.kind ? String(detail.kind) : undefined,
+    ...detail,
+  });
+  if (isJsFreezeAuditEnabled() && isJsFreezeSessionActive()) {
+    markJsFreezeTimeline('cart_sync_start', detail);
+  }
 }
 
 export function cartResumeSyncCompleted(detail: Record<string, unknown>): void {
   logResumeCartSyncCompleted(detail);
+  recordForegroundAuditCart('syncWithShopify_complete', {
+    reason: 'foreground_resume',
+    kind: detail.kind ? String(detail.kind) : undefined,
+    ...detail,
+  });
+  if (isJsFreezeAuditEnabled() && isJsFreezeSessionActive()) {
+    markJsFreezeTimeline('cart_sync_end', detail);
+  }
 }

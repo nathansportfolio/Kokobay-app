@@ -33,9 +33,11 @@ import {
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
+import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
 import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
 import { useKokobaySearchCatalog } from '@/hooks/use-kokobay-catalog-pages';
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
+import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
 import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
@@ -86,7 +88,6 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const listRef = useRef<FlashListRef<Product>>(null);
-  const plpScrollDidMountRef = useRef(false);
 
   const horizontalPad = PLP_HORIZONTAL_PAD;
   const columnGap = PLP_COLUMN_GAP;
@@ -114,6 +115,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     isError: legacySearchError,
     refetch: refetchLegacySearch,
     isRefetching: legacySearchRefetching,
+    dataUpdatedAt: legacySearchDataUpdatedAt,
   } = useQuery({
     queryKey: ['search', 'plp', trimmedQ, marketKey],
     enabled: trimmedQ.length >= 1 && !isWebCatalog,
@@ -153,6 +155,38 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     skipClientFilters: serverSideFiltersActive,
   });
 
+  const plpTraceReason = useMemo(() => {
+    const parts: string[] = [];
+    if (trimmedQ) parts.push(`q:${trimmedQ}`);
+    if (hasSelectedFilters) parts.push('filters');
+    if (sort !== 'featured') parts.push('sort');
+    if (searchPending) parts.push('search_pending');
+    if (searchRefetching) parts.push('search_refetching');
+    if (isWebCatalog) parts.push('web_catalog');
+    else parts.push('legacy_catalog');
+    return parts.length ? parts.join('+') : 'stable';
+  }, [
+    trimmedQ,
+    hasSelectedFilters,
+    sort,
+    searchPending,
+    searchRefetching,
+    isWebCatalog,
+  ]);
+
+  const searchDataUpdatedAt = isWebCatalog
+    ? kokobaySearch.dataUpdatedAt
+    : legacySearchDataUpdatedAt;
+
+  useCollectionPlpRenderTrace({
+    screen: 'search',
+    allProducts,
+    flatItems,
+    queryDataUpdatedAt: searchDataUpdatedAt,
+    isFetching: searchRefetching,
+    reason: plpTraceReason,
+  });
+
   const displayProductCount =
     isWebCatalog && kokobaySearch.totalProductCount != null
       ? kokobaySearch.totalProductCount
@@ -173,9 +207,15 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     isFetchingNextPage: kokobaySearch.isFetchingNextPage,
   });
 
+  const catalogQueryFetching =
+    isWebCatalog && kokobaySearch.isFetching && !kokobaySearch.isFetchingNextPage;
+
   const listLoading =
     !hasSelectedFilters &&
     (searchPending || (trimmedQ.length >= 1 && allProducts === undefined));
+
+  const showPlpSkeleton =
+    flatItems.length === 0 && (listLoading || catalogQueryFetching);
 
   const searchTrackedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -214,13 +254,12 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     resetPlpScrollDebug('search');
   }, [trimmedQ]);
 
-  useEffect(() => {
-    if (!plpScrollDidMountRef.current) {
-      plpScrollDidMountRef.current = true;
-      return;
-    }
-    listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [filters, sort, trimmedQ]);
+  usePlpScrollToTop(listRef, {
+    sort,
+    filters,
+    scopeKey: trimmedQ,
+    dataEpoch: searchDataUpdatedAt,
+  });
 
   const plpTitle = trimmedQ === '*' ? 'Products' : trimmedQ;
   const quotedSearchTitle = `"${plpTitle.replace(/"/g, '\u2019')}"`;
@@ -283,8 +322,8 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   const keyExtractor = useCallback((item: Product) => item.id, []);
 
   const listExtra = useMemo(
-    () => `${itemWidth}:${cellHeight}:${numColumns}`,
-    [itemWidth, cellHeight, numColumns],
+    () => `${itemWidth}:${cellHeight}:${numColumns}:${sort}`,
+    [itemWidth, cellHeight, numColumns, sort],
   );
 
   const overrideItemLayout = useCallback(
@@ -377,7 +416,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
 
   let renderBranch = 'content';
   if (searchError && flatItems.length === 0) renderBranch = 'error';
-  else if (listLoading && flatItems.length === 0) renderBranch = 'skeleton';
+  else if (showPlpSkeleton) renderBranch = 'skeleton';
 
   useScreenLoadTrace({
     screen: 'search',
@@ -388,6 +427,8 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     extra: {
       isWebCatalog,
       listLoading,
+      showPlpSkeleton,
+      catalogQueryFetching,
       flatItemsCount: flatItems.length,
       allProductsUndefined: allProducts === undefined,
       searchPending,
@@ -426,7 +467,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
 
   const listBottomPad = tabBarHeight + PLP_LIST_BOTTOM_PAD;
 
-  if (listLoading && flatItems.length === 0) {
+  if (showPlpSkeleton) {
     return (
       <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
         <ScrollView
@@ -454,7 +495,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
       <FlashList<Product>
         ref={listRef}
         style={plpScreenShell}
-        key={`${trimmedQ}-${numColumns}`}
+        key={`${trimmedQ}-${numColumns}-${sort}`}
         data={flatItems}
         numColumns={numColumns}
         keyExtractor={keyExtractor}

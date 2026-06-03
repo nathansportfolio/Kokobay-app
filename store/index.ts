@@ -1,5 +1,10 @@
 export { showToast, useToastStore, type ToastPayload, type ToastVariant } from './toast';
 export {
+  showCheckoutUnavailableModal,
+  hideCheckoutUnavailableModal,
+  useCheckoutUnavailableModalStore,
+} from './checkout-unavailable-modal';
+export {
   useLuxuryUiStore,
   useMarketStore,
   DEFAULT_MARKET_COUNTRY,
@@ -9,8 +14,10 @@ export {
 export {
   useCartStore,
   flushCartSync,
+  mergeGuestCartOnLogin,
   resetCartForSignOut,
   clearRemoteCartInBackground,
+  refreshStoreCheckoutUrl,
   ensureCartSyncedForCheckout,
   isCartSettledForCheckout,
   getCartNetworkSyncMetrics,

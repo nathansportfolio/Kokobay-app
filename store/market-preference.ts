@@ -74,7 +74,7 @@ export const useMarketStore = create<MarketState>((set, get) => ({
     await writeToSecureStore(CURRENCY_INITIALIZED_KEY, 'true');
     await persistShopifyCartId(null);
     await persistCartGuestId(null);
-    useCartStore.setState({ shopifyCartId: null, checkoutUrl: null });
+    useCartStore.setState({ shopifyCartId: null, checkoutUrl: null, storeCheckoutUrl: null });
     const queryClient = getQueryClient();
     await refreshAppData(queryClient);
     await reloadDeliveryThresholdForMarketChange();

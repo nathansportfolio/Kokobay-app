@@ -1,4 +1,5 @@
 import { KOKOBAY_PRODUCTS_API_KEY_HEADER } from '@/constants/kokobay-web';
+import { patchAndroidEmulatorLocalhost } from '@/lib/dev-android-network';
 import { getShopifyCountryCode, getShopifyCurrencyCode } from '@/services/shopify/market-context';
 import { fetchWithTimeout, HttpResponseError } from '@/utils/fetch-with-timeout';
 
@@ -47,7 +48,7 @@ export async function fetchKokobayJson(
   path: string,
   init?: { signal?: AbortSignal },
 ): Promise<Json> {
-  const root = resolveKokobayApiBaseUrl();
+  const root = patchAndroidEmulatorLocalhost(resolveKokobayApiBaseUrl());
   if (!root) {
     throw new KokobayApiError('Koko Bay API is not configured');
   }
@@ -82,6 +83,10 @@ export async function fetchKokobayJson(
       throw new KokobayApiError('Invalid JSON response', error);
     }
   } catch (error) {
+    if (__DEV__) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[KOKOBAY API] fetch failed', { url, message });
+    }
     throw toKokobayApiError(error);
   }
 }

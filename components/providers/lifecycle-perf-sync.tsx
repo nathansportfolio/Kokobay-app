@@ -3,6 +3,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import {
   buildLifecyclePerfSnapshot,
+  isLifecyclePerfEnabled,
   logLifecyclePerfDashboard,
   recordAppStateTransition,
   sampleMemory,
@@ -13,6 +14,7 @@ import {
   instrumentZustandStore,
   registerTrackedAppStateListener,
 } from '@/lib/lifecycle-perf/install';
+import { instrumentZustandSetStateForJsFreeze } from '@/lib/js-freeze-audit';
 import { getCartNetworkSyncMetrics } from '@/store/cart';
 import { useAuthStore, useCartStore, useMarketStore, useSearchHistoryStore } from '@/store';
 
@@ -42,13 +44,17 @@ export function LifecyclePerfSync() {
   const postForegroundTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
-    if (!__DEV__) return;
+    if (!__DEV__ || !isLifecyclePerfEnabled()) return;
 
     installLifecycleTimerTracking();
     instrumentZustandStore('auth', useAuthStore);
     instrumentZustandStore('cart', useCartStore);
     instrumentZustandStore('market', useMarketStore);
     instrumentZustandStore('searchHistory', useSearchHistoryStore);
+    instrumentZustandSetStateForJsFreeze('auth', useAuthStore);
+    instrumentZustandSetStateForJsFreeze('cart', useCartStore);
+    instrumentZustandSetStateForJsFreeze('market', useMarketStore);
+    instrumentZustandSetStateForJsFreeze('search', useSearchHistoryStore);
 
     sampleMemory('install');
 

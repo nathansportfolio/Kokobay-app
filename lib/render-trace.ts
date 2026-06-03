@@ -1,28 +1,56 @@
-export type RenderTraceLabel =
-  | 'Home'
-  | 'Cart'
-  | 'CheckoutBar'
-  | 'BottomTabs'
-  | 'ProductCard';
+import { isDevAuditFlagEnabled } from '@/lib/dev-audit-flag';
+import {
+  isForegroundAuditEnabled,
+  isForegroundAuditWindowActive,
+  recordForegroundAuditRender,
+  type ForegroundRenderLabel,
+} from '@/lib/foreground-audit';
+import {
+  isJsFreezeAuditEnabled,
+  recordJsFreezeRender,
+  type JsFreezeRenderStormLabel,
+} from '@/lib/js-freeze-audit';
+
+export type RenderTraceLabel = ForegroundRenderLabel;
 
 const LABELS: RenderTraceLabel[] = [
   'Home',
+  'Collection',
+  'Product',
   'Cart',
   'CheckoutBar',
   'BottomTabs',
+  'Header',
   'ProductCard',
 ];
 
+const STORM_LABELS = new Set<JsFreezeRenderStormLabel>([
+  'ProductCard',
+  'Home',
+  'Product',
+  'Cart',
+  'CheckoutBar',
+  'BottomTabs',
+]);
+
 const counts = new Map<RenderTraceLabel, number>();
 
+/** Dev-only — set `EXPO_PUBLIC_RENDER_TRACE=1` to enable. */
 export function isRenderTraceEnabled(): boolean {
-  return __DEV__ && process.env.EXPO_PUBLIC_RENDER_TRACE === '1';
+  return isDevAuditFlagEnabled(process.env.EXPO_PUBLIC_RENDER_TRACE);
 }
 
 export function recordRenderTrace(label: RenderTraceLabel): void {
-  if (!isRenderTraceEnabled()) return;
-  counts.set(label, (counts.get(label) ?? 0) + 1);
-  console.log('[RENDER]', label);
+  if (isRenderTraceEnabled()) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+    console.log('[RENDER]', label);
+  }
+  if (isForegroundAuditEnabled() && isForegroundAuditWindowActive()) {
+    recordForegroundAuditRender(label);
+  }
+  if (isJsFreezeAuditEnabled() && STORM_LABELS.has(label as JsFreezeRenderStormLabel)) {
+    recordJsFreezeRender(label as JsFreezeRenderStormLabel);
+  }
 }
 
 export function getRenderTraceCounts(): Record<RenderTraceLabel, number> {

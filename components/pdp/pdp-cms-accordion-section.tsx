@@ -1,13 +1,17 @@
+import { Linking, Pressable, View } from 'react-native';
+
 import { PdpAccordion } from '@/components/pdp/pdp-accordion';
 import { RichTextRenderer } from '@/components/cms/rich-text-renderer';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Text } from '@/components/ui/text';
 import { appContentHasBody, useAppContent } from '@/hooks/use-app-content';
-import { View } from 'react-native';
+import { hapticLight } from '@/utils/haptics';
 
 type Props = {
   slug: string;
   fallbackTitle: string;
   countryCode?: string;
+  footerLink?: { label: string; url: string };
 };
 
 function AccordionBodySkeleton() {
@@ -20,7 +24,22 @@ function AccordionBodySkeleton() {
   );
 }
 
-export function PdpCmsAccordionSection({ slug, fallbackTitle, countryCode }: Props) {
+function AccordionFooterLink({ label, url }: { label: string; url: string }) {
+  return (
+    <Pressable
+      onPress={() => {
+        hapticLight();
+        void Linking.openURL(url).catch(() => {});
+      }}
+      accessibilityRole="link"
+      accessibilityLabel={`${label}, opens in browser`}
+      className="mt-4 self-start active:opacity-75">
+      <Text className="text-[15px] leading-7 text-accent underline">{label}</Text>
+    </Pressable>
+  );
+}
+
+export function PdpCmsAccordionSection({ slug, fallbackTitle, countryCode, footerLink }: Props) {
   const cms = useAppContent(slug, countryCode);
 
   if (!cms.loading && !appContentHasBody(cms)) {
@@ -34,7 +53,12 @@ export function PdpCmsAccordionSection({ slug, fallbackTitle, countryCode }: Pro
       {cms.loading ? (
         <AccordionBodySkeleton />
       ) : (
-        <RichTextRenderer richContent={cms.richContent} plainText={cms.content} />
+        <>
+          <RichTextRenderer richContent={cms.richContent} plainText={cms.content} />
+          {footerLink ? (
+            <AccordionFooterLink label={footerLink.label} url={footerLink.url} />
+          ) : null}
+        </>
       )}
     </PdpAccordion>
   );

@@ -32,16 +32,11 @@ export function isAppLaunchRevealComplete(): boolean {
   return launchRevealComplete;
 }
 
-/**
- * Cold-start gate: fonts are loaded; wait for home catalog, hero image, and min splash time.
- */
-export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
-  const startedAt = Date.now();
-  const width = screenWidth ?? Dimensions.get('window').width;
-  await useMarketStore.getState().hydrate();
-  const marketKey = useMarketStore.getState().countryCode;
+/** Warm launch caches after reveal — never block splash on remote API (Android emulator networking is often 15s+ per fetch). */
+function scheduleLaunchWarmup(marketKey: string, screenWidth: number): void {
   const queryClient = getQueryClient();
-  async function prefetchHomeHeroImage(): Promise<void> {
+
+  void (async () => {
     try {
       await queryClient.prefetchQuery({
         queryKey: [...APP_HOME_HERO_QUERY_KEY, marketKey],
@@ -49,36 +44,44 @@ export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
         staleTime: HOME_HERO_STALE_TIME_MS,
       });
     } catch {
-      /** CMS miss — default hero still prefetched below. */
+      /** Home hero query surfaces error/placeholder after reveal. */
     }
 
     const cms = queryClient.getQueryData<Awaited<ReturnType<typeof fetchAppHomeHero>>>([
       ...APP_HOME_HERO_QUERY_KEY,
       marketKey,
     ]);
-    const uri = shopifyCdnUriForPlatform(
-      cms?.imageUrl ? homeHeroDisplayImageUri(cms.imageUrl, width) : homeNewInHeroImageUri(width),
+    const heroUri = shopifyCdnUriForPlatform(
+      cms?.imageUrl ? homeHeroDisplayImageUri(cms.imageUrl, screenWidth) : homeNewInHeroImageUri(screenWidth),
     );
-    await Image.prefetch(uri).catch(() => {});
-  }
+    await Image.prefetch(heroUri).catch(() => {});
 
-  await Promise.all([prefetchHomeHeroImage(), initDeliveryThresholdOnStartup()]);
+    const newInHandle = resolveHomeNewInCollectionHandle(cms?.buttonLink);
+    await queryClient
+      .prefetchQuery({
+        queryKey: homeCatalogQueryKey(marketKey, newInHandle),
+        queryFn: () => fetchHomeCatalogData({ newInCollectionHandle: newInHandle }),
+        staleTime: HOME_CATALOG_STALE_TIME_MS,
+      })
+      .catch(() => {});
+  })();
 
-  const cms = queryClient.getQueryData<Awaited<ReturnType<typeof fetchAppHomeHero>>>([
-    ...APP_HOME_HERO_QUERY_KEY,
-    marketKey,
-  ]);
-  const newInHandle = resolveHomeNewInCollectionHandle(cms?.buttonLink);
+  void initDeliveryThresholdOnStartup();
+}
 
-  await queryClient
-    .prefetchQuery({
-      queryKey: homeCatalogQueryKey(marketKey, newInHandle),
-      queryFn: () => fetchHomeCatalogData({ newInCollectionHandle: newInHandle }),
-      staleTime: HOME_CATALOG_STALE_TIME_MS,
-    })
-    .catch(() => {
-      /** Resolved with error — home error UI renders after reveal. */
-    });
+/**
+ * Cold-start gate: fonts are loaded; hydrate market + min splash time only.
+ * Catalog/hero/delivery load in the background so Android emulators are not stuck on the logo splash.
+ */
+export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
+  const startedAt = Date.now();
+  const width = screenWidth ?? Dimensions.get('window').width;
+  await useMarketStore.getState().hydrate();
+  const marketKey = useMarketStore.getState().countryCode;
+
+  await Image.prefetch(shopifyCdnUriForPlatform(homeNewInHeroImageUri(width))).catch(() => {});
+
+  scheduleLaunchWarmup(marketKey, width);
 
   const elapsed = Date.now() - startedAt;
   if (elapsed < APP_LAUNCH_MIN_DURATION_MS) {

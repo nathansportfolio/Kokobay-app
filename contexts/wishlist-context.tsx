@@ -6,10 +6,23 @@ import {
   useMemo,
   useState,
   useSyncExternalStore,
+  type Dispatch,
   type PropsWithChildren,
+  type SetStateAction,
 } from 'react';
 
 import { trackAddToWishlist, trackRemoveFromWishlist } from '@/lib/gtm';
+import {
+  isForegroundAuditEnabled,
+  isForegroundAuditWindowActive,
+  recordForegroundAuditStoreUpdate,
+} from '@/lib/foreground-audit';
+import {
+  isJsFreezeAuditEnabled,
+  recordJsFreezeLongTask,
+  recordJsFreezeStoreUpdate,
+} from '@/lib/js-freeze-audit';
+import { recordWishlistMapReferenceChange } from '@/lib/product-card-storm-trace';
 import { showToast } from '@/store/toast';
 import {
   loadWishlistEntries,
@@ -48,14 +61,57 @@ function subscribeWishlistHandles(listener: () => void): () => void {
 
 function publishWishlistHandleSet(handles: string[]): void {
   wishlistHandleSetSnapshot = new Set(handles);
+  recordWishlistMapReferenceChange(handles);
   for (const listener of wishlistHandleListeners) listener();
 }
 
 let wishlistPersistTimer: ReturnType<typeof setTimeout> | undefined;
 
+const LONG_TASK_THRESHOLD_MS = 16;
+
+function applyWishlistEntriesUpdate(
+  prev: WishlistEntry[],
+  value: SetStateAction<WishlistEntry[]>,
+): WishlistEntry[] {
+  return typeof value === 'function' ? value(prev) : value;
+}
+
+function traceWishlistSetState(
+  setState: Dispatch<SetStateAction<WishlistEntry[]>>,
+  value: SetStateAction<WishlistEntry[]>,
+): void {
+  setState((prev) => {
+    const start = performance.now();
+    const next = applyWishlistEntriesUpdate(prev, value);
+    const durationMs = performance.now() - start;
+    if (isJsFreezeAuditEnabled()) {
+      recordJsFreezeLongTask('wishlist.setState', durationMs, LONG_TASK_THRESHOLD_MS);
+      recordJsFreezeStoreUpdate('wishlist', ['entries'], durationMs);
+    }
+    return next;
+  });
+}
+
 export function WishlistProvider({ children }: PropsWithChildren) {
-  const [wishlistEntries, setWishlistEntries] = useState<WishlistEntry[]>([]);
-  const [wishlistHydrated, setWishlistHydrated] = useState(false);
+  const [wishlistEntries, setWishlistEntriesState] = useState<WishlistEntry[]>([]);
+  const [wishlistHydrated, setWishlistHydratedState] = useState(false);
+
+  const setWishlistEntries = useCallback((value: SetStateAction<WishlistEntry[]>) => {
+    traceWishlistSetState(setWishlistEntriesState, value);
+  }, []);
+
+  const setWishlistHydrated = useCallback((value: SetStateAction<boolean>) => {
+    setWishlistHydratedState((prev) => {
+      const start = performance.now();
+      const next = typeof value === 'function' ? value(prev) : value;
+      const durationMs = performance.now() - start;
+      if (isJsFreezeAuditEnabled()) {
+        recordJsFreezeLongTask('wishlist.setHydrated', durationMs, LONG_TASK_THRESHOLD_MS);
+        recordJsFreezeStoreUpdate('wishlist', ['hydrated'], durationMs);
+      }
+      return next;
+    });
+  }, []);
 
   const wishlistHandles = useMemo(
     () => wishlistHandlesFromEntries(wishlistEntries),
@@ -65,6 +121,11 @@ export function WishlistProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     publishWishlistHandleSet(wishlistHandles);
   }, [wishlistHandles]);
+
+  useEffect(() => {
+    if (!isForegroundAuditEnabled() || !isForegroundAuditWindowActive()) return;
+    recordForegroundAuditStoreUpdate('wishlist', ['entries', 'hydrated']);
+  }, [wishlistEntries, wishlistHydrated]);
 
   const wishlistSet = useMemo(() => new Set(wishlistHandles), [wishlistHandles]);
 
@@ -158,6 +219,17 @@ export function WishlistProvider({ children }: PropsWithChildren) {
       <WishlistContext.Provider value={value}>{children}</WishlistContext.Provider>
     </WishlistActionsContext.Provider>
   );
+}
+
+/** Dev-only snapshot read — does not subscribe (for render diff tracing). */
+export function readWishlistHandleSnapshot(handle: string): boolean {
+  const normalized = handle.trim();
+  return normalized ? wishlistHandleSetSnapshot.has(normalized) : false;
+}
+
+/** Dev-only — current wishlist Set reference (for ProductCard diff tracing). */
+export function readWishlistHandleSetReference(): Set<string> {
+  return wishlistHandleSetSnapshot;
 }
 
 /** Per-handle subscription — only re-renders when this product's wishlist state changes. */

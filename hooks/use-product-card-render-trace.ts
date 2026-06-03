@@ -1,6 +1,24 @@
+import { useLocalSearchParams, usePathname } from 'expo-router';
 import { useRef } from 'react';
 
 import type { ProductCardProps } from '@/components/ui/product-card';
+import {
+  readWishlistHandleSetReference,
+  readWishlistHandleSnapshot,
+} from '@/contexts/wishlist-context';
+import {
+  isForegroundAuditEnabled,
+  isForegroundAuditWindowActive,
+  recordForegroundAuditRender,
+} from '@/lib/foreground-audit';
+import { isJsFreezeAuditEnabled, recordJsFreezeRender } from '@/lib/js-freeze-audit';
+import {
+  isProductCardDiffTraceActive,
+  isProductCardDiffTraceEnabled,
+  recordProductCardRenderDiff,
+  type ProductCardTraceSnapshot,
+} from '@/lib/product-card-storm-trace';
+import { useMarketStore } from '@/store/market-preference';
 import { isProductFullySoldOut } from '@/utils/product-availability';
 
 type ProductCardRenderSnapshot = Pick<
@@ -45,13 +63,50 @@ function diffProductCardRenderReasons(
   return reasons.length ? reasons.join(',') : 'unknown';
 }
 
-/** Dev-only — logs `[PRODUCT_CARD_RENDER]` when the card actually renders. */
+/** Dev-only — logs `[PRODUCT_CARD_RENDER]` and optional storm diff diagnostics. */
 export function useProductCardRenderTrace(props: ProductCardProps): void {
-  if (!__DEV__) return;
   const prevRef = useRef<ProductCardRenderSnapshot | null>(null);
+  const diffPrevRef = useRef<ProductCardTraceSnapshot | null>(null);
+  const pathname = usePathname();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
+  const marketKey = useMarketStore((s) => s.countryCode);
+
+  if (!__DEV__) return;
+
   const next = snapshotFromProps(props);
   const reason = diffProductCardRenderReasons(prevRef.current, next);
   console.log('[PRODUCT_CARD_RENDER]', `handle=${props.product.handle}`, `reason=${reason}`);
+
+  if (isProductCardDiffTraceActive()) {
+    diffPrevRef.current = recordProductCardRenderDiff(
+      {
+        product: props.product,
+        className: props.className,
+        imagePriority: props.imagePriority,
+        gridColumns: props.gridColumns,
+        tileWidth: props.tileWidth,
+        perfTraceIndex: props.perfTraceIndex,
+        perfTraceScreen: props.perfTraceScreen,
+        disableImageTransition: props.disableImageTransition,
+        wishlisted: isProductCardDiffTraceEnabled()
+          ? readWishlistHandleSnapshot(props.product.handle)
+          : undefined,
+        wishlistSetRef: readWishlistHandleSetReference(),
+        marketKey,
+        pathname,
+        returnTo: typeof returnTo === 'string' ? returnTo : undefined,
+      },
+      diffPrevRef.current,
+    );
+  }
+
+  if (isForegroundAuditEnabled() && isForegroundAuditWindowActive()) {
+    recordForegroundAuditRender('ProductCard');
+  }
+  if (isJsFreezeAuditEnabled()) {
+    recordJsFreezeRender('ProductCard');
+  }
+
   prevRef.current = next;
 }
 

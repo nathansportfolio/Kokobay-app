@@ -1,11 +1,19 @@
+import { Platform } from 'react-native';
+
 import {
   getResumeNetworkTrigger,
+  isLifecyclePerfEnabled,
   networkRequestCompleted,
   networkRequestStarted,
 } from '@/lib/lifecycle-perf';
+import {
+  isForegroundAuditWindowActive,
+  recordForegroundAuditNetwork,
+} from '@/lib/foreground-audit/state';
 
 /** Default deadline for mobile API requests — avoids hung loading states. */
-export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+export const DEFAULT_FETCH_TIMEOUT_MS =
+  __DEV__ && Platform.OS === 'android' ? 8_000 : 15_000;
 
 export class FetchTimeoutError extends Error {
   constructor(message = 'Request timed out') {
@@ -53,9 +61,11 @@ export async function fetchWithTimeout(
   const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
   const signal = mergeAbortSignals(init.signal ?? undefined, timeoutController.signal);
 
-  const networkId = __DEV__
-    ? networkRequestStarted(url, init.method ?? 'GET', getResumeNetworkTrigger())
-    : 0;
+  const networkId =
+    __DEV__ && isLifecyclePerfEnabled()
+      ? networkRequestStarted(url, init.method ?? 'GET', getResumeNetworkTrigger())
+      : 0;
+  const fetchStartedAt = performance.now();
 
   try {
     return await fetch(url, { ...init, signal });
@@ -66,6 +76,9 @@ export async function fetchWithTimeout(
     throw error;
   } finally {
     clearTimeout(timeoutId);
-    if (__DEV__) networkRequestCompleted(networkId);
+    if (__DEV__ && networkId) networkRequestCompleted(networkId);
+    if (__DEV__ && isForegroundAuditWindowActive()) {
+      recordForegroundAuditNetwork(url, performance.now() - fetchStartedAt, init.method ?? 'GET');
+    }
   }
 }

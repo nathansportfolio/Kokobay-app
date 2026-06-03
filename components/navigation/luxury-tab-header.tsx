@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { LUXURY_SYMBOL } from '@/constants/luxury-icons';
 import {
   KOKO_BAY_BRAND_TITLE,
@@ -18,6 +19,7 @@ const TAB_CHROME_Z_INDEX = 221;
 
 /** Fixed Koko Bay bar (incident banner is rendered by `AppGlobalShell`). */
 export function LuxuryTabHeader() {
+  useRenderTrace('Header');
   const insets = useSafeAreaInsets();
 
   return (

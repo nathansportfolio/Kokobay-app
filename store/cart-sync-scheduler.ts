@@ -1,6 +1,7 @@
 /** Debounced cart sync — coalesces rapid qty changes; pauses while app is backgrounded. */
 
 import { cartPerfLog } from '@/lib/cart-perf-log';
+import { recordForegroundAuditCart } from '@/lib/foreground-audit';
 import { registerTrackedAppStateListener } from '@/lib/lifecycle-perf/install';
 
 import type { AppLifecycle } from './cart-app-lifecycle';
@@ -90,6 +91,7 @@ export function createCartSyncScheduler(
   const scheduleAfterResume = () => {
     if (!shouldForegroundResume()) return;
     if (!shouldSync()) return;
+    recordForegroundAuditCart('scheduleSync', { reason: 'foreground_resume', kind: 'deferred' });
     cancelDebounce();
     resumeTimer = setTimeout(() => {
       resumeTimer = undefined;

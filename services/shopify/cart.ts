@@ -14,7 +14,7 @@ import {
 
 export type ShopifyCartSnapshot = {
   cartId: string;
-  checkoutUrl: string;
+  checkoutUrl: string | null;
   lines: CartLine[];
   subtotal: Money;
   total: Money;

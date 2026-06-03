@@ -27,6 +27,8 @@ type Props = {
   onNavigateToCart: () => void;
   onNavigateToHome: () => void;
   onNavigateToLogin: (resumeCheckoutUrl: string | null) => void;
+  /** WebView failed to load — try external browser or show unavailable modal. */
+  onCheckoutOpenFailed?: () => void;
 };
 
 type NativeWebViewProps = {
@@ -54,7 +56,13 @@ function loadNativeWebView(): React.ComponentType<NativeWebViewProps> | null {
   }
 }
 
-function CheckoutWebViewFallback({ url }: { url: string }) {
+function CheckoutWebViewFallback({
+  url,
+  onCheckoutOpenFailed,
+}: {
+  url: string;
+  onCheckoutOpenFailed?: () => void;
+}) {
   const [opening, setOpening] = useState(false);
 
   const openExternal = useCallback(async () => {
@@ -63,10 +71,12 @@ function CheckoutWebViewFallback({ url }: { url: string }) {
       await openBrowserAsync(url, {
         presentationStyle: WebBrowserPresentationStyle.AUTOMATIC,
       });
+    } catch {
+      onCheckoutOpenFailed?.();
     } finally {
       setOpening(false);
     }
-  }, [url]);
+  }, [onCheckoutOpenFailed, url]);
 
   return (
     <View className="flex-1 items-center justify-center gap-4 px-8">
@@ -91,6 +101,7 @@ function CheckoutWebViewNative({
   onNavigateToCart,
   onNavigateToHome,
   onNavigateToLogin,
+  onCheckoutOpenFailed,
   WebViewComponent,
 }: Props & { WebViewComponent: React.ComponentType<NativeWebViewProps> }) {
   const [loading, setLoading] = useState(true);
@@ -226,6 +237,7 @@ function CheckoutWebViewNative({
             url: native.url ?? currentUrlRef.current,
           });
           setLoading(false);
+          onCheckoutOpenFailed?.();
         }}
         onHttpError={(event) => {
           const native = event.nativeEvent;
@@ -241,6 +253,9 @@ function CheckoutWebViewNative({
             },
           );
           setLoading(false);
+          if ((native.statusCode ?? 0) >= 400) {
+            onCheckoutOpenFailed?.();
+          }
         }}
         sharedCookiesEnabled
         thirdPartyCookiesEnabled
@@ -264,11 +279,14 @@ export function CheckoutWebView({
   onNavigateToCart,
   onNavigateToHome,
   onNavigateToLogin,
+  onCheckoutOpenFailed,
 }: Props) {
   const WebViewComponent = useMemo(() => loadNativeWebView(), []);
 
   if (!WebViewComponent) {
-    return <CheckoutWebViewFallback url={url} />;
+    return (
+      <CheckoutWebViewFallback url={url} onCheckoutOpenFailed={onCheckoutOpenFailed} />
+    );
   }
 
   return (
@@ -279,6 +297,7 @@ export function CheckoutWebView({
       onNavigateToCart={onNavigateToCart}
       onNavigateToHome={onNavigateToHome}
       onNavigateToLogin={onNavigateToLogin}
+      onCheckoutOpenFailed={onCheckoutOpenFailed}
       WebViewComponent={WebViewComponent}
     />
   );

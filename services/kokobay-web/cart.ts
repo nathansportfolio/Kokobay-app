@@ -3,7 +3,7 @@ import type { Money } from '@/types/shopify';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
-import { cartFlowLog, cartPerfLog } from '@/lib/cart-perf-log';
+import { cartFlowLog, cartPerfLog, logCartStateTransition } from '@/lib/cart-perf-log';
 import { logAppFirstOrderOnNewCart } from '@/services/cart/app-first-order-new-cart-log';
 import { createGuestId } from '@/utils/create-guest-id';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
@@ -43,6 +43,7 @@ type KokobayCartDiscountCode = {
 type KokobayCart = {
   id: string | null;
   checkoutUrl: string | null;
+  storeCheckoutUrl?: string | null;
   lines: KokobayCartLine[];
   discountCodes?: KokobayCartDiscountCode[];
   cost?: {
@@ -307,6 +308,15 @@ function sumCartLineCost(
   return { amount: sum.toFixed(2), currencyCode };
 }
 
+function resolveCartCheckoutUrl(
+  cart: KokobayCart,
+  fallbackCheckoutUrl?: string | null,
+): string | null {
+  const fromApi =
+    cart.checkoutUrl?.trim() || cart.storeCheckoutUrl?.trim() || fallbackCheckoutUrl?.trim() || '';
+  return fromApi || null;
+}
+
 function snapshotFromCart(
   cart: KokobayCart,
   existing: CartLine[],
@@ -314,8 +324,7 @@ function snapshotFromCart(
 ): ShopifyCartSnapshot | null {
   const cartId = cart.id?.trim();
   if (!cartId) return null;
-  const checkoutUrl = cart.checkoutUrl?.trim() || options?.fallbackCheckoutUrl?.trim() || '';
-  if (!checkoutUrl) return null;
+  const checkoutUrl = resolveCartCheckoutUrl(cart, options?.fallbackCheckoutUrl);
 
   const currencyFallback = { amount: '0', currencyCode: getShopifyCurrencyCode() };
   const lineMerchandiseSubtotal = sumCartLineCost(cart.lines, 'subtotalAmount');
@@ -361,6 +370,18 @@ async function getCart(guestId: string, customerEmail?: string): Promise<Kokobay
   const res = await kokobayCartRequest('GET', '/api/cart', guestId, undefined, customerEmail);
   cartPerfLog(`getCart took ${Math.round(performance.now() - start)}ms`);
   return res?.cart ?? null;
+}
+
+/** Refetch checkoutUrl when mutation responses omit it. */
+export async function fetchRemoteCartCheckoutUrl(
+  guestId: string | null,
+  customerEmail?: string,
+): Promise<string | null> {
+  if (!isKokobayWebProductsConfigured()) return null;
+  const sessionGuestId = guestId?.trim() || createGuestId();
+  const email = customerEmail?.trim() || getCartCustomerEmail();
+  const cart = await getCart(sessionGuestId, email);
+  return resolveCartCheckoutUrl(cart ?? { id: null, checkoutUrl: null, lines: [] });
 }
 
 async function createCart(guestId: string, customerEmail?: string): Promise<KokobayCart | null> {
@@ -534,6 +555,10 @@ export async function updateCartQuantityFast(
   const snapshot = result.cart
     ? snapshotFromCart(result.cart, localLines, { fallbackCheckoutUrl })
     : null;
+  if (snapshot && !snapshot.checkoutUrl) {
+    const refreshed = await fetchRemoteCartCheckoutUrl(sessionGuestId, email);
+    if (refreshed) snapshot.checkoutUrl = refreshed;
+  }
   return { snapshot, guestId: sessionGuestId, syncError: null };
 }
 
@@ -571,6 +596,10 @@ export async function addCartLineFast(
   const snapshot = result.cart
     ? snapshotFromCart(result.cart, localLines, { fallbackCheckoutUrl })
     : null;
+  if (snapshot && !snapshot.checkoutUrl) {
+    const refreshed = await fetchRemoteCartCheckoutUrl(sessionGuestId, email);
+    if (refreshed) snapshot.checkoutUrl = refreshed;
+  }
   return { snapshot, guestId: sessionGuestId, syncError: null };
 }
 
@@ -600,6 +629,10 @@ export async function syncLocalCartToKokobayWeb(
   cartPerfLog(
     `syncLocalCartToKokobayWeb start lines=${localLines.length} guest=${sessionGuestId.slice(0, 8)}…`,
   );
+  logCartStateTransition('syncLocalCartToKokobayWeb:start', localLines.length, -1, {
+    guestIdPrefix: sessionGuestId.slice(0, 8),
+    customerEmail: email ?? null,
+  });
 
   if (!localLines.length) {
     await clearCart(sessionGuestId, email);
@@ -721,6 +754,10 @@ export async function syncLocalCartToKokobayWeb(
         fallbackCheckoutUrl: fresh.checkoutUrl ?? fallbackCheckoutUrl,
       });
     }
+  }
+  if (snapshot && !snapshot.checkoutUrl) {
+    const refreshed = await fetchRemoteCartCheckoutUrl(sessionGuestId, email);
+    if (refreshed) snapshot.checkoutUrl = refreshed;
   }
 
   cartPerfLog(

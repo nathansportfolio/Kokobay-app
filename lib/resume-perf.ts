@@ -1,3 +1,10 @@
+import { isDevAuditFlagEnabled } from '@/lib/dev-audit-flag';
+
+/** Dev-only — set `EXPO_PUBLIC_RESUME_PERF=1` for `[resume]` logs. */
+export function isResumePerfEnabled(): boolean {
+  return isDevAuditFlagEnabled(process.env.EXPO_PUBLIC_RESUME_PERF);
+}
+
 /**
  * Dev-only foreground/resume profiling — search Metro logs for `[resume]`.
  */
@@ -51,7 +58,7 @@ function nowMs(): number {
 }
 
 function logResume(label: string, detail?: Record<string, unknown>): void {
-  if (!__DEV__) return;
+  if (!__DEV__ || !isResumePerfEnabled()) return;
   if (detail && Object.keys(detail).length > 0) {
     console.log(`[resume] ${label}`, detail);
     return;
