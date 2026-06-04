@@ -27,6 +27,8 @@ const PAGE_SIZE = 20;
 
 type Props = {
   sessionToken: string | null | undefined;
+  /** Shopify customer id — keeps React Query cache scoped per account. */
+  customerId?: string | null;
   /** Deep link from push notification (`orderId` route param). */
   openOrderId?: string;
   openOrderNumber?: string;
@@ -122,13 +124,20 @@ function OrdersEmptyState({ embedded }: { embedded?: boolean }) {
 
 export function AccountOrdersSection({
   sessionToken,
+  customerId,
   openOrderId,
   openOrderNumber,
   onRequestSignIn,
   embedded,
 }: Props) {
-  const enabled = Boolean(sessionToken?.trim());
+  const safeToken = sessionToken?.trim() ?? '';
+  const safeCustomerId = customerId?.trim() ?? '';
+  const enabled = Boolean(safeToken);
   const [previewOrder, setPreviewOrder] = useState<AccountOrder | null>(null);
+
+  useEffect(() => {
+    setPreviewOrder(null);
+  }, [safeToken, safeCustomerId]);
 
   const {
     data,
@@ -141,15 +150,17 @@ export function AccountOrdersSection({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['account', 'orders', sessionToken],
+    queryKey: ['account', 'orders', safeCustomerId, safeToken],
     enabled,
     initialPageParam: undefined as string | undefined,
     staleTime: 60_000,
-    queryFn: async ({ pageParam }) => {
+    gcTime: 0,
+    queryFn: async ({ pageParam, queryKey }) => {
+      const tokenFromKey = typeof queryKey[3] === 'string' ? queryKey[3] : safeToken;
       const result = await fetchAccountOrders({
         first: PAGE_SIZE,
         after: pageParam,
-        sessionToken: sessionToken ?? undefined,
+        sessionToken: tokenFromKey,
       });
       if (!result.ok) {
         throw result;

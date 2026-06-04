@@ -111,6 +111,20 @@ export async function resolveCustomerSessionToken(sessionOverride?: string): Pro
 }
 
 /**
+ * Session for user-scoped APIs (orders, account) — never falls back to persisted cookie/session
+ * so a prior account cannot leak after sign-out / sign-in.
+ */
+export async function resolveActiveCustomerSessionToken(
+  sessionOverride?: string,
+): Promise<string | null> {
+  const candidates = [sessionOverride?.trim(), getInMemoryCustomerSessionToken()];
+  for (const candidate of candidates) {
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+/**
  * Auth headers for Koko Bay customer APIs in React Native.
  * Sends Bearer (recommended for RN) plus Cookie when a session exists.
  */

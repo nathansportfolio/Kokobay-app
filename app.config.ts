@@ -27,11 +27,12 @@ function isFirebaseCrashlyticsEnabledFromEnv(): boolean {
   return value === '1' || value === 'true' || value === 'yes';
 }
 
+/** Keep in sync with `constants/klaviyo.ts` — Klaviyo on unless env disables it. */
 function isKlaviyoEnabledFromEnv(): boolean {
   const value = readFirebaseEnv('EXPO_PUBLIC_KLAVIYO_ENABLED');
-  if (value === undefined) return false;
-  if (value === '0' || value === 'false' || value === 'no') return false;
-  return value === '1' || value === 'true' || value === 'yes';
+  if (value === undefined) return true;
+  if (value === '0' || value === 'false' || value === 'no' || value === 'off') return false;
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 }
 
 /**

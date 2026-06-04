@@ -135,12 +135,12 @@ export default function AccountScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!accessToken) return;
+      if (!accessToken || !user?.id) return;
       void queryClient.refetchQueries({
-        queryKey: [...ACCOUNT_ORDERS_QUERY_KEY, accessToken],
+        queryKey: [...ACCOUNT_ORDERS_QUERY_KEY, user.id, accessToken],
         type: 'active',
       });
-    }, [accessToken, queryClient]),
+    }, [accessToken, queryClient, user?.id]),
   );
 
   const settingsPanel = (

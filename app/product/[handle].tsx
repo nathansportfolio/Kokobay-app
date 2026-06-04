@@ -21,7 +21,7 @@ import { ProductDetailSkeleton } from '@/components/ui/product-detail-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
 import { PdpProductInfoSections } from '@/components/pdp/pdp-product-info-sections';
-import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
+import { useLuxuryHeaderTotalHeight } from '@/hooks/use-luxury-chrome-top-padding';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useBagActions } from '@/contexts/bag-context';
@@ -383,7 +383,7 @@ export default function ProductScreen() {
   const stickyCtaStripHeight = 6 + 50 + 8;
   const stickyBottomPad = stickyCtaStripHeight + 12 + (tabBarOverlay > 0 ? 0 : Math.max(insets.bottom, 12));
   const ctaBottomPad = tabBarOverlay > 0 ? 8 : 8 + Math.max(insets.bottom, 12);
-  const chromeTop = luxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
+  const chromeTop = useLuxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
   const backInStockCtaLabel = backInStockSubscribed ? 'We will email you when back in stock' : 'Email me when back in stock';
 
   return (

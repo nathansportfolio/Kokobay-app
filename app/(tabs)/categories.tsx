@@ -1,37 +1,37 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import type { FlashListRef } from '@shopify/flash-list';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { View } from 'react-native';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
-import { ShopCollectionEditorialCard } from '@/components/shop/shop-collection-editorial-card';
-import {
-  SHOP_COLLECTION_STRIP_GAP,
-  SHOP_COLLECTION_STRIP_HORIZONTAL_PADDING,
-} from '@/components/shop/shop-collection-layout';
+import { ShopCollectionsList } from '@/components/shop/shop-collections-list';
 import { CollectionListSkeleton } from '@/components/ui/collection-list-skeleton';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
 import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { getCollections } from '@/services/shopify';
-import { collectionHandlesMatch } from '@/utils/collection-handles';
+import { canonicalCollectionHandle } from '@/utils/collection-handles';
 import { cmsCollectionTilesToDisplayItems } from '@/utils/cms-collection-tiles';
 import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
 
-const SHOP_SCROLL_CONTENT = {
-  flexGrow: 1,
-  paddingTop: 8,
+const LIST_CONTENT = {
   paddingBottom: 48,
+} as const;
+
+const HEADER_WRAP = {
+  paddingTop: 8,
   paddingHorizontal: 20,
 } as const;
 
 const COLLECTIONS_CMS_STALE_MS = 60 * 60_000;
+
+const CATEGORIES_SHELL = { flex: 1, backgroundColor: palette.canvas } as const;
 
 function CollectionsHeader({ isError = false }: { isError?: boolean }) {
   return (
@@ -47,11 +47,7 @@ function CollectionsHeader({ isError = false }: { isError?: boolean }) {
 }
 
 export default function CategoriesScreen() {
-  const scrollRef = useRef<ScrollView>(null);
-  const { width, height: winH } = useWindowDimensions();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
-  /** Explicit height — flex:1 ScrollView collapses on Android. */
-  const scrollHeight = Math.max(320, winH - tabBarHeight);
+  const listRef = useRef<FlashListRef<CmsCollectionDisplayItem>>(null);
 
   useEffect(() => {
     resetShopTabPerfTrace({ routeKey: 'categories-tab' });
@@ -65,6 +61,15 @@ export default function CategoriesScreen() {
     queryFn: async () => (await getKokobayWebCollections(500)) ?? [],
     staleTime: 4 * 60_000,
   });
+
+  const catalogByCanonical = useMemo(() => {
+    if (!catalogCollections?.length) return null;
+    const map = new Map<string, (typeof catalogCollections)[number]>();
+    for (const c of catalogCollections) {
+      map.set(canonicalCollectionHandle(c.handle), c);
+    }
+    return map;
+  }, [catalogCollections]);
 
   const {
     data: cmsTiles,
@@ -105,13 +110,9 @@ export default function CategoriesScreen() {
 
   const displayItems = useMemo((): CmsCollectionDisplayItem[] => {
     const items = cmsDisplayItems.length > 0 ? cmsDisplayItems : fallbackDisplayItems;
-    if (!catalogCollections?.length) return items;
+    if (!catalogByCanonical) return items;
     return items.map((item) => {
-      const hit = catalogCollections.find(
-        (c) =>
-          c.handle === item.collection.handle ||
-          collectionHandlesMatch(c.handle, item.collection.handle),
-      );
+      const hit = catalogByCanonical.get(canonicalCollectionHandle(item.collection.handle));
       if (!hit) return item;
       return {
         ...item,
@@ -122,7 +123,7 @@ export default function CategoriesScreen() {
         },
       };
     });
-  }, [catalogCollections, cmsDisplayItems, fallbackDisplayItems]);
+  }, [catalogByCanonical, cmsDisplayItems, fallbackDisplayItems]);
 
   const showCollectionsSkeleton =
     (cmsPending && cmsTiles === undefined) || (cmsError && fallbackPending && fallbackCollections === undefined);
@@ -130,9 +131,11 @@ export default function CategoriesScreen() {
   const showCatalogError = cmsError && !fallbackPending && fallbackCollections !== undefined;
 
   const scrollToTop = useCallback(() => {
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
-  const { onScroll } = useBindScrollToTop(scrollToTop, !showCollectionsSkeleton);
+
+  const listEnabled = !showCollectionsSkeleton && displayItems.length > 0;
+  const { onScroll } = useBindScrollToTop(scrollToTop, listEnabled);
 
   const renderBranch = showCollectionsSkeleton
     ? 'skeleton'
@@ -171,49 +174,50 @@ export default function CategoriesScreen() {
     ],
   });
 
-  const collectionCards = useMemo(
+  const listHeader = useMemo(
     () => (
-      <View style={{ gap: SHOP_COLLECTION_STRIP_GAP, marginHorizontal: -20, paddingHorizontal: SHOP_COLLECTION_STRIP_HORIZONTAL_PADDING }}>
-        {displayItems.map((item, index) => (
-          <ShopCollectionEditorialCard
-            key={item.collection.id}
-            collection={item.collection}
-            cmsUrl={item.cmsUrl}
-            variant="strip"
-            imagePriority={index < 6 ? 'normal' : 'low'}
-            disableImageTransition
-            useShopCoverUri={!item.cmsUrl}
-            screenWidth={width}
-            perfTraceRowIndex={index}
-          />
-        ))}
+      <View style={HEADER_WRAP}>
+        <CollectionsHeader isError={showCatalogError && displayItems.length === 0} />
       </View>
     ),
-    [displayItems, width],
+    [displayItems.length, showCatalogError],
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: palette.canvas }}>
-      <ScrollView
-        ref={scrollRef}
-        style={{ height: scrollHeight, backgroundColor: palette.canvas }}
-        contentContainerStyle={SHOP_SCROLL_CONTENT}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        onScroll={onScroll}
-        scrollEventThrottle={16}>
-        <CollectionsHeader isError={showCatalogError && displayItems.length === 0} />
-        {showCollectionsSkeleton ? (
+  if (showCollectionsSkeleton) {
+    return (
+      <View style={CATEGORIES_SHELL}>
+        <View style={HEADER_WRAP}>
+          <CollectionsHeader />
+        </View>
+        <View style={{ paddingHorizontal: 20 }}>
           <CollectionListSkeleton layout="strip" />
-        ) : displayItems.length === 0 ? (
+        </View>
+      </View>
+    );
+  }
+
+  if (displayItems.length === 0) {
+    return (
+      <View style={CATEGORIES_SHELL}>
+        <View style={HEADER_WRAP}>
+          <CollectionsHeader isError={showCatalogError} />
           <Text variant="caption" className="font-sans text-[13px] leading-5 text-mist/90">
             Collections will appear here once the catalog has loaded.
           </Text>
-        ) : (
-          collectionCards
-        )}
-      </ScrollView>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={CATEGORIES_SHELL}>
+      <ShopCollectionsList
+        ref={listRef}
+        items={displayItems}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={LIST_CONTENT}
+        onScroll={onScroll}
+      />
     </View>
   );
 }

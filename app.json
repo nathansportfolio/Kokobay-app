@@ -2,7 +2,7 @@
   "expo": {
     "name": "Koko Bay",
     "slug": "kokobay-app",
-    "version": "1.0.58",
+    "version": "1.0.69",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kokobay.kokobayapp",
-      "buildNumber": "58",
+      "buildNumber": "69",
       "infoPlist": {
         "CFBundleDisplayName": "Koko Bay",
         "CFBundleName": "Koko Bay",
@@ -26,11 +26,11 @@
     },
     "android": {
       "package": "com.kokobay.kokobayapp",
-      "versionCode": 58,
+      "versionCode": 69,
       "label": "Koko Bay",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./assets/images/android-adaptive-foreground.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
@@ -61,9 +61,9 @@
             "backgroundColor": "#FFFFFF"
           },
           "android": {
-            "image": "./assets/images/logo-no-bg.png",
+            "image": "./assets/images/android-splash-logo.png",
             "resizeMode": "contain",
-            "imageWidth": 300,
+            "imageWidth": 200,
             "backgroundColor": "#FFFFFF"
           }
         }

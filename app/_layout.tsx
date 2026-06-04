@@ -120,6 +120,7 @@ export default function RootLayout() {
                 headerShadowVisible: false,
                 contentStyle: { backgroundColor: palette.canvas },
                 freezeOnBlur: false,
+                gestureEnabled: true,
               }}>
               <Stack.Screen
                 name="(tabs)"
@@ -131,8 +132,11 @@ export default function RootLayout() {
                   headerShown: false,
                   presentation: 'fullScreenModal',
                   animation: 'fade',
+                  gestureEnabled: false,
                 }}
               />
+              <Stack.Screen name="product/[handle]" options={{ headerShown: false }} />
+              <Stack.Screen name="collection/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="products/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="collections/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="search" options={{ headerShown: false }} />

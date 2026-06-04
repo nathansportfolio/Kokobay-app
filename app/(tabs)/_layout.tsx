@@ -148,15 +148,6 @@ export default function TabLayout() {
               ),
             }}
           />
-          <Tabs.Screen
-            name="search"
-            options={{ href: null, headerShown: false, sceneStyle: { backgroundColor: palette.surface } }}
-          />
-          <Tabs.Screen name="product/[handle]" options={{ href: null, headerShown: false }} />
-          <Tabs.Screen
-            name="collection/[handle]"
-            options={{ href: null, headerShown: false, sceneStyle: { backgroundColor: palette.surface } }}
-          />
           <Tabs.Screen name="login" options={{ href: null, headerShown: false }} />
           <Tabs.Screen name="register" options={{ href: null, headerShown: false }} />
           <Tabs.Screen name="forgot-password" options={{ href: null, headerShown: false }} />

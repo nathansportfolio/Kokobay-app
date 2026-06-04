@@ -52,6 +52,7 @@ export function AccountDashboard({
             <View className="px-4 py-1">
               <AccountOrdersSection
                 sessionToken={accessToken}
+                customerId={user.id}
                 openOrderId={openOrderId}
                 openOrderNumber={openOrderNumber}
                 onRequestSignIn={onRequestSignIn}

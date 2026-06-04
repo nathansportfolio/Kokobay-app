@@ -14,7 +14,7 @@ import {
   resumePushRegistrationAfterSignOut,
   unregisterPushNotifications,
 } from '@/lib/pushNotifications';
-import { teardownUserQueriesOnSignOut } from '@/lib/sign-out-query-teardown';
+import { clearUserScopedQueries } from '@/lib/sign-out-query-teardown';
 import {
   beginSignOutPerfRun,
   finishSignOutPerfRun,
@@ -60,6 +60,7 @@ async function completeAuthenticatedCartSetup(session: AuthSession): Promise<voi
   const discount = await import('@/services/cart/auto-first-app-order-discount');
   discount.resetFirstAppOrderDiscountAutoApplyState();
   useAppBenefitsStore.getState().clear();
+  clearUserScopedQueries();
   useAuthStore.getState().setSession(session);
 
   void (async () => {
@@ -91,8 +92,11 @@ function performSignOut(options: SignOutOptions = {}): void {
   const accessToken = useAuthStore.getState().accessToken;
 
   pausePushRegistrationForSignOut();
-  teardownUserQueriesOnSignOut();
+  clearUserScopedQueries();
   markSignOutPerf('user_queries_cancelled');
+
+  void persistCustomerSessionCookie(null);
+  void persistSession(null);
 
   const serverLogoutPromise =
     !options.skipServerLogout && accessToken?.trim() ?

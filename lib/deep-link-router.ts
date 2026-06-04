@@ -26,9 +26,31 @@ export type ResolveDeepLinkResult = {
   href: Href | null;
   /** Normalized store path for logging (e.g. `/products/black-bikini`). */
   canonicalPath: string | null;
+  /** Numeric Shopify variant id when the link targets a variant, not a handle. */
+  pendingVariantId?: string;
   reason?: string;
   fallbackHref: Href;
 };
+
+const VARIANT_GID_RE = /^gid:\/\/shopify\/ProductVariant\/(\d+)$/i;
+
+export function classifyProductDeepLinkIdentifier(
+  raw: string,
+): { kind: 'handle'; handle: string } | { kind: 'variant'; variantId: string } | null {
+  const id = raw.trim();
+  if (!id) return null;
+
+  const gidMatch = id.match(VARIANT_GID_RE);
+  if (gidMatch?.[1]) {
+    return { kind: 'variant', variantId: gidMatch[1] };
+  }
+
+  if (/^\d+$/.test(id)) {
+    return { kind: 'variant', variantId: id };
+  }
+
+  return { kind: 'handle', handle: id };
+}
 
 function pathSegment(value: string): string {
   return encodeURIComponent(value.trim());
@@ -64,13 +86,41 @@ function productHref(handle: string): Href {
   return `/product/${pathSegment(handle)}` as Href;
 }
 
+/** Resolves variant ids via `/products/[handle]` before opening the PDP tab route. */
+function productVariantEntryHref(identifier: string): Href {
+  return `/products/${pathSegment(identifier)}` as Href;
+}
+
+function resolveProductDeepLink(rawId: string): ResolveDeepLinkResult | null {
+  const id = decodePathSegment(rawId);
+  const classified = classifyProductDeepLinkIdentifier(id);
+  if (!classified) return null;
+
+  if (classified.kind === 'variant') {
+    return {
+      kind: 'product',
+      href: productVariantEntryHref(id),
+      canonicalPath: `/products/${id}`,
+      pendingVariantId: classified.variantId,
+      fallbackHref: DEEP_LINK_FALLBACK_HREF,
+    };
+  }
+
+  return {
+    kind: 'product',
+    href: productHref(classified.handle),
+    canonicalPath: `/products/${classified.handle}`,
+    fallbackHref: DEEP_LINK_FALLBACK_HREF,
+  };
+}
+
 function collectionHref(handle: string): Href {
   return `/collection/${pathSegment(handle)}` as Href;
 }
 
 function searchHref(query: string): Href {
   return {
-    pathname: '/(tabs)/search',
+    pathname: '/search',
     params: { q: query.trim() },
   } as Href;
 }
@@ -86,26 +136,9 @@ function orderHref(orderId: string): Href {
 function resolvePathAndQuery(path: string, searchParams: URLSearchParams): ResolveDeepLinkResult | null {
   const pathname = normalizeStorePathname(path);
 
-  const productsMatch = pathname.match(/^\/products\/([^/]+)$/);
+  const productsMatch = pathname.match(/^\/products?\/(.+)$/);
   if (productsMatch?.[1]) {
-    const handle = decodePathSegment(productsMatch[1]);
-    return {
-      kind: 'product',
-      href: productHref(handle),
-      canonicalPath: `/products/${handle}`,
-      fallbackHref: DEEP_LINK_FALLBACK_HREF,
-    };
-  }
-
-  const productTabMatch = pathname.match(/^\/product\/([^/]+)$/);
-  if (productTabMatch?.[1]) {
-    const handle = decodePathSegment(productTabMatch[1]);
-    return {
-      kind: 'product',
-      href: productHref(handle),
-      canonicalPath: `/products/${handle}`,
-      fallbackHref: DEEP_LINK_FALLBACK_HREF,
-    };
+    return resolveProductDeepLink(productsMatch[1]);
   }
 
   const collectionsMatch = pathname.match(/^\/collections\/([^/]+)$/);

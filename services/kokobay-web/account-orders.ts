@@ -14,7 +14,10 @@ import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { kokobayCustomerMe } from './customer-auth';
 import { isKokobayWebProductsConfigured } from './client';
-import { buildKokobayCustomerAuthHeaders, resolveCustomerSessionToken } from './customer-session';
+import {
+  buildKokobayCustomerAuthHeaders,
+  resolveActiveCustomerSessionToken,
+} from './customer-session';
 import { logAccountOrders, summarizeOrder, summarizeOrders } from '@/utils/account-order-debug';
 
 type FetchOptions = {
@@ -244,7 +247,7 @@ async function fetchAccountOrdersOnce(
     return { ok: false, error: 'Orders are not configured.' };
   }
 
-  const sessionToken = await resolveCustomerSessionToken(options.sessionToken);
+  const sessionToken = await resolveActiveCustomerSessionToken(options.sessionToken);
   if (!sessionToken) {
     return {
       ok: false,

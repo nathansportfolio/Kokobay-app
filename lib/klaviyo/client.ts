@@ -9,6 +9,7 @@ import {
 } from '@/lib/klaviyo-env';
 import { isKlaviyoNativeModuleAvailable } from '@/lib/klaviyo-native-safe';
 import { klaviyoLog } from '@/lib/klaviyo/logger';
+import { markKlaviyoSdkReadyForPush, scheduleKlaviyoPushTokenSync } from '@/lib/klaviyo/push-token';
 import type { AuthUser } from '@/types/auth';
 
 type KlaviyoSdk = typeof import('klaviyo-react-native-sdk');
@@ -74,13 +75,13 @@ export function probeKlaviyoOnAppStart(): void {
   initializeKlaviyo();
 }
 
-/** Initialize Klaviyo SDK once per app launch (analytics + profiles only — no push token wiring). */
+/** Initialize Klaviyo SDK once per app launch; then sync native push token (dual-channel with Expo). */
 export function initializeKlaviyo(): void {
   if (initAttempted) return;
   initAttempted = true;
 
   if (!isKlaviyoEnabledFromEnv()) {
-    logKlaviyoStartupStatus({ reason: 'EXPO_PUBLIC_KLAVIYO_ENABLED is not true' });
+    logKlaviyoStartupStatus({ reason: 'EXPO_PUBLIC_KLAVIYO_ENABLED is false' });
     return;
   }
 
@@ -115,6 +116,8 @@ export function initializeKlaviyo(): void {
       apiKeySource: getKlaviyoEnvDiagnostics().apiKeySource,
       apiKeyMasked: getKlaviyoEnvDiagnostics().apiKeyMasked,
     });
+    markKlaviyoSdkReadyForPush();
+    scheduleKlaviyoPushTokenSync('initializeKlaviyo');
   } catch (error) {
     klaviyoLog('skipped', {
       reason: 'Klaviyo.initialize threw',
@@ -149,6 +152,7 @@ export function identifyKlaviyoUser(user: KlaviyoIdentifyInput): void {
     firstName: profile.firstName ?? null,
     lastName: profile.lastName ?? null,
   });
+  scheduleKlaviyoPushTokenSync('identifyKlaviyoUser');
 }
 
 /** Sync profile fields after account updates (marketing consent, name patch, etc.). */
@@ -184,6 +188,7 @@ export function resetKlaviyoProfile(): void {
 
   sdk.Klaviyo.resetProfile();
   klaviyoLog('reset', {});
+  scheduleKlaviyoPushTokenSync('resetKlaviyoProfile');
 }
 
 export function trackKlaviyoEvent(event: KlaviyoEvent): void {

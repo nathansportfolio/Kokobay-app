@@ -1,8 +1,10 @@
+import { KLAVIYO_ENABLED_DEFAULT, KLAVIYO_PUBLIC_SITE_ID } from '@/constants/klaviyo';
+
 /**
- * Klaviyo feature flag and public API key (client-safe `EXPO_PUBLIC_*` only).
+ * Klaviyo feature flag and public Site ID.
  *
- * Set `EXPO_PUBLIC_KLAVIYO_ENABLED=true` in `.env` / EAS env (maps to the
- * `KLAVIYO_ENABLED` flag described in product docs).
+ * Production values are hardcoded in `@/constants/klaviyo`. Env vars can override the Site ID
+ * or disable Klaviyo (`EXPO_PUBLIC_KLAVIYO_ENABLED=false`).
  */
 
 function readKlaviyoEnv(name: string): string | undefined {
@@ -10,26 +12,23 @@ function readKlaviyoEnv(name: string): string | undefined {
   return value || undefined;
 }
 
-function parseTruthyEnv(value: string | undefined): boolean {
-  if (value === undefined) return false;
-  if (value === '0' || value === 'false' || value === 'no') return false;
-  return value === '1' || value === 'true' || value === 'yes';
+function parseKlaviyoEnabledEnv(value: string | undefined): boolean {
+  if (value === undefined) return KLAVIYO_ENABLED_DEFAULT;
+  if (value === '0' || value === 'false' || value === 'no' || value === 'off') return false;
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 }
 
-/** True when `EXPO_PUBLIC_KLAVIYO_ENABLED=true` (or `1` / `yes`). */
+/** True unless `EXPO_PUBLIC_KLAVIYO_ENABLED` is explicitly `false` / `0` / `no` / `off`. */
 export function isKlaviyoEnabledFromEnv(): boolean {
-  return parseTruthyEnv(readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_ENABLED'));
+  return parseKlaviyoEnabledEnv(readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_ENABLED'));
 }
 
 /**
- * Klaviyo **public** Site ID / API key for `Klaviyo.initialize()`.
- * Prefer `EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY` (usually 6-char Site ID, e.g. `THMpay`).
+ * Klaviyo **public** Site ID for `Klaviyo.initialize()`.
+ * Uses `EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY` when set, otherwise {@link KLAVIYO_PUBLIC_SITE_ID}.
  */
-export function getKlaviyoPublicApiKeyFromEnv(): string | undefined {
-  return (
-    readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY') ??
-    readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API')
-  );
+export function getKlaviyoPublicApiKeyFromEnv(): string {
+  return readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY') ?? KLAVIYO_PUBLIC_SITE_ID;
 }
 
 function maskSecret(value: string): string {
@@ -38,23 +37,24 @@ function maskSecret(value: string): string {
   return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
 }
 
+export type KlaviyoApiKeySource =
+  | 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY'
+  | 'hardcoded'
+  | null;
+
 /** Dev-only env summary — never logs the full API key. */
 export function getKlaviyoEnvDiagnostics(): {
   enabled: boolean;
   hasApiKey: boolean;
   apiKeyMasked: string | null;
-  apiKeySource: 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY' | 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API' | null;
+  apiKeySource: KlaviyoApiKeySource;
 } {
-  const fromKey = readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY');
-  const fromAlias = readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API');
-  const resolved = fromKey ?? fromAlias;
+  const fromEnv = readKlaviyoEnv('EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY');
+  const resolved = getKlaviyoPublicApiKeyFromEnv();
   return {
     enabled: isKlaviyoEnabledFromEnv(),
     hasApiKey: Boolean(resolved),
     apiKeyMasked: resolved ? maskSecret(resolved) : null,
-    apiKeySource:
-      fromKey ? 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY'
-      : fromAlias ? 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API'
-      : null,
+    apiKeySource: fromEnv ? 'EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY' : 'hardcoded',
   };
 }

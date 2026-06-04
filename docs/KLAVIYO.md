@@ -31,23 +31,18 @@ Requires a **development build** or production binary — Klaviyo does not run i
 
 ---
 
-## 2. Environment variables
+## 2. Configuration
 
-Add to `.env` (and EAS secrets for production). Expo only inlines `EXPO_PUBLIC_*` at bundle time — restart Metro after changes.
+**Defaults are hardcoded** in `constants/klaviyo.ts` (`THMpay`, enabled). Production/TestFlight work without EAS Klaviyo env vars.
+
+Optional overrides in `.env` / EAS (restart Metro after changes):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `EXPO_PUBLIC_KLAVIYO_ENABLED` | Yes | `true` / `1` / `yes` to enable (product name: **KLAVIYO_ENABLED**) |
-| `EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY` | Yes | Klaviyo **public** Site ID / API key (Account → Settings → API keys) |
+| `EXPO_PUBLIC_KLAVIYO_ENABLED` | No | Set `false` / `0` / `no` / `off` to disable SDK + native plugin |
+| `EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY` | No | Override public Site ID (default: `THMpay` from `constants/klaviyo.ts`) |
 
-Example `.env`:
-
-```bash
-EXPO_PUBLIC_KLAVIYO_ENABLED=true
-EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY=AbCd12
-```
-
-For EAS, set the same keys on your build profile (e.g. `eas.json` → `env`).
+Do **not** use a `pk_…` private key in the app — only the 6-character public Site ID.
 
 ---
 
@@ -164,14 +159,20 @@ updateKlaviyoProfileProperties({
 
 ---
 
-## 7. Push (explicitly out of scope)
+## 7. Push (dual-channel)
 
-Do **not** call `Klaviyo.setPushToken()` in this project. Device registration stays:
+Two independent registration paths run in parallel:
 
-1. `expo-notifications` → Expo push token  
-2. `lib/pushNotifications.ts` → `POST /api/push/register`
+| Channel | Token | Registration |
+|---------|--------|----------------|
+| **Koko Bay / Expo** | `ExponentPushToken[…]` | `lib/pushNotifications.ts` → `POST /api/push/register` |
+| **Klaviyo** | Native APNs (iOS) / FCM (Android) | `Notifications.getDevicePushTokenAsync()` → `Klaviyo.setPushToken()` |
 
-Klaviyo campaigns that need mobile push should continue to use your existing backend + Expo Push API, or a future dedicated Klaviyo push project with a clear migration plan.
+Klaviyo sync runs after `initializeKlaviyo()` and `identifyKlaviyoUser()` (`lib/klaviyo/push-token.ts`). It does **not** replace or modify the Expo register flow.
+
+Filter Metro for `[KLAVIYO] push_token_set` after notification permission is granted on a physical device.
+
+**Klaviyo dashboard:** configure APNs + FCM in Klaviyo, then use push preview for the identified profile. **Ops pushes** (back-in-stock, custom routing) still use `POST /api/push/send` + Expo.
 
 ---
 
@@ -179,7 +180,7 @@ Klaviyo campaigns that need mobile push should continue to use your existing bac
 
 | Symptom | Check |
 |---------|--------|
-| No `[KLAVIYO]` logs | `EXPO_PUBLIC_KLAVIYO_ENABLED=true`, rebuild dev client |
+| No `[KLAVIYO]` logs | Klaviyo not disabled (`EXPO_PUBLIC_KLAVIYO_ENABLED` unset or true), rebuild dev client |
 | SDK errors in Expo Go | Use dev client / EAS build, not Expo Go |
 | Events missing | Confirm GTM path runs (`pushToDataLayer` / `trackViewItem`, etc.) |
 | Wrong account | `EXPO_PUBLIC_KLAVIYO_PUBLIC_API_KEY` matches Klaviyo account |

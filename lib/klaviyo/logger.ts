@@ -4,6 +4,7 @@ export type KlaviyoLogKind =
   | 'profile_update'
   | 'reset'
   | 'initialized'
+  | 'push_token_set'
   | 'status'
   | 'skipped';
 

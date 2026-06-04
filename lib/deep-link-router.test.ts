@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { deepLinkTargetHref, resolveDeepLinkUrl } from '@/lib/deep-link-router';
+import {
+  classifyProductDeepLinkIdentifier,
+  deepLinkTargetHref,
+  resolveDeepLinkUrl,
+} from '@/lib/deep-link-router';
 
 describe('resolveDeepLinkUrl', () => {
   it('maps storefront product URLs to tab product routes', () => {
@@ -23,7 +27,7 @@ describe('resolveDeepLinkUrl', () => {
     const href = deepLinkTargetHref(result);
     assert.equal(typeof href, 'object');
     if (typeof href === 'object' && href && 'pathname' in href) {
-      assert.equal(href.pathname, '/(tabs)/search');
+      assert.equal(href.pathname, '/search');
       assert.equal(href.params?.q, 'linen dress');
     }
   });
@@ -38,6 +42,39 @@ describe('resolveDeepLinkUrl', () => {
     const result = resolveDeepLinkUrl('kokobay://products/blue-dress');
     assert.equal(result.kind, 'product');
     assert.equal(deepLinkTargetHref(result), '/product/blue-dress');
+  });
+
+  it('accepts kokobay product scheme links with variant GIDs', () => {
+    const variantGid = 'gid://shopify/ProductVariant/55564963512706';
+    const result = resolveDeepLinkUrl(`kokobay://product/${variantGid}`);
+    assert.equal(result.kind, 'product');
+    assert.equal(result.pendingVariantId, '55564963512706');
+    assert.equal(
+      deepLinkTargetHref(result),
+      `/products/${encodeURIComponent(variantGid)}`,
+    );
+  });
+
+  it('accepts numeric variant ids on product deep links', () => {
+    const result = resolveDeepLinkUrl('kokobay://product/55564963512706');
+    assert.equal(result.kind, 'product');
+    assert.equal(result.pendingVariantId, '55564963512706');
+    assert.equal(deepLinkTargetHref(result), '/products/55564963512706');
+  });
+
+  it('classifies product deep link identifiers', () => {
+    assert.deepEqual(classifyProductDeepLinkIdentifier('blue-dress'), {
+      kind: 'handle',
+      handle: 'blue-dress',
+    });
+    assert.deepEqual(
+      classifyProductDeepLinkIdentifier('gid://shopify/ProductVariant/123'),
+      { kind: 'variant', variantId: '123' },
+    );
+    assert.deepEqual(classifyProductDeepLinkIdentifier('456'), {
+      kind: 'variant',
+      variantId: '456',
+    });
   });
 
   it('accepts legacy kokobayapp scheme links', () => {

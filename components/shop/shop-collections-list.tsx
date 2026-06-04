@@ -8,19 +8,19 @@ import {
   SHOP_COLLECTION_STRIP_GAP,
   SHOP_COLLECTION_STRIP_HORIZONTAL_PADDING,
 } from '@/components/shop/shop-collection-layout';
-import type { Collection } from '@/types/shopify';
+import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 
 type Props = {
-  collections: Collection[];
+  items: CmsCollectionDisplayItem[];
   ListHeaderComponent?: React.ReactElement | null;
   contentContainerStyle?: object;
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
 };
 
-export const ShopCollectionsList = forwardRef<FlashListRef<Collection>, Props>(
+export const ShopCollectionsList = forwardRef<FlashListRef<CmsCollectionDisplayItem>, Props>(
   function ShopCollectionsList(
-    { collections, ListHeaderComponent, contentContainerStyle, onScroll, refreshControl },
+    { items, ListHeaderComponent, contentContainerStyle, onScroll, refreshControl },
     ref,
   ) {
     const { width, height: winH } = useWindowDimensions();
@@ -34,7 +34,7 @@ export const ShopCollectionsList = forwardRef<FlashListRef<Collection>, Props>(
     );
 
     const renderItem = useCallback(
-      ({ item, index }: { item: Collection; index: number }) => (
+      ({ item, index }: { item: CmsCollectionDisplayItem; index: number }) => (
         <View
           style={{
             height: itemHeight,
@@ -42,11 +42,12 @@ export const ShopCollectionsList = forwardRef<FlashListRef<Collection>, Props>(
             paddingBottom: SHOP_COLLECTION_STRIP_GAP,
           }}>
           <ShopCollectionEditorialCard
-            collection={item}
+            collection={item.collection}
+            cmsUrl={item.cmsUrl}
             variant="strip"
-            imagePriority="low"
+            imagePriority={index < 6 ? 'normal' : 'low'}
             disableImageTransition
-            useShopCoverUri
+            useShopCoverUri={!item.cmsUrl}
             screenWidth={width}
             perfTraceRowIndex={index}
           />
@@ -55,21 +56,21 @@ export const ShopCollectionsList = forwardRef<FlashListRef<Collection>, Props>(
       [itemHeight, width],
     );
 
-    const keyExtractor = useCallback((item: Collection) => item.id, []);
+    const keyExtractor = useCallback((item: CmsCollectionDisplayItem) => item.collection.id, []);
 
-    const listExtra = useMemo(() => itemHeight, [itemHeight]);
+    const listExtra = useMemo(() => `${itemHeight}:${width}`, [itemHeight, width]);
 
     return (
       <FlashList
         ref={ref}
         style={{ flex: 1 }}
-        data={collections}
+        data={items}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={ListHeaderComponent}
         overrideItemLayout={overrideItemLayout}
         extraData={listExtra}
-        drawDistance={Math.max(winH, itemHeight * 2)}
+        drawDistance={Math.max(winH, itemHeight * 3)}
         removeClippedSubviews={false}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"

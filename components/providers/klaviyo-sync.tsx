@@ -9,8 +9,8 @@ import {
 import { useAuthStore } from '@/store/auth-session';
 
 /**
- * Keeps Klaviyo profile in sync with auth — does not register push tokens
- * (Expo + Koko Bay `/api/push/register` remain the push source of truth).
+ * Keeps Klaviyo profile in sync with auth.
+ * Dual push: Expo token → `/api/push/register`; native APNs/FCM → `Klaviyo.setPushToken`.
  */
 export function KlaviyoSync() {
   useEffect(() => {
