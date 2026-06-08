@@ -25,7 +25,7 @@ import { useLuxuryHeaderTotalHeight } from '@/hooks/use-luxury-chrome-top-paddin
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useBagActions } from '@/contexts/bag-context';
-import { useWishlist } from '@/contexts/wishlist-context';
+import { useIsWishlistedHandle, useWishlistToggle } from '@/contexts/wishlist-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
@@ -39,7 +39,7 @@ import { trackViewItem } from '@/lib/gtm';
 import { getProductRecommendations } from '@/services/product-recommendations';
 import { recordProductPageView } from '@/services/kokobay-web/page-views';
 import { getProduct } from '@/services/shopify';
-import { useAuthStore } from '@/store';
+import { useAuth } from '@/hooks/use-auth';
 import { imageUrlForCartLine, variantLabelForCart } from '@/utils/cart-display';
 import { resolveVariantQuantityCap } from '@/utils/cart-inventory';
 import { isLikelyRemoteImageUrl } from '@/utils/catalog-image';
@@ -54,7 +54,7 @@ import {
 } from '@/constants/product-query';
 import { productQueryKey } from '@/utils/product-query-key';
 import { yieldForUiPaint } from '@/utils/yield-for-ui-paint';
-import { getProductSizeOptions, getVariantForSize, isSizeAvailable } from '@/utils/pdp-variants';
+import { getProductSizeOptions, getVariantForSize, findVariantById, isSizeAvailable } from '@/utils/pdp-variants';
 import { stripSimpleHtml } from '@/utils/strip-html';
 
 const PDP_QUESTIONS_EMAIL = 'info@kokobay.co.uk';
@@ -77,16 +77,24 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 export default function ProductScreen() {
   useLifecycleRenderCount('product');
   useRenderTrace('Product');
-  const { handle } = useLocalSearchParams<{ handle: string }>();
+  const { handle, returnTo, variantId } = useLocalSearchParams<{
+    handle: string;
+    returnTo?: string;
+    variantId?: string;
+  }>();
   const navigation = useNavigation();
   const goBack = usePdpGoBack();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
   const tabBarOverlay = useOptionalBottomTabBarHeight();
   const appErrorBannerHeight = useAppErrorBannerChromeHeight();
+  const chromeTop = useLuxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
   const { addToBag } = useBagActions();
-  const { toggleWishlist, isWishlisted } = useWishlist();
   const safeHandle = typeof handle === 'string' ? handle : '';
+  const toggleWishlist = useWishlistToggle();
+  const saved = useIsWishlistedHandle(safeHandle);
+  const deepLinkVariantId = typeof variantId === 'string' ? variantId.trim() : '';
+  const preservedReturnTo = typeof returnTo === 'string' ? returnTo.trim() : '';
   const marketKey = useMarketQueryKey();
   useProductQueryCleanup();
 
@@ -124,9 +132,9 @@ export default function ProductScreen() {
   const [addingToBag, setAddingToBag] = useState(false);
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [backInStockOpen, setBackInStockOpen] = useState(false);
-  const customerEmail = useAuthStore((s) => s.user?.email);
-  const customerId = useAuthStore((s) => s.user?.id);
-  const sessionToken = useAuthStore((s) => s.accessToken);
+  const { user } = useAuth();
+  const customerEmail = user?.email;
+  const customerId = user?.id;
 
   const scrollRef = useRef<ScrollView>(null);
   const viewItemTrackedRef = useRef<string | null>(null);
@@ -150,18 +158,38 @@ export default function ProductScreen() {
   useEffect(() => {
     if (!displayProduct) return;
     const opts = getProductSizeOptions(displayProduct);
+
+    if (deepLinkVariantId) {
+      const matched = findVariantById(displayProduct, deepLinkVariantId);
+      if (matched) {
+        const size = matched.selectedOptions.find((o) => o.name.toLowerCase() === 'size')?.value;
+        if (size && opts.includes(size)) {
+          setSelectedSize(size);
+          setQty(1);
+          return;
+        }
+      }
+    }
+
     const firstAvailable = opts.find((s) => isSizeAvailable(displayProduct, s));
     setSelectedSize((prev) => {
       if (prev && opts.includes(prev)) return prev;
       return firstAvailable ?? opts[0] ?? null;
     });
     setQty(1);
-  }, [displayProduct]);
+  }, [displayProduct, deepLinkVariantId]);
 
   const selectedVariant = useMemo(() => {
-    if (!displayProduct || !selectedSize) return displayProduct?.variants[0];
+    if (!displayProduct) return undefined;
+    if (deepLinkVariantId && !selectedSize) {
+      const matched = findVariantById(displayProduct, deepLinkVariantId);
+      if (matched && getProductSizeOptions(displayProduct).length === 0) {
+        return matched;
+      }
+    }
+    if (!selectedSize) return displayProduct.variants[0];
     return getVariantForSize(displayProduct, selectedSize) ?? displayProduct.variants[0];
-  }, [displayProduct, selectedSize]);
+  }, [displayProduct, selectedSize, deepLinkVariantId]);
 
   const canAdd = Boolean(selectedVariant?.availableForSale);
   const showBackInStockCta = Boolean(selectedVariant) && !canAdd;
@@ -268,7 +296,6 @@ export default function ProductScreen() {
     hapticLight();
   }, [displayProduct, toggleWishlist]);
 
-  const saved = displayProduct ? isWishlisted(displayProduct.handle) : false;
 
   const openAskQuestionEmail = useCallback(() => {
     const subject = encodeURIComponent(`Question — ${displayProduct?.title ?? 'Product'}`);
@@ -279,7 +306,6 @@ export default function ProductScreen() {
     variantId: selectedVariant?.id,
     email: customerEmail,
     customerId,
-    sessionToken: sessionToken ?? undefined,
     enabled: showBackInStockCta && Boolean(customerEmail?.trim() && selectedVariant?.id),
   });
 
@@ -383,7 +409,6 @@ export default function ProductScreen() {
   const stickyCtaStripHeight = 6 + 50 + 8;
   const stickyBottomPad = stickyCtaStripHeight + 12 + (tabBarOverlay > 0 ? 0 : Math.max(insets.bottom, 12));
   const ctaBottomPad = tabBarOverlay > 0 ? 8 : 8 + Math.max(insets.bottom, 12);
-  const chromeTop = useLuxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
   const backInStockCtaLabel = backInStockSubscribed ? 'We will email you when back in stock' : 'Email me when back in stock';
 
   return (
@@ -497,7 +522,10 @@ export default function ProductScreen() {
           {relatedPending && relatedProducts.length === 0 ? (
             <PdpRelatedProductsSkeleton />
           ) : (
-            <PdpRelatedProducts products={relatedProducts} />
+            <PdpRelatedProducts
+              products={relatedProducts}
+              returnTo={preservedReturnTo || undefined}
+            />
           )}
         </View>
       </ScrollView>
@@ -516,7 +544,6 @@ export default function ProductScreen() {
           variant={selectedVariant}
           customerEmail={customerEmail ?? undefined}
           customerId={customerId}
-          sessionToken={sessionToken ?? undefined}
           onSubscribed={markBackInStockSubscribed}
         />
       ) : null}

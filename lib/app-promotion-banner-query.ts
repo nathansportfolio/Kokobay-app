@@ -10,14 +10,21 @@ import { isJsFreezeAuditEnabled, isJsFreezeSessionActive, traceLongTask } from '
 
 export const APP_PROMOTION_BANNER_QUERY_KEY = ['app-promotion-banner'] as const;
 
-export const appPromotionBannerQueryOptions = {
-  queryKey: [...APP_PROMOTION_BANNER_QUERY_KEY],
-  staleTime: 60_000,
-  gcTime: 60 * 60_000,
-  refetchOnWindowFocus: false,
-  refetchOnReconnect: true,
-  queryFn: ({ signal }: { signal?: AbortSignal }) => fetchAppPromotionBanner({ signal }),
-} as const;
+export function appPromotionBannerQueryKey(marketKey: string) {
+  return [...APP_PROMOTION_BANNER_QUERY_KEY, marketKey] as const;
+}
+
+export function appPromotionBannerQueryOptions(marketKey: string) {
+  return {
+    queryKey: appPromotionBannerQueryKey(marketKey),
+    staleTime: 60_000,
+    gcTime: 60 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    queryFn: ({ signal }: { signal?: AbortSignal }) =>
+      fetchAppPromotionBanner(marketKey, { signal }),
+  } as const;
+}
 
 export function isAppPromotionBannerQueryEnabled(): boolean {
   return isKokobayWebProductsConfigured();
@@ -28,10 +35,13 @@ export function appPromotionBannerVisible(data: AppPromotionBannerPayload | null
 }
 
 /** True when cached banner data is still within `staleTime` — skip foreground invalidation. */
-export function isAppPromotionBannerQueryFresh(queryClient: QueryClient): boolean {
-  const state = queryClient.getQueryState([...APP_PROMOTION_BANNER_QUERY_KEY]);
+export function isAppPromotionBannerQueryFresh(
+  queryClient: QueryClient,
+  marketKey: string,
+): boolean {
+  const state = queryClient.getQueryState(appPromotionBannerQueryKey(marketKey));
   if (!state?.dataUpdatedAt) return false;
-  return Date.now() - state.dataUpdatedAt < appPromotionBannerQueryOptions.staleTime;
+  return Date.now() - state.dataUpdatedAt < appPromotionBannerQueryOptions(marketKey).staleTime;
 }
 
 /** Single invalidation entry point — used by provider and manual refresh. */

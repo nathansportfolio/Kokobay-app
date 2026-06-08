@@ -1,7 +1,8 @@
 import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { api, isApiError } from '@/src/core/api';
+import { logCartDeleteTrace } from '@/lib/cart-delete-trace';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
 import { cartFlowLog, cartPerfLog, logCartStateTransition } from '@/lib/cart-perf-log';
 import { logAppFirstOrderOnNewCart } from '@/services/cart/app-first-order-new-cart-log';
@@ -13,7 +14,6 @@ import { getShopifyCountryCode, getShopifyCurrencyCode } from '../shopify/market
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { isKokobayWebProductsConfigured } from './client';
 import { getCartCustomerEmail } from './cart-customer';
-import { buildKokobayCustomerAuthHeaders } from './customer-session';
 
 export { KOKOBAY_CART_GUEST_COOKIE } from '@/constants/kokobay-cookies';
 
@@ -114,19 +114,34 @@ function resolveSnapshotMoney(
 }
 
 function logCartResponseInDev(
-  _method: string,
-  _path: string,
-  _response: KokobayCartResponse | null,
-  _status?: number,
-): void {}
+  method: string,
+  path: string,
+  response: KokobayCartResponse | null,
+  status?: number,
+): void {
+  if (!__DEV__) return;
+  console.log('[CART API]', {
+    method,
+    path,
+    status: status ?? null,
+    response,
+  });
+}
 
-async function kokobayCartRequest(
+type KokobayCartRequestMeta = {
+  parsed: KokobayCartResponse | null;
+  httpStatus: number | null;
+  requestUrl: string;
+  requestBody: Record<string, unknown> | undefined;
+};
+
+async function kokobayCartRequestDetailed(
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
   path: string,
   guestId: string,
   body?: Record<string, unknown>,
   customerEmail?: string,
-): Promise<KokobayCartResponse | null> {
+): Promise<KokobayCartRequestMeta | null> {
   const root = baseUrl();
   if (!root) return null;
 
@@ -146,9 +161,6 @@ async function kokobayCartRequest(
     marketQuery && !path.includes('country=') && !path.includes('currency=')
       ? `${path}${path.includes('?') ? '&' : '?'}${marketQuery}`
       : path;
-  const url = `${root}${pathWithMarket.startsWith('/') ? pathWithMarket : `/${pathWithMarket}`}`;
-  const headers = await buildKokobayCustomerAuthHeaders(undefined, { guestIdOverride: guestId });
-
   const email = customerEmail?.trim() || getCartCustomerEmail();
   let payload = body;
   if (email && body !== undefined) {
@@ -164,58 +176,142 @@ async function kokobayCartRequest(
     };
   }
 
-  if (payload !== undefined) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  const route = pathWithMarket.split('?')[0] ?? pathWithMarket;
+  const safePath = pathWithMarket.startsWith('/') ? pathWithMarket : `/${pathWithMarket}`;
+  const route = safePath.split('?')[0] ?? safePath;
+  const requestUrl = `${root.replace(/\/+$/, '')}${safePath}`;
   const reqStart = performance.now();
-  try {
-    const res = await fetchWithTimeout(url, {
-      method,
-      headers,
-      body: payload !== undefined ? JSON.stringify(payload) : undefined,
-    });
-    cartFlowLog(method, route, performance.now() - reqStart);
-    const text = await res.text();
-    let parsed: KokobayCartResponse;
-    try {
-      parsed = JSON.parse(text) as KokobayCartResponse;
-    } catch {
-      reportOperationalFailure('Koko Bay cart JSON parse failed', {
-        source: 'kokobay_cart',
-        method,
-        path,
-        status: res.status,
-        bodyPreview: text.slice(0, 300),
-      });
-      return null;
-    }
 
-    if (!res.ok || parsed.ok === false) {
-      logCartResponseInDev(method, pathWithMarket, parsed, res.status);
+  const requestOpts = {
+    auth: 'guest-cart' as const,
+    guestIdOverride: guestId,
+    marketQuery: false,
+    skipAuthRefresh: true,
+    coalesce: false,
+    retries: 2,
+  };
+
+  try {
+    const response =
+      method === 'GET'
+        ? await api.get(safePath, requestOpts)
+        : method === 'POST'
+          ? await api.post(safePath, payload, requestOpts)
+          : method === 'PATCH'
+            ? await api.patch(safePath, payload, requestOpts)
+            : await api.delete(safePath, {
+                ...requestOpts,
+                ...(payload !== undefined ? { body: payload } : {}),
+              });
+
+    cartFlowLog(method, route, performance.now() - reqStart);
+    const parsed = response.data as KokobayCartResponse;
+
+    if (parsed.ok === false) {
+      logCartResponseInDev(method, pathWithMarket, parsed, response.status);
       reportOperationalFailure(parsed.error?.trim() || 'Koko Bay cart request failed', {
         source: 'kokobay_cart',
         method,
         path,
-        status: res.status,
+        status: response.status,
         code: parsed.code ?? null,
       });
-      return parsed.ok === false ? parsed : null;
+      return {
+        parsed,
+        httpStatus: response.status,
+        requestUrl,
+        requestBody: payload,
+      };
     }
 
-    logCartResponseInDev(method, pathWithMarket, parsed, res.status);
-
-    return parsed;
+    logCartResponseInDev(method, pathWithMarket, parsed, response.status);
+    return {
+      parsed,
+      httpStatus: response.status,
+      requestUrl,
+      requestBody: payload,
+    };
   } catch (e) {
     cartFlowLog(method, route, performance.now() - reqStart);
-    reportOperationalFailure('Koko Bay cart network error', {
-      method,
-      path,
-      message: e instanceof Error ? e.message : String(e),
-    });
-    return null;
+
+    if (isApiError(e) && e.kind === 'http') {
+      const errorBody = e.body;
+      if (errorBody && typeof errorBody === 'object' && !Array.isArray(errorBody)) {
+        const parsed = errorBody as KokobayCartResponse;
+        if (parsed.ok === false) {
+          logCartResponseInDev(method, pathWithMarket, parsed, e.status);
+          reportOperationalFailure(parsed.error?.trim() || 'Koko Bay cart request failed', {
+            source: 'kokobay_cart',
+            method,
+            path,
+            status: e.status,
+            code: parsed.code ?? null,
+          });
+          return {
+            parsed,
+            httpStatus: e.status ?? null,
+            requestUrl,
+            requestBody: payload,
+          };
+        }
+      }
+      if (__DEV__) {
+        console.log('[CART API]', {
+          method,
+          path: pathWithMarket,
+          status: e.status ?? null,
+          response: errorBody ?? null,
+        });
+      }
+      return {
+        parsed: null,
+        httpStatus: e.status ?? null,
+        requestUrl,
+        requestBody: payload,
+      };
+    }
+
+    if (__DEV__) {
+      console.log('[CART API]', {
+        method,
+        path: pathWithMarket,
+        status: isApiError(e) ? (e.status ?? null) : null,
+        response: null,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    if (isApiError(e) && e.kind === 'parse') {
+      reportOperationalFailure('Koko Bay cart JSON parse failed', {
+        source: 'kokobay_cart',
+        method,
+        path,
+        status: e.status,
+      });
+    } else {
+      reportOperationalFailure('Koko Bay cart network error', {
+        method,
+        path,
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+    return {
+      parsed: null,
+      httpStatus: isApiError(e) ? (e.status ?? null) : null,
+      requestUrl,
+      requestBody: payload,
+    };
   }
+}
+
+async function kokobayCartRequest(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  guestId: string,
+  body?: Record<string, unknown>,
+  customerEmail?: string,
+): Promise<KokobayCartResponse | null> {
+  const result = await kokobayCartRequestDetailed(method, path, guestId, body, customerEmail);
+  return result?.parsed ?? null;
 }
 
 function parseCartLines(cart: KokobayCart, existing: CartLine[]): CartLine[] {
@@ -442,9 +538,39 @@ async function updateItem(
   return { cart: null, error: cartErrorFromResponse(res) };
 }
 
-async function removeItem(guestId: string, lineId: string, customerEmail?: string): Promise<KokobayCart | null> {
+type RemoveCartLineContext = {
+  variantId?: string;
+  beforeDeleteRemoteLineCount?: number;
+};
+
+async function removeItem(
+  guestId: string,
+  lineId: string,
+  customerEmail?: string,
+  context?: RemoveCartLineContext,
+): Promise<KokobayCart | null> {
   const start = performance.now();
-  const res = await kokobayCartRequest('DELETE', '/api/cart/items', guestId, { lineId }, customerEmail);
+  const result = await kokobayCartRequestDetailed(
+    'DELETE',
+    '/api/cart/items',
+    guestId,
+    { lineId },
+    customerEmail,
+  );
+  const res = result?.parsed ?? null;
+  const afterDeleteRemoteLineCount = res?.cart?.lines?.length ?? null;
+
+  logCartDeleteTrace({
+    variantBeingRemoved: context?.variantId?.trim() || null,
+    shopifyLineId: lineId,
+    deleteRequestUrl: result?.requestUrl ?? '/api/cart/items',
+    deleteRequestBody: (result?.requestBody as Record<string, unknown> | undefined) ?? { lineId },
+    httpStatus: result?.httpStatus ?? null,
+    responseBody: res ?? null,
+    beforeDeleteRemoteLineCount: context?.beforeDeleteRemoteLineCount ?? null,
+    afterDeleteRemoteLineCount,
+  });
+
   cartPerfLog(`removeItem took ${Math.round(performance.now() - start)}ms`);
   return res?.cart ?? null;
 }
@@ -662,7 +788,7 @@ export async function syncLocalCartToKokobayWeb(
   const toAdd: CartLine[] = [];
   const toIncrement: { variantId: string; quantity: number }[] = [];
   const toUpdate: { lineId: string; quantity: number; variantId: string }[] = [];
-  const toRemove: string[] = [];
+  const toRemove: { lineId: string; variantId: string }[] = [];
 
   for (const local of localLines) {
     const remoteLine = remoteByVariant.get(shopifyVariantKey(local.variantId));
@@ -689,7 +815,7 @@ export async function syncLocalCartToKokobayWeb(
   for (const remoteLine of remote.lines) {
     const variantId = (remoteLine.variantId ?? remoteLine.merchandiseId)?.trim();
     if (variantId && !localByVariant.has(shopifyVariantKey(variantId))) {
-      toRemove.push(remoteLine.id);
+      toRemove.push({ lineId: remoteLine.id, variantId });
     }
   }
 
@@ -700,9 +826,14 @@ export async function syncLocalCartToKokobayWeb(
     `sync plan add=${toAdd.length} increment=${toIncrement.length} update=${toUpdate.length} remove=${toRemove.length}`,
   );
 
-  for (const lineId of toRemove) {
+  for (const { lineId, variantId } of toRemove) {
     if (syncError) break;
-    next = (await removeItem(sessionGuestId, lineId, email)) ?? next;
+    const beforeDeleteRemoteLineCount = next.lines.length;
+    next =
+      (await removeItem(sessionGuestId, lineId, email, {
+        variantId,
+        beforeDeleteRemoteLineCount,
+      })) ?? next;
   }
   for (const local of toAdd) {
     if (syncError) break;
@@ -766,4 +897,24 @@ export async function syncLocalCartToKokobayWeb(
   );
 
   return { snapshot, guestId: sessionGuestId, syncError };
+}
+
+/**
+ * Dev/admin recovery — GET `/api/cart` only (no reconcile POST/PATCH).
+ * Uses an empty local line list so server quantities are not merged with local state.
+ */
+export async function fetchKokobayCartSnapshotReadOnly(
+  guestId: string | null,
+  customerEmail?: string,
+): Promise<ShopifyCartSnapshot | null> {
+  if (!isKokobayWebProductsConfigured()) return null;
+
+  const sessionGuestId = guestId?.trim() || createGuestId();
+  const email = customerEmail?.trim() || getCartCustomerEmail();
+  const cart = await getCart(sessionGuestId, email);
+  if (!cart) return null;
+
+  return snapshotFromCart(cart, [], {
+    fallbackCheckoutUrl: cart.checkoutUrl ?? cart.storeCheckoutUrl ?? null,
+  });
 }

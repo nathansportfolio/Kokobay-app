@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from 'react-native';
 
 import { classifyProductDeepLinkIdentifier } from '@/lib/deep-link-router';
 import { fetchProductHandleByVariantId } from '@/services/kokobay-web/product-by-variant';
+import { productHref } from '@/utils/product-navigation';
 
 /** Push / universal link entry — resolves variant ids, then forwards to the tabbed product screen. */
 export default function ProductDeepLinkScreen() {
@@ -53,5 +54,9 @@ export default function ProductDeepLinkScreen() {
     );
   }
 
-  return <Redirect href={`/product/${encodeURIComponent(resolvedHandle)}`} />;
+  return (
+    <Redirect
+      href={productHref(resolvedHandle, undefined, variantId ?? undefined)}
+    />
+  );
 }

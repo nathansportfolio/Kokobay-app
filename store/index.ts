@@ -11,15 +11,22 @@ export {
   DEFAULT_MARKET_CURRENCY,
   type CurrencyCode,
 } from './market-preference';
+export { cartEngine, type CartEngine } from '@/src/core/cart';
 export {
   useCartStore,
   flushCartSync,
+  deferCartMergeUntilHydrate,
   mergeGuestCartOnLogin,
+  recoverCartApplyServerSnapshot,
+  recoverCartClearLocalStorage,
   resetCartForSignOut,
   clearRemoteCartInBackground,
   refreshStoreCheckoutUrl,
   ensureCartSyncedForCheckout,
   isCartSettledForCheckout,
+  isCartConfirmedSyncedForCheckout,
+  applyValidatedRemoteSnapshot,
+  validateCartSnapshot,
   getCartNetworkSyncMetrics,
   selectCartPricingForDisplay,
   selectIsLineQuantityPricePending,
@@ -27,14 +34,15 @@ export {
   type AddToCartInput,
   type CartLine,
   type CartDiscountCode,
+  type CartRecoveryResult,
   type ReservedCartPricing,
 } from './cart';
 export { useAuthStore, type AuthUser, type AuthSession } from './auth-session';
+export type { AuthStatus, AuthView } from '@/src/core/auth/types';
 export {
-  useAppBenefitsStore,
   refreshAppBenefitsInBackground,
   scheduleAppBenefitsRefreshOnCartChange,
   cancelAppBenefitsBackgroundRefresh,
   getIsFirstAppOrderSync,
-} from './app-benefits';
+} from '@/src/core/query';
 export { useSearchHistoryStore } from './search-history';

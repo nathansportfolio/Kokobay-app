@@ -1,8 +1,9 @@
 import { APP_HOME_HERO_CONTENT_SLUG } from '@/constants/app-home-hero-cms';
 import { getShopifyCountryCode } from '@/services/shopify/market-context';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
-import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
+import { legacyApiGetOptional } from '@/src/core/api';
+
+import { isKokobayApiConfigured } from './api-config';
 
 export type AppHomeHeroPayload = {
   handle: string;
@@ -38,34 +39,19 @@ export async function fetchAppHomeHero(
   countryCode?: string,
   init?: { signal?: AbortSignal },
 ): Promise<AppHomeHeroPayload | null> {
-  const root = resolveKokobayApiBaseUrl();
-  if (!root || !isKokobayApiConfigured()) return null;
+  if (!isKokobayApiConfigured()) return null;
 
   const country = (countryCode?.trim() || getShopifyCountryCode()).toUpperCase();
-  const path = `/api/content/${encodeURIComponent(APP_HOME_HERO_CONTENT_SLUG)}`;
-  const url = `${root}${path}?${new URLSearchParams({ country }).toString()}`;
+  const path = `/api/content/${encodeURIComponent(APP_HOME_HERO_CONTENT_SLUG)}?${new URLSearchParams({ country }).toString()}`;
 
-  try {
-    const res = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: init?.signal,
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return null;
-    }
+  const json = await legacyApiGetOptional(path, {
+    auth: 'none',
+    marketQuery: false,
+    signal: init?.signal,
+    retries: 0,
+    coalesce: false,
+  });
 
-    let json: Record<string, unknown>;
-    try {
-      json = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-
-    return normalizePayload(json);
-  } catch {
-    if (init?.signal?.aborted) return null;
-    return null;
-  }
+  if (init?.signal?.aborted || !json) return null;
+  return normalizePayload(json);
 }

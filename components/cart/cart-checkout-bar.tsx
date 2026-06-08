@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { openCheckoutFromBag } from '@/lib/open-checkout';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { DEFAULT_FREE_DELIVERY_THRESHOLD_GBP } from '@/constants/delivery-threshold';
-import { formatCartDiscountRowLabel } from '@/constants/first-app-order-discount';
+import { DEFAULT_CART_DELIVERY_AT_CHECKOUT_LABEL } from '@/constants/app-cart-delivery-text-cms';
 import { formatCartMoney } from '@/utils/money';
 import type { CartAppliedDiscount } from '@/utils/cart-cost-breakdown';
 
@@ -18,14 +18,15 @@ type Money = { amount: string; currencyCode: string };
 
 type Props = {
   subtotal: Money;
+  total: Money;
   appliedDiscounts?: CartAppliedDiscount[];
-  /** Merchandise total after discounts (before delivery). */
-  merchandiseTotal?: Money;
   delivery: Money | null;
   tax?: Money | null;
   usesShopifyCheckout?: boolean;
   /** From CMS `delivery_threshold`; defaults to 100. */
   freeDeliveryThresholdGbp?: number;
+  /** From CMS `app_cart_delivery_text`; defaults to "Calculated on checkout". */
+  deliveryAtCheckoutLabel?: string;
   marketCountryCode?: string;
   /** Breathing room above the scene bottom. On tab routes the scene already clears the tab bar — use ~8–12px (see cart screen). */
   bottomInset: number;
@@ -46,8 +47,6 @@ const rowValue: TextStyle = {
   color: 'rgba(20, 20, 20, 0.88)',
 };
 
-const DELIVERY_AT_CHECKOUT_LABEL = 'Calculated on checkout';
-
 function isUkDeliveryMarket(subtotal: Money, marketCountryCode?: string): boolean {
   if (marketCountryCode?.trim().toUpperCase() === 'GB') return true;
   return subtotal.currencyCode.trim().toUpperCase() === 'GBP';
@@ -59,6 +58,7 @@ function resolveDeliveryValueLabel(options: {
   usesShopifyCheckout: boolean;
   freeDeliveryThresholdGbp: number;
   marketCountryCode?: string;
+  deliveryAtCheckoutLabel: string;
 }): string {
   const subtotalN = Number.parseFloat(options.subtotal.amount);
   const qualifiesForFreeUkDelivery =
@@ -69,7 +69,7 @@ function resolveDeliveryValueLabel(options: {
   if (qualifiesForFreeUkDelivery) return 'Free';
 
   if (options.usesShopifyCheckout) {
-    return DELIVERY_AT_CHECKOUT_LABEL;
+    return options.deliveryAtCheckoutLabel;
   }
 
   const deliveryN = options.delivery ? Number.parseFloat(options.delivery.amount) : NaN;
@@ -79,14 +79,21 @@ function resolveDeliveryValueLabel(options: {
   return '—';
 }
 
+function formatDiscountAmount(amount: Money): string {
+  const value = Number.parseFloat(amount.amount);
+  if (!Number.isFinite(value) || value <= 0) return formatCartMoney(amount);
+  return `−${formatCartMoney({ amount: value.toFixed(2), currencyCode: amount.currencyCode })}`;
+}
+
 export function CartCheckoutBar({
   subtotal,
+  total,
   appliedDiscounts = [],
-  merchandiseTotal,
   delivery,
   tax = null,
   usesShopifyCheckout = false,
   freeDeliveryThresholdGbp,
+  deliveryAtCheckoutLabel = DEFAULT_CART_DELIVERY_AT_CHECKOUT_LABEL,
   marketCountryCode,
   bottomInset,
 }: Props) {
@@ -95,7 +102,7 @@ export function CartCheckoutBar({
 
   useCartPricingAuditCheckoutBar({
     subtotal,
-    total: merchandiseTotal ?? subtotal,
+    total,
     appliedDiscountCount: appliedDiscounts.length,
   });
 
@@ -107,19 +114,22 @@ export function CartCheckoutBar({
       : DEFAULT_FREE_DELIVERY_THRESHOLD_GBP;
 
   const subtotalN = Number.parseFloat(subtotal.amount);
+  const totalN = Number.parseFloat(total.amount);
   const showOrderSummary = Number.isFinite(subtotalN) && subtotalN > 0;
+  const hasDiscount = appliedDiscounts.length > 0;
+  const discountAmount = hasDiscount ? appliedDiscounts[0]?.amount ?? null : null;
   const deliveryValueLabel = resolveDeliveryValueLabel({
     subtotal,
     delivery,
     usesShopifyCheckout,
     freeDeliveryThresholdGbp: freeDeliveryThreshold,
     marketCountryCode,
+    deliveryAtCheckoutLabel,
   });
   const taxN = tax ? Number.parseFloat(tax.amount) : 0;
   const showTax = Boolean(tax && Number.isFinite(taxN) && taxN > 0.005);
-  const hasAppliedDiscounts = appliedDiscounts.length > 0;
-  const heroMerchandiseTotal = hasAppliedDiscounts && merchandiseTotal ? merchandiseTotal : subtotal;
-  const showPreDiscountSubtotal = hasAppliedDiscounts;
+  const footerAmount = hasDiscount && Number.isFinite(totalN) && totalN > 0 ? total : subtotal;
+  const footerLabel = hasDiscount ? 'Total' : 'Subtotal';
 
   const onCheckout = useCallback(async () => {
     if (!isRemoteCartConfigured()) return;
@@ -135,28 +145,6 @@ export function CartCheckoutBar({
     <View style={[styles.inner, { paddingBottom: 16 }]}>
       {showOrderSummary ? (
         <View className="mb-2 gap-1">
-          {showPreDiscountSubtotal ? (
-            <View className="flex-row items-center justify-between gap-4">
-              <Text style={rowLabel}>Subtotal</Text>
-              <Text style={rowValue}>{formatCartMoney(subtotal)}</Text>
-            </View>
-          ) : null}
-          {appliedDiscounts.map((discount) => {
-            const discountN = Number.parseFloat(discount.amount.amount);
-            const showAmount = Number.isFinite(discountN) && discountN > 0.005;
-            return (
-              <View
-                key={discount.code}
-                className="flex-row items-center justify-between gap-4">
-                <Text style={rowLabel}>{formatCartDiscountRowLabel(discount.code)}</Text>
-                {showAmount ? (
-                  <Text style={rowValue}>-{formatCartMoney(discount.amount)}</Text>
-                ) : (
-                  <Text style={rowValue}>Applied</Text>
-                )}
-              </View>
-            );
-          })}
           <View className="flex-row items-center justify-between gap-4">
             <Text style={rowLabel}>Delivery</Text>
             <Text style={rowValue}>{deliveryValueLabel}</Text>
@@ -166,6 +154,22 @@ export function CartCheckoutBar({
               <Text style={rowLabel}>Tax</Text>
               <Text style={rowValue}>{formatCartMoney(tax!)}</Text>
             </View>
+          ) : null}
+          {hasDiscount ? (
+            <>
+              <View className="flex-row items-center justify-between gap-4">
+                <Text style={rowLabel}>Subtotal</Text>
+                <Text style={rowValue}>{formatCartMoney(subtotal)}</Text>
+              </View>
+              {discountAmount ? (
+                <View className="flex-row items-center justify-between gap-4">
+                  <Text style={rowLabel}>Discount</Text>
+                  <Text style={[rowValue, { color: 'rgba(20, 20, 20, 0.72)' }]}>
+                    {formatDiscountAmount(discountAmount)}
+                  </Text>
+                </View>
+              ) : null}
+            </>
           ) : null}
         </View>
       ) : null}
@@ -178,7 +182,7 @@ export function CartCheckoutBar({
             color: 'rgba(92, 91, 88, 0.75)',
             textTransform: 'uppercase',
           }}>
-          {hasAppliedDiscounts ? 'Total' : 'Subtotal'}
+          {footerLabel}
         </Text>
         <Text
           style={{
@@ -187,11 +191,11 @@ export function CartCheckoutBar({
             letterSpacing: -0.6,
             color: '#141414',
           }}>
-          {formatCartMoney(heroMerchandiseTotal)}
+          {formatCartMoney(footerAmount)}
         </Text>
       </View>
       <Button
-        title="Checkout"
+        title={checkingOut ? 'Updating your bag…' : 'Checkout'}
         variant="primary"
         loading={checkingOut}
         disabled={!usesShopifyCheckout || checkingOut}

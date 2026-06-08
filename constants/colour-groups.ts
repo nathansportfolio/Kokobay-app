@@ -27,7 +27,7 @@ export const COLOUR_GROUP_DEFINITIONS: ReadonlyArray<{
   },
   {
     group: 'Brown',
-    members: ['Camel', 'Chocolate', 'Dark Taupe', 'Mocha', 'Mocha Melt', 'Tan', 'Taupe', 'Cocoa', 'Espresso'],
+    members: ['Brown', 'Camel', 'Chocolate', 'Dark Taupe', 'Mocha', 'Mocha Melt', 'Tan', 'Taupe', 'Cocoa', 'Espresso'],
   },
   {
     group: 'Green',
@@ -43,7 +43,16 @@ export const COLOUR_GROUP_DEFINITIONS: ReadonlyArray<{
   },
   {
     group: 'Printed',
-    members: ['Floral', 'Leopard', 'Polka Dot', 'Print', 'Rio', 'Animal print', 'Abstract'],
+    members: [
+      'Printed',
+      'Floral',
+      'Leopard',
+      'Polka Dot',
+      'Print',
+      'Rio',
+      'Animal print',
+      'Abstract',
+    ],
   },
   {
     group: 'Purple',

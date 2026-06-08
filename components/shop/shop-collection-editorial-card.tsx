@@ -17,7 +17,9 @@ import { collectionHref, collectionReturnToParam } from '@/utils/collection-navi
 import {
   logShopTabFirstImageLoad,
   logShopTabFirstRowRender,
+  logShopTabViewportImageLoad,
 } from '@/lib/shop-tab-perf-trace';
+import { SHOP_COLLECTION_VIEWPORT_PREFETCH_COUNT } from '@/utils/shop-collection-cover-prefetch';
 import type { Collection } from '@/types/shopify';
 import { collectionBlurb } from '@/utils/collection-text';
 import { shopCollectionCoverUri } from '@/utils/shop-collection-cover-uri';
@@ -31,8 +33,6 @@ type Props = {
   imagePriority?: 'low' | 'normal' | 'high' | null;
   /** Skip cross-fade in virtualized lists (smoother scroll). */
   disableImageTransition?: boolean;
-  /** Shop tab — resize covers via Shopify CDN (`width` + webp). */
-  useShopCoverUri?: boolean;
   screenWidth?: number;
   /** Dev perf — only the first visible list row should pass `0`. */
   perfTraceRowIndex?: number;
@@ -45,7 +45,6 @@ function ShopCollectionEditorialCardInner({
   variant = 'editorial',
   imagePriority = 'low',
   disableImageTransition = false,
-  useShopCoverUri = false,
   screenWidth,
   perfTraceRowIndex,
   cmsUrl,
@@ -70,7 +69,6 @@ function ShopCollectionEditorialCardInner({
   const coverUri = useMemo(() => {
     const raw = collection.image?.url;
     if (!raw) return undefined;
-    if (!useShopCoverUri) return raw;
     return shopCollectionCoverUri({
       url: raw,
       width: collection.image?.width,
@@ -78,7 +76,7 @@ function ShopCollectionEditorialCardInner({
       handle: collection.handle,
       screenWidth,
     });
-  }, [collection.handle, collection.image, screenWidth, useShopCoverUri]);
+  }, [collection.handle, collection.image, screenWidth]);
 
   useLayoutEffect(() => {
     if (perfTraceRowIndex !== 0) return;
@@ -88,16 +86,26 @@ function ShopCollectionEditorialCardInner({
     });
   }, [collection.handle, collection.id, perfTraceRowIndex]);
 
-  const onFirstImageLoad =
-    perfTraceRowIndex === 0
-      ? () => {
-          logShopTabFirstImageLoad({
-            handle: collection.handle,
-            collectionId: collection.id,
-            coverUri,
-          });
-        }
-      : undefined;
+  function handleCoverImageLoad(): void {
+    const rowIndex = perfTraceRowIndex;
+    if (rowIndex === 0) {
+      logShopTabFirstImageLoad({
+        handle: collection.handle,
+        collectionId: collection.id,
+        coverUri,
+      });
+    }
+    if (
+      rowIndex !== undefined &&
+      rowIndex >= 0 &&
+      rowIndex < SHOP_COLLECTION_VIEWPORT_PREFETCH_COUNT
+    ) {
+      logShopTabViewportImageLoad(rowIndex, {
+        handle: collection.handle,
+        collectionId: collection.id,
+      });
+    }
+  }
 
   const stripBody = (
     <Pressable
@@ -129,7 +137,7 @@ function ShopCollectionEditorialCardInner({
                   priority={imagePriority}
                   transition={disableImageTransition ? null : 320}
                   contentPosition="center"
-                  onLoad={onFirstImageLoad}
+                  onLoad={handleCoverImageLoad}
                 />
               ) : null}
               <View
@@ -213,7 +221,7 @@ function ShopCollectionEditorialCardInner({
               recyclingKey={collection.id}
               priority={imagePriority}
               transition={disableImageTransition ? null : 320}
-              onLoad={onFirstImageLoad}
+              onLoad={handleCoverImageLoad}
             />
           ) : null}
         </View>

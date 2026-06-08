@@ -1,12 +1,16 @@
 import { memo } from 'react';
 import { View } from 'react-native';
+import type { Href } from 'expo-router';
 
 import { ProductCard } from '@/components/ui/product-card';
+import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
+import type { ProductPrefetchImageHint } from '@/hooks/use-prefetch-product';
 import type { Product } from '@/types/shopify';
 import { isProductFullySoldOut } from '@/utils/product-availability';
 
 export type CollectionProductTileProps = {
   product: Product;
+  productLink: Href;
   itemWidth: number;
   /** Fixed row height for FlashList multi-column grid (uniform cells). */
   cellHeight: number;
@@ -17,10 +21,12 @@ export type CollectionProductTileProps = {
   columnGap?: number;
   perfTraceIndex?: number;
   perfTraceScreen?: string;
+  onPrefetchProduct?: (handle: string, imageHint?: ProductPrefetchImageHint) => void;
 };
 
 function CollectionProductTileInner({
   product,
+  productLink,
   itemWidth,
   cellHeight,
   numColumns,
@@ -28,19 +34,33 @@ function CollectionProductTileInner({
   columnGap = 0,
   perfTraceIndex,
   perfTraceScreen,
+  onPrefetchProduct,
 }: CollectionProductTileProps) {
   const columnGapAfter =
     numColumns === 2 && tileIndex != null && tileIndex % 2 === 0 && columnGap > 0 ? columnGap : 0;
+
+  useProductCardParentRerenderTrace('CollectionProductTile', {
+    productId: product.id,
+    productLink,
+    itemWidth,
+    cellHeight,
+    numColumns,
+    tileIndex,
+    columnGap,
+    onPrefetchProductRef: onPrefetchProduct,
+  });
 
   return (
     <View style={{ width: itemWidth, height: cellHeight, marginRight: columnGapAfter }}>
       <ProductCard
         product={product}
+        productLink={productLink}
         imagePriority="low"
         gridColumns={numColumns}
         tileWidth={itemWidth}
         perfTraceIndex={perfTraceIndex}
         perfTraceScreen={perfTraceScreen}
+        onPrefetchProduct={onPrefetchProduct}
       />
     </View>
   );
@@ -50,11 +70,13 @@ export const CollectionProductTile = memo(
   CollectionProductTileInner,
   (prev, next) =>
     prev.product.id === next.product.id &&
+    prev.productLink === next.productLink &&
     prev.itemWidth === next.itemWidth &&
     prev.cellHeight === next.cellHeight &&
     prev.numColumns === next.numColumns &&
     prev.tileIndex === next.tileIndex &&
     prev.columnGap === next.columnGap &&
+    prev.onPrefetchProduct === next.onPrefetchProduct &&
     prev.product.title === next.product.title &&
     prev.product.priceRange.minVariantPrice.amount === next.product.priceRange.minVariantPrice.amount &&
     isProductFullySoldOut(prev.product) === isProductFullySoldOut(next.product),

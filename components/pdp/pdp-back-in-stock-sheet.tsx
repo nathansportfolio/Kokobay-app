@@ -21,6 +21,7 @@ import {
   subscribeBackInStock,
   variantTitleForBackInStock,
 } from '@/services/kokobay-web/back-in-stock';
+import { getAuthAccessToken } from '@/src/core/auth/token';
 import { showToast } from '@/store';
 import type { Product, ProductVariant } from '@/types/shopify';
 import { imageUrlForCartLine } from '@/utils/cart-display';
@@ -38,7 +39,6 @@ export type PdpBackInStockSheetProps = {
   variant: ProductVariant;
   customerEmail?: string;
   customerId?: string;
-  sessionToken?: string;
   onSubscribed?: () => void;
 };
 
@@ -49,7 +49,6 @@ export function PdpBackInStockSheet({
   variant,
   customerEmail,
   customerId,
-  sessionToken,
   onSubscribed,
 }: PdpBackInStockSheetProps) {
   const insets = useSafeAreaInsets();
@@ -68,7 +67,6 @@ export function PdpBackInStockSheet({
     variantId: variant.id,
     email: customerEmail,
     customerId,
-    sessionToken,
     enabled: visible && isLoggedIn,
   });
 
@@ -99,7 +97,7 @@ export function PdpBackInStockSheet({
           productTitle: product.title,
           variantTitle,
         },
-        { sessionToken, customerId },
+        { sessionToken: getAuthAccessToken(), customerId },
       );
       if (!result.ok) {
         setError(result.error);
@@ -128,7 +126,6 @@ export function PdpBackInStockSheet({
     onSubscribed,
     product.handle,
     product.title,
-    sessionToken,
     variant.id,
     variantTitle,
   ]);

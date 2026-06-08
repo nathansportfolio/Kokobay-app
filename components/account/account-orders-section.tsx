@@ -10,7 +10,11 @@ import { palette } from '@/constants/theme';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
+import { getAuthAccessToken } from '@/src/core/auth/token';
+import { isAuthenticatedStatus } from '@/src/core/auth/types';
+import { accountQueryKeys } from '@/src/core/query/query-keys';
 import { fetchAccountOrders } from '@/services/kokobay-web/account-orders';
+import { useAuthStore } from '@/store/auth-session';
 import type { AccountOrder, AccountOrdersResult } from '@/types/account-order';
 import {
   formatOrderDate,
@@ -26,7 +30,6 @@ import { logAccountOrders, summarizeOrder, summarizeOrders } from '@/utils/accou
 const PAGE_SIZE = 20;
 
 type Props = {
-  sessionToken: string | null | undefined;
   /** Shopify customer id — keeps React Query cache scoped per account. */
   customerId?: string | null;
   /** Deep link from push notification (`orderId` route param). */
@@ -123,25 +126,29 @@ function OrdersEmptyState({ embedded }: { embedded?: boolean }) {
 }
 
 export function AccountOrdersSection({
-  sessionToken,
   customerId,
   openOrderId,
   openOrderNumber,
   onRequestSignIn,
   embedded,
 }: Props) {
-  const safeToken = sessionToken?.trim() ?? '';
-  const safeCustomerId = customerId?.trim() ?? '';
-  const enabled = Boolean(safeToken);
+  const storeUserId = useAuthStore((s) => s.user?.id);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const status = useAuthStore((s) => s.status);
+  const safeCustomerId = (customerId ?? storeUserId)?.trim() ?? '';
+  const enabled = Boolean(
+    safeCustomerId && accessToken?.trim() && isAuthenticatedStatus(status),
+  );
   const [previewOrder, setPreviewOrder] = useState<AccountOrder | null>(null);
 
   useEffect(() => {
     setPreviewOrder(null);
-  }, [safeToken, safeCustomerId]);
+  }, [safeCustomerId, accessToken]);
 
   const {
     data,
-    isPending,
+    isLoading,
+    isFetching,
     isError,
     error,
     isRefetching,
@@ -150,17 +157,19 @@ export function AccountOrdersSection({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['account', 'orders', safeCustomerId, safeToken],
+    queryKey: accountQueryKeys.orders(safeCustomerId),
     enabled,
     initialPageParam: undefined as string | undefined,
     staleTime: 60_000,
-    gcTime: 0,
-    queryFn: async ({ pageParam, queryKey }) => {
-      const tokenFromKey = typeof queryKey[3] === 'string' ? queryKey[3] : safeToken;
+    queryFn: async ({ pageParam }) => {
+      const sessionToken = getAuthAccessToken();
+      if (!sessionToken) {
+        throw { ok: false as const, error: 'Sign in to view orders.', code: 'unauthorized' };
+      }
       const result = await fetchAccountOrders({
         first: PAGE_SIZE,
         after: pageParam,
-        sessionToken: tokenFromKey,
+        sessionToken,
       });
       if (!result.ok) {
         throw result;
@@ -175,6 +184,12 @@ export function AccountOrdersSection({
     () => data?.pages.flatMap((page) => page.orders) ?? [],
     [data],
   );
+
+  // Recover when login teardown cancels an in-flight fetch before cache settles.
+  useEffect(() => {
+    if (!enabled || data !== undefined || isFetching || isError) return;
+    void refetch();
+  }, [data, enabled, isError, isFetching, refetch]);
 
   useEffect(() => {
     logAccountOrders('orders list updated', {
@@ -216,7 +231,7 @@ export function AccountOrdersSection({
     );
   }
 
-  if (isPending) {
+  if (!data && (isLoading || isFetching)) {
     return <OrdersSkeleton />;
   }
 

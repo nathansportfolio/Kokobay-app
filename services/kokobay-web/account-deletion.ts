@@ -1,7 +1,5 @@
-import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { api, isApiError, legacyApiErrorBody } from '@/src/core/api';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
-import { buildKokobayCustomerAuthHeaders } from '@/services/kokobay-web/customer-session';
 
 export type AccountDeletionRequestResult =
   | { ok: true; message: string }
@@ -31,36 +29,26 @@ export async function submitAccountDeletionRequest(
     return { ok: false, error: 'Account services are not configured.' };
   }
 
-  const root = resolveKokobayApiBaseUrl();
-  if (!root) {
-    return { ok: false, error: 'Account services are not configured.' };
-  }
-
-  const headers = await buildKokobayCustomerAuthHeaders(sessionToken ?? undefined, {
-    includeGuestCart: false,
-  });
-  headers['Content-Type'] = 'application/json';
-
-  if (!headers.Authorization) {
+  if (!sessionToken?.trim()) {
     return { ok: false, error: 'Sign in to delete your account.', code: 'unauthorized' };
   }
 
   try {
-    const res = await fetchWithTimeout(`${root}/api/account/delete-request`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ confirm: true }),
-    });
+    const response = await api.post(
+      '/api/account/delete-request',
+      { confirm: true },
+      {
+        auth: 'active-customer',
+        sessionOverride: sessionToken,
+        includeGuestCart: false,
+        marketQuery: false,
+        retries: 0,
+        coalesce: false,
+      },
+    );
 
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: 'Unexpected response from the server.' };
-    }
-
-    if (res.ok && data?.ok === true) {
+    const data = response.data as Record<string, unknown>;
+    if (data?.ok === true) {
       const message =
         typeof data.message === 'string' && data.message.trim()
           ? data.message.trim()
@@ -69,10 +57,20 @@ export async function submitAccountDeletionRequest(
     }
 
     const code = typeof data?.code === 'string' ? data.code : undefined;
-    const error =
-      typeof data?.error === 'string' ? data.error : res.status === 429 ? 'Too many requests' : 'Request failed';
+    const error = typeof data?.error === 'string' ? data.error : 'Request failed';
     return { ok: false, error: friendlyError(error, code), code };
-  } catch {
+  } catch (error) {
+    if (isApiError(error) && error.kind === 'http') {
+      const data = legacyApiErrorBody(error);
+      const code = typeof data?.code === 'string' ? data.code : undefined;
+      const message =
+        typeof data?.error === 'string'
+          ? data.error
+          : error.status === 429
+            ? 'Too many requests'
+            : 'Request failed';
+      return { ok: false, error: friendlyError(message, code), code };
+    }
     return { ok: false, error: 'Network error. Check your connection and try again.' };
   }
 }

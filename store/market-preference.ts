@@ -17,10 +17,11 @@ import {
 import { writeToSecureStore } from '@/services/storage/secureStore';
 import { loadMarketPreference, persistMarketPreference } from '@/store/market-persist';
 import { persistCartGuestId, persistShopifyCartId } from '@/store/cart-persist';
-import { reloadDeliveryThresholdForMarketChange } from '@/services/delivery-threshold';
+import { reloadDeliveryThresholdForMarketChange } from '@/src/core/query';
 import { refreshAppData } from '@/utils/refresh-app-data';
 
-import { flushCartSync, useCartStore } from './cart';
+import { cartEngine } from '@/src/core/cart';
+import { useCartStore } from './cart';
 
 export type CurrencyCode = string;
 
@@ -79,7 +80,7 @@ export const useMarketStore = create<MarketState>((set, get) => ({
     await refreshAppData(queryClient);
     await reloadDeliveryThresholdForMarketChange();
     await queryClient.refetchQueries({ type: 'active' });
-    void flushCartSync();
+    void cartEngine.sync();
   },
 }));
 

@@ -1,14 +1,9 @@
 import type { AuthSession } from '@/types/auth';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
-import { resolveKokobayApiBaseUrl } from './api-config';
+import { legacyApiFetch } from '@/src/core/api';
+
 import { isKokobayWebProductsConfigured } from './client';
-import {
-  buildKokobayCustomerAuthHeaders,
-  extractCustomerSessionFromBody,
-  extractCustomerSessionFromHeaders,
-  persistCustomerSessionCookie,
-} from './customer-session';
+import { persistCustomerSessionCookie } from './customer-session';
 import type { KokobayAuthErr, KokobayAuthOk } from './customer-auth-shared';
 import {
   resolveSessionToken,
@@ -35,6 +30,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   rate_limited: 'Too many attempts. Please wait a moment and try again.',
   duplicate: 'An account with this email already exists.',
   email_taken: 'An account with this email already exists.',
+  account_exists: 'An account with this email already exists.',
 };
 
 function friendlyError(error: string, code?: string): string {
@@ -42,42 +38,37 @@ function friendlyError(error: string, code?: string): string {
   return error.trim() || 'Something went wrong. Please try again.';
 }
 
-/** Login/signup/logout — failures return null data; no session-restore semantics. */
+const AUTH_FLOW_REQUEST_OPTS = {
+  auth: 'none' as const,
+  marketQuery: false,
+  skipAuthRefresh: true,
+  retries: 0,
+  coalesce: false,
+};
+
+const AUTH_SESSION_REQUEST_OPTS = {
+  auth: 'customer' as const,
+  marketQuery: false,
+  skipAuthRefresh: true,
+  retries: 0,
+  coalesce: false,
+};
+
+/** Login/signup/logout — preserves `{ ok: false }` bodies from 4xx responses. */
 async function customerAuthFetch(
   method: 'GET' | 'POST',
   path: string,
   body?: Record<string, unknown>,
-  sessionOverride?: string,
+  options: { useSession?: boolean; sessionOverride?: string } = {},
 ): Promise<{ data: Record<string, unknown> | null; sessionCookie: string | null }> {
-  const root = resolveKokobayApiBaseUrl();
-  if (!root) return { data: null, sessionCookie: null };
+  const requestOpts = options.useSession ? AUTH_SESSION_REQUEST_OPTS : AUTH_FLOW_REQUEST_OPTS;
+  const result = await legacyApiFetch(method, path, {
+    ...requestOpts,
+    sessionOverride: options.sessionOverride,
+    body,
+  });
 
-  const url = `${root}${path.startsWith('/') ? path : `/${path}`}`;
-  const headers = await buildKokobayCustomerAuthHeaders(sessionOverride, { includeGuestCart: true });
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-
-  try {
-    const res = await fetchWithTimeout(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    const sessionCookie = extractCustomerSessionFromHeaders(res.headers);
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return { data: null, sessionCookie };
-    }
-
-    const sessionFromBody = extractCustomerSessionFromBody(data);
-    const resolvedSession = sessionCookie ?? sessionFromBody;
-
-    return { data, sessionCookie: resolvedSession };
-  } catch {
-    return { data: null, sessionCookie: null };
-  }
+  return { data: result.data, sessionCookie: result.sessionToken };
 }
 
 function parseAuthSuccess(
@@ -150,7 +141,7 @@ export async function kokobayCustomerSignup(input: {
 
 export async function kokobayCustomerLogout(): Promise<void> {
   if (!isKokobayWebProductsConfigured()) return;
-  await customerAuthFetch('POST', '/api/customer/auth/logout');
+  await customerAuthFetch('POST', '/api/customer/auth/logout', undefined, { useSession: true });
   await persistCustomerSessionCookie(null);
 }
 

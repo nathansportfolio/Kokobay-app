@@ -1,13 +1,15 @@
 import type { AuthSession } from '@/types/auth';
-import { FetchTimeoutError } from '@/utils/fetch-with-timeout';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
-import { resolveKokobayApiBaseUrl } from './api-config';
+import {
+  api,
+  isApiError,
+  legacyApiErrorBody,
+  legacyTransportReason,
+} from '@/src/core/api';
+import { refreshCustomerSession } from '@/src/core/auth/refresh-customer-session';
+
 import { isKokobayWebProductsConfigured } from './client';
 import {
-  buildKokobayCustomerAuthHeaders,
-  extractCustomerSessionFromBody,
-  extractCustomerSessionFromHeaders,
   persistCustomerSessionCookie,
   resolveCustomerSessionToken,
 } from './customer-session';
@@ -56,60 +58,55 @@ type RestoreFetchResult =
   | RestoreFetchSessionInvalid
   | RestoreFetchSessionUnknown;
 
-function classifyTransportError(error: unknown): 'network' | 'timeout' | 'offline' {
-  if (error instanceof FetchTimeoutError) return 'timeout';
-  if (error instanceof TypeError) return 'network';
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  if (message.includes('network request failed') || message.includes('failed to fetch')) {
-    return 'offline';
-  }
-  return 'network';
-}
+const RESTORE_REQUEST_OPTS = {
+  auth: 'customer' as const,
+  marketQuery: false,
+  skipAuthRefresh: true,
+  retries: 0,
+  coalesce: false,
+};
 
 async function customerAuthRestoreFetch(
   method: 'GET' | 'POST',
   path: string,
   sessionOverride?: string,
 ): Promise<RestoreFetchResult> {
-  const root = resolveKokobayApiBaseUrl();
-  if (!root) {
-    return { kind: 'session_unknown', reason: 'server' };
-  }
-
-  const url = `${root}${path.startsWith('/') ? path : `/${path}`}`;
-  const headers = await buildKokobayCustomerAuthHeaders(sessionOverride, { includeGuestCart: true });
-  if (method === 'POST') headers['Content-Type'] = 'application/json';
-
   try {
-    const res = await fetchWithTimeout(url, { method, headers });
-    const sessionCookie = extractCustomerSessionFromHeaders(res.headers);
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    let parseFailed = false;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      parseFailed = true;
-      data = null;
-    }
+    const response =
+      method === 'GET'
+        ? await api.get(path, { ...RESTORE_REQUEST_OPTS, sessionOverride })
+        : await api.post(path, undefined, { ...RESTORE_REQUEST_OPTS, sessionOverride });
 
-    if (res.ok && data?.ok === true) {
-      const sessionFromBody = extractCustomerSessionFromBody(data);
+    const data = response.data as Record<string, unknown>;
+    if (data?.ok === true) {
       return {
         kind: 'success',
-        status: res.status,
+        status: response.status,
         data,
-        sessionCookie: sessionCookie ?? sessionFromBody,
+        sessionCookie: response.sessionToken,
       };
     }
 
-    const failure = classifyHttpRestoreResponse(res.status, data, parseFailed);
+    const failure = classifyHttpRestoreResponse(response.status, data, false);
     if (failure?.kind === 'session_invalid') return failure;
     if (failure) return failure;
 
-    return { kind: 'session_unknown', reason: 'server', status: res.status };
+    return { kind: 'session_unknown', reason: 'server', status: response.status };
   } catch (error) {
-    return { kind: 'session_unknown', reason: classifyTransportError(error) };
+    if (isApiError(error) && error.kind === 'configuration') {
+      return { kind: 'session_unknown', reason: 'server' };
+    }
+
+    if (isApiError(error) && error.kind === 'http') {
+      const data = legacyApiErrorBody(error);
+      const parseFailed = data === null;
+      const failure = classifyHttpRestoreResponse(error.status ?? 0, data, parseFailed);
+      if (failure?.kind === 'session_invalid') return failure;
+      if (failure) return failure;
+      return { kind: 'session_unknown', reason: 'server', status: error.status };
+    }
+
+    return { kind: 'session_unknown', reason: legacyTransportReason(error) };
   }
 }
 
@@ -125,35 +122,24 @@ function meSuccessFromPayload(
 }
 
 async function tryRefreshSession(existing: string): Promise<KokobayCustomerMeResult | null> {
-  const refreshed = await customerAuthRestoreFetch('POST', '/api/customer/auth/refresh', existing);
+  const refreshed = await refreshCustomerSession(existing);
 
-  if (refreshed.kind === 'session_invalid') {
+  if (refreshed.status === 'session_invalid') {
     return { status: 'session_invalid' };
   }
-  if (refreshed.kind === 'session_unknown') {
+  if (refreshed.status === 'session_unknown') {
     return { status: 'session_unknown', reason: refreshed.reason };
   }
 
-  const refreshedToken =
-    resolveSessionToken(refreshed.data, refreshed.sessionCookie) ?? refreshed.sessionCookie;
-  if (refreshedToken) await persistCustomerSessionCookie(refreshedToken);
+  const refreshedToken = refreshed.token;
 
-  const direct = meSuccessFromPayload(refreshed.data, refreshed.sessionCookie, refreshedToken ?? existing);
+  const direct = meSuccessFromPayload(refreshed.data, refreshed.sessionCookie, refreshedToken);
   if (direct) return direct;
 
-  const retry = await customerAuthRestoreFetch(
-    'GET',
-    '/api/customer/auth/me',
-    refreshedToken ?? existing,
-  );
+  const retry = await customerAuthRestoreFetch('GET', '/api/customer/auth/me', refreshedToken);
   if (retry.kind === 'success') {
-    const ok = meSuccessFromPayload(retry.data, retry.sessionCookie, refreshedToken ?? existing);
-    if (ok) {
-      if (ok.session.accessToken !== existing) {
-        await persistCustomerSessionCookie(ok.session.accessToken);
-      }
-      return ok;
-    }
+    const ok = meSuccessFromPayload(retry.data, retry.sessionCookie, refreshedToken);
+    if (ok) return ok;
   }
   if (retry.kind === 'session_invalid') {
     return { status: 'session_invalid' };

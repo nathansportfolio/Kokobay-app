@@ -38,6 +38,7 @@ export const useToastStore = create<ToastState>((set) => ({
       variant: input.variant,
       title,
       ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+      ...(input.position ? { position: input.position } : {}),
     };
 
     triggerToastHaptic(toast.variant);

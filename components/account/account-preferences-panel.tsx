@@ -16,6 +16,8 @@ import {
   fetchCustomerMarketingConsent,
   updateCustomerMarketingConsent,
 } from '@/services/kokobay-web/marketing-consent';
+import { getAuthAccessToken } from '@/src/core/auth/token';
+import { useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/store';
 import { showToast } from '@/store/toast';
 
@@ -57,8 +59,7 @@ type AccountPreferencesPanelProps = {
 };
 
 export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreferencesPanelProps) {
-  const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const { user } = useAuth();
   const patchUser = useAuthStore((s) => s.patchUser);
   const [permission, setPermission] = useState<PermissionState>('unknown');
   const [pushBusy, setPushBusy] = useState(false);
@@ -112,6 +113,8 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
     marketingRefreshInFlightRef.current = true;
     setMarketingLoading(true);
     try {
+      const accessToken = getAuthAccessToken();
+      if (!accessToken) return;
       const result = await fetchCustomerMarketingConsent(accessToken);
       if (result.ok) {
         setMarketingRateLimited(false);
@@ -134,7 +137,7 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
       marketingRefreshInFlightRef.current = false;
       setMarketingLoading(false);
     }
-  }, [accessToken, patchUser]);
+  }, [patchUser]);
 
   const refreshPreferences = useCallback(async () => {
     await refreshPermission();
@@ -174,6 +177,12 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
       setMarketingRateLimited(false);
 
       try {
+        const accessToken = getAuthAccessToken();
+        if (!accessToken) {
+          setEmailSubscribed(previous);
+          showToast({ variant: 'error', title: 'Sign in to update marketing preferences.' });
+          return;
+        }
         const result = await updateCustomerMarketingConsent(next, accessToken);
 
         if (!result.ok) {
@@ -201,7 +210,7 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
         setMarketingBusy(false);
       }
     },
-    [accessToken, emailSubscribed, marketingBusy, patchUser, user],
+    [emailSubscribed, marketingBusy, patchUser, user],
   );
 
   const onTurnOnNotifications = async () => {

@@ -210,3 +210,46 @@ export function trackSignUp(method = 'email') {
     method,
   });
 }
+
+type AppUpdateAnalyticsInput = {
+  currentVersion: string;
+  latestVersion?: string;
+};
+
+export function trackAppUpdateRequiredShown(input: AppUpdateAnalyticsInput) {
+  pushToDataLayer({
+    event: 'app_update_required_shown',
+    app_version_current: input.currentVersion,
+    app_version_latest: input.latestVersion,
+  });
+}
+
+export function trackAppUpdateOptionalShown(input: AppUpdateAnalyticsInput) {
+  pushToDataLayer({
+    event: 'app_update_optional_shown',
+    app_version_current: input.currentVersion,
+    app_version_latest: input.latestVersion,
+  });
+}
+
+export function trackAppUpdateClicked(
+  input: AppUpdateAnalyticsInput & { prompt: 'required' | 'optional' },
+) {
+  pushToDataLayer({
+    event: 'app_update_clicked',
+    update_prompt: input.prompt,
+    app_version_current: input.currentVersion,
+    app_version_latest: input.latestVersion,
+  });
+}
+
+export function trackAppUpdateDismissed(
+  input: AppUpdateAnalyticsInput & { source: 'later' | 'close' },
+) {
+  pushToDataLayer({
+    event: 'app_update_dismissed',
+    dismiss_source: input.source,
+    app_version_current: input.currentVersion,
+    app_version_latest: input.latestVersion,
+  });
+}

@@ -12,14 +12,12 @@ import {
   SearchCarouselSkeleton,
   SearchSuggestionsSkeleton,
 } from '@/components/search/search-carousel-skeleton';
-import { LuxuryRefreshControl } from '@/components/ui/luxury-refresh-control';
 import { Text } from '@/components/ui/text';
 import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
 import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
-import { useGlobalPullToRefresh } from '@/hooks/use-pull-to-refresh';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { fetchKokobayPredictiveSearch } from '@/services/kokobay-web/search';
 import { searchProducts } from '@/services/shopify';
@@ -77,12 +75,7 @@ export default function SearchOverlayScreen() {
     return predictive?.suggestions ?? [];
   }, [hasQuery, trimmed.length, predictiveEnabled, predictive?.suggestions]);
 
-  const { data: homeCatalog, isPending: homeCatalogPending, refetch: refetchHomeCatalog } =
-    useHomeCatalogQuery();
-
-  const { refreshing, onRefresh } = useGlobalPullToRefresh(async () => {
-    await refetchHomeCatalog();
-  });
+  const { data: homeCatalog, isPending: homeCatalogPending } = useHomeCatalogQuery();
 
   /** Same source as home “New in” — first five for the compact search rail. */
   const latestProducts = useMemo(
@@ -268,8 +261,7 @@ export default function SearchOverlayScreen() {
         }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        showsVerticalScrollIndicator={false}
-        refreshControl={<LuxuryRefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+        showsVerticalScrollIndicator={false}>
         {showSuggestionsSection ? (
           <Animated.View
             entering={FadeInDown.duration(FADE_MS).easing(easeOutCubic)}

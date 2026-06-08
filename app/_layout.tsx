@@ -24,12 +24,14 @@ import { ToastHost } from '@/components/ui/toast-host';
 import { navigationTheme, palette } from '@/constants/theme';
 import { useAppFonts } from '@/hooks/use-app-fonts';
 import { useAppDeepLinking } from '@/hooks/use-app-deep-linking';
-import { usePushNotificationSetup } from '@/hooks/use-push-notification-setup';
+import { PushNavigationBridge } from '@/components/push/push-navigation-bridge';
 import {
   APP_LAUNCH_FADE_DURATION_MS,
   markAppLaunchRevealComplete,
   prepareAppLaunch,
 } from '@/lib/app-launch';
+import { bootstrapManager } from '@/src/core/bootstrap';
+import { checkAppVersion } from '@/src/core/app-version';
 import { reportAppErrorFromUnknown } from '@/lib/appErrorLog';
 import { installAppErrorReporting } from '@/lib/install-app-error-reporting';
 
@@ -68,7 +70,6 @@ export default function RootLayout() {
 
   const navigationReady = fontsLoaded && appContentReady;
   useAppDeepLinking(navigationReady);
-  usePushNotificationSetup(navigationReady);
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(palette.canvas).catch(() => {});
@@ -80,10 +81,13 @@ export default function RootLayout() {
 
     let cancelled = false;
     void (async () => {
+      await bootstrapManager.runPhaseA();
+      await checkAppVersion();
       await prepareAppLaunch(width);
       if (cancelled) return;
       markAppLaunchRevealComplete();
       setAppContentReady(true);
+      bootstrapManager.continueAfterReveal();
     })();
 
     return () => {
@@ -109,6 +113,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={navigationTheme}>
+        <PushNavigationBridge navigationReady={navigationReady} />
         <AppProviders>
           <View style={{ flex: 1, backgroundColor: palette.canvas }}>
             <Stack
@@ -135,11 +140,8 @@ export default function RootLayout() {
                   gestureEnabled: false,
                 }}
               />
-              <Stack.Screen name="product/[handle]" options={{ headerShown: false }} />
-              <Stack.Screen name="collection/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="products/[handle]" options={{ headerShown: false }} />
               <Stack.Screen name="collections/[handle]" options={{ headerShown: false }} />
-              <Stack.Screen name="search" options={{ headerShown: false }} />
               <Stack.Screen name="pages/[slug]" options={{ headerShown: false }} />
               <Stack.Screen name="account/orders/[orderId]" options={{ headerShown: false }} />
               <Stack.Screen name="wishlist" options={{ headerShown: false }} />

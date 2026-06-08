@@ -6,8 +6,8 @@ import { getDeviceLabel, isPhysicalDevice } from '@/lib/expo-device-safe';
 
 import { reportErrorToFirebaseCrashlytics } from '@/src/lib/firebase-crashlytics';
 
-import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { legacyApiPostFireAndForget } from '@/src/core/api';
+import { isKokobayApiConfigured } from '@/services/kokobay-web/api-config';
 
 const REPORT_DEDUPE_MS = 12_000;
 const recentReports = new Map<string, number>();
@@ -22,9 +22,8 @@ const IMPORTANT_ERROR_SOURCES = new Set([
   'expo_router_root_error_boundary',
 ]);
 
-function apiOrigin(): string | null {
-  const root = resolveKokobayApiBaseUrl({ fallbackToDefault: false });
-  return root ?? null;
+function apiConfigured(): boolean {
+  return isKokobayApiConfigured();
 }
 
 export type ReportAppErrorInput = {
@@ -139,17 +138,12 @@ export function reportAppError(input: ReportAppErrorInput): void {
 
   if (!sendToApi) return;
 
-  const origin = apiOrigin();
-  if (!origin) return;
+  if (!apiConfigured()) return;
 
-  void fetchWithTimeout(`${origin}${ERROR_LOG_PATH}`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  }).catch(() => {});
+  legacyApiPostFireAndForget(ERROR_LOG_PATH, payload, {
+    auth: 'none',
+    marketQuery: false,
+  });
 }
 
 export function reportAppErrorFromUnknown(

@@ -177,6 +177,56 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
     case 'add_to_wishlist':
       return [{ type: 'recommended', method: 'logAddToWishlist', params: ecommerce }];
 
+    case 'app_update_required_shown':
+      return [
+        {
+          type: 'custom',
+          name: 'app_update_required_shown',
+          params: {
+            app_version_current: event.app_version_current,
+            app_version_latest: event.app_version_latest,
+          },
+        },
+      ];
+
+    case 'app_update_optional_shown':
+      return [
+        {
+          type: 'custom',
+          name: 'app_update_optional_shown',
+          params: {
+            app_version_current: event.app_version_current,
+            app_version_latest: event.app_version_latest,
+          },
+        },
+      ];
+
+    case 'app_update_clicked':
+      return [
+        {
+          type: 'custom',
+          name: 'app_update_clicked',
+          params: {
+            update_prompt: event.update_prompt,
+            app_version_current: event.app_version_current,
+            app_version_latest: event.app_version_latest,
+          },
+        },
+      ];
+
+    case 'app_update_dismissed':
+      return [
+        {
+          type: 'custom',
+          name: 'app_update_dismissed',
+          params: {
+            dismiss_source: event.dismiss_source,
+            app_version_current: event.app_version_current,
+            app_version_latest: event.app_version_latest,
+          },
+        },
+      ];
+
     default:
       return [];
   }

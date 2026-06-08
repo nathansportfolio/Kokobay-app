@@ -15,7 +15,9 @@ import { gtmCartValue, trackPurchase } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { openCheckoutExternallyOrShowUnavailable } from '@/lib/open-checkout';
-import { ensureCartSyncedForCheckout, showToast, useAuthStore, useCartStore } from '@/store';
+import { cartEngine } from '@/src/core/cart';
+import { useAuth } from '@/hooks/use-auth';
+import { showToast, useCartStore } from '@/store';
 import { showCheckoutUnavailableModal } from '@/store/checkout-unavailable-modal';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 import { accountAuthRoute } from '@/utils/account-navigation';
@@ -47,10 +49,11 @@ export default function CheckoutScreen() {
   const lines = useCartStore((s) => s.lines);
   const pendingCartSync = useCartStore((s) => s.pendingCartSync);
   const isSyncingShopify = useCartStore((s) => s.isSyncingShopify);
-  const clear = useCartStore((s) => s.clear);
-  const customerEmail = useAuthStore((s) => s.user?.email);
+  const { user } = useAuth();
+  const customerEmail = user?.email;
   const isAppLoggedIn = Boolean(customerEmail?.trim());
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [checkoutSyncFailed, setCheckoutSyncFailed] = useState(false);
   const [orderConfirmed, setOrderConfirmed] = useState(false);
   const [checkoutUnavailable, setCheckoutUnavailable] = useState(false);
   const orderConfirmedRef = useRef(false);
@@ -73,7 +76,10 @@ export default function CheckoutScreen() {
       initialCartSyncDoneRef.current = true;
       const hasLines = useCartStore.getState().lines.length > 0;
       if (hasLines) {
-        await ensureCartSyncedForCheckout(customerEmail ?? undefined);
+        const synced = await cartEngine.checkout(customerEmail ?? undefined);
+        if (!cancelled && !synced) {
+          setCheckoutSyncFailed(true);
+        }
       }
       if (!cancelled) setBootstrapping(false);
     })();
@@ -130,6 +136,7 @@ export default function CheckoutScreen() {
     ? checkoutSessionUrlRef.current ?? checkoutUrl
     : checkoutUrl;
   const bagIsEmpty = lines.length === 0;
+  const checkoutBlocked = checkoutSyncFailed || (checkoutBusy && !webViewUrl);
 
   const retryCheckoutOpen = useCallback(() => {
     setCheckoutUnavailable(false);
@@ -138,7 +145,12 @@ export default function CheckoutScreen() {
     void (async () => {
       const hasLines = useCartStore.getState().lines.length > 0;
       if (hasLines) {
-        await ensureCartSyncedForCheckout(customerEmail ?? undefined);
+        const synced = await cartEngine.checkout(customerEmail ?? undefined);
+        if (!synced) {
+          setCheckoutSyncFailed(true);
+        } else {
+          setCheckoutSyncFailed(false);
+        }
       }
       setBootstrapping(false);
     })();
@@ -178,8 +190,8 @@ export default function CheckoutScreen() {
 
   useEffect(() => {
     if (!orderConfirmed) return;
-    clear();
-  }, [clear, orderConfirmed]);
+    cartEngine.clear();
+  }, [orderConfirmed]);
 
   const onOrderComplete = useCallback(() => {
     if (orderConfirmedRef.current) return;
@@ -227,7 +239,6 @@ export default function CheckoutScreen() {
     [router],
   );
 
-  const isLoading = checkoutBusy && !purchaseComplete;
   const backLabel = purchaseComplete ? 'Continue shopping' : 'Your bag';
 
   return (
@@ -249,10 +260,12 @@ export default function CheckoutScreen() {
       </Pressable>
 
       <View style={{ flex: 1, backgroundColor: palette.canvas }}>
-        {isLoading && !webViewUrl ? (
+        {checkoutBlocked && !purchaseComplete ? (
           <View className="flex-1 items-center justify-center px-8">
             <Text className="font-sans text-[14px]" style={{ color: 'rgba(120, 118, 114, 0.88)' }}>
-              Preparing checkout…
+              {checkoutSyncFailed
+                ? 'We couldn\u2019t sync your bag with Shopify. Try again in a moment.'
+                : 'Updating your bag…'}
             </Text>
           </View>
         ) : webViewUrl && !checkoutUnavailable ? (

@@ -36,7 +36,11 @@ export type GtmEventName =
   | 'add_to_wishlist'
   | 'remove_from_wishlist'
   | 'login'
-  | 'sign_up';
+  | 'sign_up'
+  | 'app_update_required_shown'
+  | 'app_update_optional_shown'
+  | 'app_update_clicked'
+  | 'app_update_dismissed';
 
 export type GtmDataLayerEvent = {
   event: GtmEventName;

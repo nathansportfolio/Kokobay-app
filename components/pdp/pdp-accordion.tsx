@@ -38,9 +38,10 @@ export function PdpAccordion({ title, defaultOpen = false, children }: PdpAccord
         </Text>
         <IconSymbol
           name="chevron.down"
-          size={12}
-          color={palette.muted}
-          style={{ opacity: 0.72, transform: [{ rotate: open ? '180deg' : '0deg' }] }}
+          size={16}
+          color={palette.mist}
+          weight="medium"
+          style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}
         />
       </Pressable>
       {open ? <View className="pb-5 pt-0">{children}</View> : null}

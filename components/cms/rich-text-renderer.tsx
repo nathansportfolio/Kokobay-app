@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from 'react';
-import { Linking, Pressable, View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
 
@@ -146,14 +146,13 @@ function renderInline(node: RichNode, classes: ReturnType<typeof toneClasses>): 
   if (node.type === 'link' && node.url) {
     const label = node.children?.map((c) => c.value ?? '').join('') || node.url;
     return (
-      <Pressable
+      <Text
+        className={classes.link}
         accessibilityRole="link"
         onPress={() => void Linking.openURL(node.url!)}
-        className="active:opacity-75">
-        <Text variant="body" className={classes.link}>
-          {label}
-        </Text>
-      </Pressable>
+      >
+        {label}
+      </Text>
     );
   }
 

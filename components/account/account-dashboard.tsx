@@ -17,7 +17,6 @@ import type { AuthUser } from '@/types/auth';
 
 type AccountDashboardProps = {
   user: AuthUser;
-  accessToken: string | null;
   openOrderId?: string;
   openOrderNumber?: string;
   isLoggingOut: boolean;
@@ -29,7 +28,6 @@ type AccountDashboardProps = {
 
 export function AccountDashboard({
   user,
-  accessToken,
   openOrderId,
   openOrderNumber,
   isLoggingOut,
@@ -51,7 +49,6 @@ export function AccountDashboard({
           <AccountCard>
             <View className="px-4 py-1">
               <AccountOrdersSection
-                sessionToken={accessToken}
                 customerId={user.id}
                 openOrderId={openOrderId}
                 openOrderNumber={openOrderNumber}
@@ -86,10 +83,7 @@ export function AccountDashboard({
           />
         </View>
 
-        <AccountDeleteAccountSection
-          sessionToken={accessToken}
-          onDeletionRequested={onAccountDeletionRequested}
-        />
+        <AccountDeleteAccountSection onDeletionRequested={onAccountDeletionRequested} />
       </View>
     </>
   );

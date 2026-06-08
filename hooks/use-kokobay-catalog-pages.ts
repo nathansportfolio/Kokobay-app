@@ -261,7 +261,8 @@ export function useKokobayCollectionCatalog(
     () => pages?.find((page) => page.collection)?.collection ?? null,
     [pages],
   );
-  const totalProductCount = useRetainedTotalCount(pages, apiHandle);
+  const totalCountResetKey = `${apiHandle}:${marketKey}:${options.sort}:${JSON.stringify(options.plpFilters)}`;
+  const totalProductCount = useRetainedTotalCount(pages, totalCountResetKey);
   const storefrontFilters = useMemo(() => storefrontFiltersFromPages(pages), [pages]);
 
   useEffect(() => {
@@ -344,7 +345,8 @@ export function useKokobaySearchCatalog(
 
   const pages = query.data?.pages;
   const products = useMemo(() => flattenCatalogProductPages(pages), [pages]);
-  const totalProductCount = useRetainedTotalCount(pages, trimmed);
+  const totalCountResetKey = `${trimmed}:${marketKey}:${options.sort}:${JSON.stringify(options.plpFilters)}`;
+  const totalProductCount = useRetainedTotalCount(pages, totalCountResetKey);
   const storefrontFilters = useMemo(() => storefrontFiltersFromPages(pages), [pages]);
 
   useEffect(() => {

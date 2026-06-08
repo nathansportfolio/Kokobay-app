@@ -10,7 +10,10 @@ import { hapticLight } from '@/utils/haptics';
 type Props = {
   slug: string;
   fallbackTitle: string;
+  fallbackContent?: string;
   countryCode?: string;
+  /** Slug already includes market (e.g. `shipping-info-gb`) — skip `?country=` on the API. */
+  omitCountry?: boolean;
   footerLink?: { label: string; url: string };
 };
 
@@ -39,10 +42,19 @@ function AccordionFooterLink({ label, url }: { label: string; url: string }) {
   );
 }
 
-export function PdpCmsAccordionSection({ slug, fallbackTitle, countryCode, footerLink }: Props) {
-  const cms = useAppContent(slug, countryCode);
+export function PdpCmsAccordionSection({
+  slug,
+  fallbackTitle,
+  fallbackContent,
+  countryCode,
+  omitCountry,
+  footerLink,
+}: Props) {
+  const cms = useAppContent(slug, countryCode, { omitCountry });
 
-  if (!cms.loading && !appContentHasBody(cms)) {
+  const useFallback = !cms.loading && !appContentHasBody(cms) && Boolean(fallbackContent?.trim());
+
+  if (!cms.loading && !appContentHasBody(cms) && !useFallback) {
     return null;
   }
 
@@ -52,6 +64,15 @@ export function PdpCmsAccordionSection({ slug, fallbackTitle, countryCode, foote
     <PdpAccordion title={title}>
       {cms.loading ? (
         <AccordionBodySkeleton />
+      ) : useFallback ? (
+        <>
+          <Text variant="body" className="text-[15px] leading-7 text-muted">
+            {fallbackContent}
+          </Text>
+          {footerLink ? (
+            <AccordionFooterLink label={footerLink.label} url={footerLink.url} />
+          ) : null}
+        </>
       ) : (
         <>
           <RichTextRenderer richContent={cms.richContent} plainText={cms.content} />

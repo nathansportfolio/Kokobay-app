@@ -36,7 +36,7 @@ describe('cart cost breakdown', () => {
     assert.equal(breakdown.total.amount, '72.00');
   });
 
-  it('uses cart cost delta rather than nominal API discount when they differ', () => {
+  it('uses API cart discount amount when Shopify total includes shipping', () => {
     const discounts = deriveAppliedDiscountsFromCart({
       subtotal: gbp('90.00'),
       total: gbp('88.49'),
@@ -46,7 +46,22 @@ describe('cart cost breakdown', () => {
     });
     assert.equal(discounts.length, 1);
     assert.equal(discounts[0]?.code, FIRST_APP_ORDER_DISCOUNT_CODE);
-    assert.equal(discounts[0]?.amount.amount, '1.51');
+    assert.equal(discounts[0]?.amount.amount, '4.50');
+  });
+
+  it('derives merchandise total as subtotal minus API discount (no shipping in footer)', () => {
+    const breakdown = deriveCartCostBreakdown(
+      gbp('35.00'),
+      gbp('32.74'),
+      null,
+      [{ code: 'TG1S7BYV29RX', applicable: true, amount: gbp('5.25') }],
+      null,
+      null,
+      gbp('5.25'),
+    );
+    assert.equal(breakdown.appliedDiscounts[0]?.amount.amount, '5.25');
+    assert.equal(breakdown.total.amount, '29.75');
+    assert.equal(breakdown.delivery, null);
   });
 
   it('returns no discount rows when subtotal equals total even with a code on cart', () => {
@@ -97,8 +112,8 @@ describe('cart cost breakdown', () => {
       marketCurrency: 'GBP',
     });
     assert.equal(breakdown.subtotal.amount, '90.00');
-    assert.equal(breakdown.total.amount, '88.49');
-    assert.equal(breakdown.appliedDiscounts[0]?.amount.amount, '1.51');
+    assert.equal(breakdown.total.amount, '85.50');
+    assert.equal(breakdown.appliedDiscounts[0]?.amount.amount, '4.50');
     const subtotalN = Number.parseFloat(breakdown.subtotal.amount);
     const discountN = Number.parseFloat(breakdown.appliedDiscounts[0]!.amount.amount);
     const totalN = Number.parseFloat(breakdown.total.amount);

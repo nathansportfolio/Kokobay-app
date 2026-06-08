@@ -1,4 +1,4 @@
-export type PlpSort = 'featured' | 'price-asc' | 'price-desc' | 'title-asc';
+export type PlpSort = 'featured' | 'price-asc' | 'price-desc' | 'newest';
 
 export type PlpFilters = {
   sizes: string[];
@@ -29,5 +29,5 @@ export const PLP_SORT_OPTIONS: { value: PlpSort; label: string }[] = [
   { value: 'featured', label: 'Featured' },
   { value: 'price-asc', label: 'Price — low to high' },
   { value: 'price-desc', label: 'Price — high to low' },
-  { value: 'title-asc', label: 'Name — A to Z' },
+  { value: 'newest', label: 'Newest first' },
 ];

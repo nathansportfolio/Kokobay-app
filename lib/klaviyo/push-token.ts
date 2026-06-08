@@ -4,6 +4,7 @@ import { isPhysicalDevice } from '@/lib/expo-device-safe';
 import { getExpoNotifications, isExpoGoClient } from '@/lib/expo-notifications-safe';
 import { getKlaviyoPublicApiKeyFromEnv, isKlaviyoEnabledFromEnv } from '@/lib/klaviyo-env';
 import { isKlaviyoNativeModuleAvailable } from '@/lib/klaviyo-native-safe';
+import { isFcmTokenUnavailableError } from '@/lib/klaviyo/push-token-unavailable';
 import { klaviyoLog } from '@/lib/klaviyo/logger';
 import { reportErrorToFirebaseCrashlytics } from '@/src/lib/firebase-crashlytics';
 
@@ -35,7 +36,18 @@ function reportKlaviyoPushDiagError(source: string, error: unknown): void {
     source,
     message,
     name: error instanceof Error ? error.name : undefined,
+    fcmUnavailable: isFcmTokenUnavailableError(error),
   });
+
+  if (isFcmTokenUnavailableError(error)) {
+    klaviyoLog('skipped', {
+      reason: 'FCM unavailable on this device (Google Play Services)',
+      source,
+      message,
+    });
+    return;
+  }
+
   reportErrorToFirebaseCrashlytics({
     message: `Klaviyo push token sync failed: ${message}`,
     level: 'error',

@@ -1,7 +1,5 @@
-import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { api, isApiError, legacyApiErrorBody } from '@/src/core/api';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
-import { buildKokobayCustomerAuthHeaders } from '@/services/kokobay-web/customer-session';
 
 export type MarketingConsentResult =
   | { ok: true; subscribed: boolean }
@@ -35,11 +33,11 @@ function friendlyError(error: string, code?: string): string {
 }
 
 function parseMarketingConsentResponse(
-  res: Response,
+  status: number,
   data: Record<string, unknown> | null,
   fallbackError: string,
 ): MarketingConsentResult {
-  if (res.ok && data?.success === true && typeof data.subscribed === 'boolean') {
+  if (status >= 200 && status < 300 && data?.success === true && typeof data.subscribed === 'boolean') {
     return { ok: true, subscribed: data.subscribed };
   }
 
@@ -47,7 +45,7 @@ function parseMarketingConsentResponse(
   const error =
     typeof data?.error === 'string'
       ? data.error
-      : res.status === 429
+      : status === 429
         ? 'Too many requests'
         : fallbackError;
   return { ok: false, error: friendlyError(error, code), code };
@@ -84,16 +82,7 @@ async function marketingConsentRequest(
     return { ok: false, error: 'Account services are not configured.' };
   }
 
-  const root = resolveKokobayApiBaseUrl();
-  if (!root) {
-    return { ok: false, error: 'Account services are not configured.' };
-  }
-
-  const headers = await buildKokobayCustomerAuthHeaders(sessionToken ?? undefined, {
-    includeGuestCart: false,
-  });
-
-  if (!headers.Authorization) {
+  if (!sessionToken?.trim()) {
     return {
       ok: false,
       error: method === 'GET' ? 'Sign in to view email preferences.' : 'Sign in to update email preferences.',
@@ -101,31 +90,38 @@ async function marketingConsentRequest(
     };
   }
 
-  if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-  }
+  const requestOpts = {
+    auth: 'active-customer' as const,
+    sessionOverride: sessionToken,
+    includeGuestCart: false,
+    marketQuery: false,
+    retries: 0,
+    coalesce: false,
+  };
 
   try {
-    const res = await fetchWithTimeout(`${root}/api/customer/marketing-consent`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: 'Unexpected response from the server.' };
-    }
+    const response =
+      method === 'GET'
+        ? await api.get('/api/customer/marketing-consent', requestOpts)
+        : await api.post('/api/customer/marketing-consent', body, requestOpts);
 
     return parseMarketingConsentResponse(
-      res,
-      data,
+      response.status,
+      response.data as Record<string, unknown>,
       method === 'GET' ? 'Could not load marketing preferences.' : 'Could not update marketing preferences.',
     );
-  } catch {
+  } catch (error) {
+    if (isApiError(error) && error.kind === 'http') {
+      const data = legacyApiErrorBody(error);
+      if (!data) {
+        return { ok: false, error: 'Unexpected response from the server.' };
+      }
+      return parseMarketingConsentResponse(
+        error.status ?? 0,
+        data,
+        method === 'GET' ? 'Could not load marketing preferences.' : 'Could not update marketing preferences.',
+      );
+    }
     return { ok: false, error: 'Network error. Check your connection and try again.' };
   }
 }

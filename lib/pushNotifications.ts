@@ -45,9 +45,9 @@ import { InteractionManager, Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import type { Href } from 'expo-router';
 
-import { resolveDeepLinkUrl } from '@/lib/deep-link-router';
-import { resolveKokobayApiBaseUrl } from '@/services/kokobay-web/api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { resolveDeepLinkUrl, classifyProductDeepLinkIdentifier } from '@/lib/deep-link-router';
+import { api } from '@/src/core/api';
+import { isKokobayApiConfigured } from '@/services/kokobay-web/api-config';
 
 const PUSH_REGISTRATION_CACHE_KEY = 'kokobay_push_registration_v1';
 const ANONYMOUS_PUSH_EMAIL_KEY = 'kokobay_push_anonymous_email_v1';
@@ -165,15 +165,6 @@ let coldStartNotificationHandled = false;
 /** Temporary instrumentation — throttle rapid registerPushNotifications calls. */
 let lastRegisterPushCall = 0;
 const REGISTER_PUSH_THROTTLE_MS = 10_000;
-
-function pushApiOrigin(): string {
-  return resolveKokobayApiBaseUrl({ fallbackToDefault: true })!;
-}
-
-function pushApiUrl(path: string): string {
-  const p = path.startsWith('/') ? path : `/${path}`;
-  return `${pushApiOrigin()}${p}`;
-}
 
 function easProjectId(): string | undefined {
   const fromExtra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -417,19 +408,18 @@ export async function obtainExpoPushToken(): Promise<
 }
 
 async function postPushRegister(payload: PushRegistrationPayload): Promise<boolean> {
-  try {
-    const res = await fetchWithTimeout(pushApiUrl('/api/push/register'), {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+  if (!isKokobayApiConfigured()) return false;
 
-    if (!res.ok) {
-      const preview = (await res.text()).slice(0, 400);
-      pushDebug('register HTTP error', { status: res.status, preview });
+  try {
+    const response = await api.post('/api/push/register', payload, {
+      auth: 'none',
+      marketQuery: false,
+      optional: true,
+      retries: 0,
+      coalesce: false,
+    });
+    if (!response) {
+      pushDebug('register HTTP error', { status: 'unknown' });
       return false;
     }
     return true;
@@ -521,19 +511,20 @@ export async function registerPushNotifications(
 }
 
 async function postPushUnregister(payload: PushRegistrationPayload): Promise<boolean> {
+  if (!isKokobayApiConfigured()) return false;
+
   try {
-    const res = await fetchWithTimeout(pushApiUrl('/api/push/unregister'), {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+    const response = await api.post('/api/push/unregister', payload, {
+      auth: 'none',
+      marketQuery: false,
+      optional: true,
+      retries: 0,
+      coalesce: false,
     });
-    if (!res.ok) {
-      pushDebug('unregister HTTP error', { status: res.status });
+    if (!response) {
+      pushDebug('unregister HTTP error', { status: 'unknown' });
     }
-    return res.ok;
+    return response !== null;
   } catch (e) {
     pushDebug('unregister network error', e);
     return false;
@@ -658,9 +649,17 @@ export function extractPushData(
   };
 }
 
-/** Product PDP. */
+/** Product PDP — variant ids route through `/products/[handle]` resolver first. */
 function productPushHref(handle: string): Href {
-  return `/product/${handle.trim()}` as Href;
+  const trimmed = handle.trim();
+  const classified = classifyProductDeepLinkIdentifier(trimmed);
+  if (classified?.kind === 'variant') {
+    return `/products/${pathSegment(trimmed)}` as Href;
+  }
+  if (classified?.kind === 'handle') {
+    return `/product/${classified.handle}` as Href;
+  }
+  return `/product/${trimmed}` as Href;
 }
 
 /** Collection PLP. */
@@ -848,9 +847,26 @@ export function resolvePushDeepLink(data: PushNotificationData): ResolvePushDeep
           fallbackHref: PUSH_FALLBACK_HREF,
         };
       }
-      const canonicalPath = `/products/${pathSegment(productHandle)}`;
+      const classified = classifyProductDeepLinkIdentifier(productHandle);
+      if (!classified) {
+        return {
+          href: null,
+          canonicalPath: null,
+          reason: 'invalid_product_handle',
+          fallbackHref: PUSH_FALLBACK_HREF,
+        };
+      }
+      if (classified.kind === 'variant') {
+        const canonicalPath = `/products/${classified.variantId}`;
+        return {
+          href: `/products/${pathSegment(productHandle)}` as Href,
+          canonicalPath,
+          fallbackHref: PUSH_FALLBACK_HREF,
+        };
+      }
+      const canonicalPath = `/products/${pathSegment(classified.handle)}`;
       return {
-        href: productPushHref(productHandle),
+        href: productPushHref(classified.handle),
         canonicalPath,
         fallbackHref: PUSH_FALLBACK_HREF,
       };
@@ -969,7 +985,7 @@ export function navigateFromPushNotification(
   const data = extractPushData(notification);
   const resolved = resolvePushDeepLink(data);
   const target = resolved.href ?? resolved.fallbackHref;
-  const replace = false;
+  const replace = source === 'cold_start';
   const destination = hrefToLogString(target);
   const navOptions = { replace, source };
 

@@ -8,6 +8,7 @@ import { Platform, Switch, View } from 'react-native';
 import { AccountAuthBackButton } from '@/components/account/account-auth-back-button';
 import { AccountLegalLinks } from '@/components/account/account-legal-links';
 import { MarketCurrencySection } from '@/components/settings/market-currency-section';
+import { CartRecoverySection } from '@/components/settings/cart-recovery-section';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
@@ -17,6 +18,8 @@ import {
   fetchCustomerMarketingConsent,
   updateCustomerMarketingConsent,
 } from '@/services/kokobay-web/marketing-consent';
+import { getAuthAccessToken } from '@/src/core/auth/token';
+import { useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/store';
 import { showToast } from '@/store/toast';
 
@@ -132,8 +135,7 @@ type AccountAppSettingsProps = {
 };
 
 export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefresh }: AccountAppSettingsProps) {
-  const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
+  const { user } = useAuth();
   const patchUser = useAuthStore((s) => s.patchUser);
   const [permission, setPermission] = useState<PermissionState>('unknown');
   const [pushBusy, setPushBusy] = useState(false);
@@ -187,6 +189,8 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
     marketingRefreshInFlightRef.current = true;
     setMarketingLoading(true);
     try {
+      const accessToken = getAuthAccessToken();
+      if (!accessToken) return;
       const result = await fetchCustomerMarketingConsent(accessToken);
       if (result.ok) {
         setMarketingRateLimited(false);
@@ -209,7 +213,7 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
       marketingRefreshInFlightRef.current = false;
       setMarketingLoading(false);
     }
-  }, [accessToken, patchUser]);
+  }, [patchUser]);
 
   const refreshPreferences = useCallback(async () => {
     await refreshPermission();
@@ -253,6 +257,12 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
       setMarketingRateLimited(false);
 
       try {
+        const accessToken = getAuthAccessToken();
+        if (!accessToken) {
+          setEmailSubscribed(previous);
+          showToast({ variant: 'error', title: 'Sign in to update marketing preferences.' });
+          return;
+        }
         const result = await updateCustomerMarketingConsent(next, accessToken);
 
         if (!result.ok) {
@@ -280,7 +290,7 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
         setMarketingBusy(false);
       }
     },
-    [accessToken, emailSubscribed, marketingBusy, patchUser, user],
+    [emailSubscribed, marketingBusy, patchUser, user],
   );
 
   const notificationsOn = notificationsEnabled(permission);
@@ -464,6 +474,8 @@ export function AccountAppSettings({ canGoBack = false, onBack, onRegisterRefres
           <SettingsRow label="Platform" value="Web" />
         : null}
       </SettingsSection>
+
+      <CartRecoverySection customerEmail={user?.email} />
     </>
   );
 }

@@ -3,7 +3,6 @@ import { Link, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useShallow } from 'zustand/react/shallow';
 
 import { CartCheckoutBar } from '@/components/cart/cart-checkout-bar';
 import { CartFreeDeliveryProgress } from '@/components/cart/cart-free-delivery-progress';
@@ -15,6 +14,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useCartPricingAuditScreen } from '@/hooks/use-cart-pricing-audit';
+import { useCartScreenState } from '@/hooks/use-cart-screen-state';
+import { useAppCartDeliveryTextLabel } from '@/hooks/use-app-cart-delivery-text-query';
 import { useDeliveryThreshold } from '@/hooks/use-delivery-threshold';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
@@ -22,9 +23,7 @@ import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewCart } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
-import { useCartBagUnitCount } from '@/hooks/use-cart-selectors';
 import { useCartStore } from '@/store';
-import { selectCartPricingForDisplay } from '@/store/cart';
 import { useMarketStore } from '@/store/market-preference';
 import type { CartLine } from '@/types/cart';
 import { resolveCartCostBreakdownForDisplay } from '@/utils/cart-cost-breakdown';
@@ -46,16 +45,19 @@ export default function CartScreen() {
   useRenderTrace('Cart');
   const insets = useSafeAreaInsets();
   const tabBarHeight = useOptionalBottomTabBarHeight();
-  const cartPricingForDisplay = useCartStore(selectCartPricingForDisplay);
-  const { lines, hasHydrated } = useCartStore(
-    useShallow((s) => ({
-      lines: s.lines,
-      hasHydrated: s.hasHydrated,
-    })),
-  );
+  const {
+    lines,
+    hasHydrated,
+    bagUnitCount,
+    viewCartLineKey,
+    quantitySyncPendingByVariantId,
+    cartPricingForDisplay,
+    overServerSubtotalVariantId,
+  } = useCartScreenState();
   const marketCurrency = useMarketStore((s) => s.currencyCode);
   const marketCountryCode = useMarketStore((s) => s.countryCode);
   const freeDeliveryThresholdGbp = useDeliveryThreshold();
+  const deliveryAtCheckoutLabel = useAppCartDeliveryTextLabel();
   const usesShopifyCheckout = isRemoteCartConfigured();
   const costBreakdown = useMemo(
     () =>
@@ -87,8 +89,6 @@ export default function CartScreen() {
     ],
   );
 
-  const bagUnitCount = useCartBagUnitCount();
-
   useCartPricingAuditScreen({
     lines,
     marketCurrency,
@@ -98,9 +98,6 @@ export default function CartScreen() {
     bagUnitCount,
   });
 
-  const viewCartLineKey = useCartStore(
-    useShallow((s) => s.lines.map((line) => `${line.variantId}:${line.qty}`).join('|')),
-  );
   const viewCartTrackedRef = useRef<string | null>(null);
   useFocusEffect(
     useCallback(() => {
@@ -111,7 +108,19 @@ export default function CartScreen() {
     }, [hasHydrated, viewCartLineKey]),
   );
 
-  const renderItem = useCallback(({ item }: { item: CartLine }) => <CartLineRow line={item} />, []);
+  const renderItem = useCallback(
+    ({ item }: { item: CartLine }) => {
+      const variantKey = item.variantId.trim();
+      return (
+        <CartLineRow
+          line={item}
+          qtySyncPending={Boolean(quantitySyncPendingByVariantId[variantKey])}
+          showOverServerSubtotalWarning={overServerSubtotalVariantId === item.variantId}
+        />
+      );
+    },
+    [quantitySyncPendingByVariantId, overServerSubtotalVariantId],
+  );
 
   const listHeader = useMemo(
     () => (
@@ -211,12 +220,13 @@ export default function CartScreen() {
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           <CartCheckoutBar
             subtotal={costBreakdown.subtotal}
+            total={costBreakdown.total}
             appliedDiscounts={costBreakdown.appliedDiscounts}
-            merchandiseTotal={costBreakdown.total}
             delivery={costBreakdown.delivery}
             tax={costBreakdown.tax}
             usesShopifyCheckout={usesShopifyCheckout}
             freeDeliveryThresholdGbp={freeDeliveryThresholdGbp}
+            deliveryAtCheckoutLabel={deliveryAtCheckoutLabel}
             marketCountryCode={marketCountryCode}
             bottomInset={checkoutBottomInset}
           />

@@ -1,11 +1,11 @@
 import type { ProductVariant } from '@/types/shopify';
 
+import { api, isApiError, legacyApiErrorBody } from '@/src/core/api';
 import { hasLocalBackInStockSubscription, markBackInStockSubscribed } from '@/store/back-in-stock-persist';
-import { buildKokobayCustomerAuthHeaders } from './customer-session';
+import { shopifyVariantKey } from '@/utils/shopify-variant-key';
+
 import { resolveKokobayApiBaseUrl } from './api-config';
 import { isKokobayWebProductsConfigured } from './client';
-import { shopifyVariantKey } from '@/utils/shopify-variant-key';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
 
 export type BackInStockSubscribeInput = {
   email: string;
@@ -84,36 +84,33 @@ export async function checkBackInStockSubscription(input: {
     return false;
   }
 
-  const root = apiRoot();
-  if (!root) return false;
+  if (!apiRoot()) return false;
 
   const params = new URLSearchParams({ variantId: variantKey });
   if (email) params.set('email', email.trim());
 
-  try {
-    const headers = await buildKokobayCustomerAuthHeaders(input.sessionToken, { includeGuestCart: false });
-    headers.Accept = 'application/json';
-    const res = await fetchWithTimeout(`${root}/api/back-in-stock?${params.toString()}`, { headers });
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return false;
-    }
-    if (!res.ok) return false;
-    const subscribed = parseSubscribedFlag(data);
-    if (subscribed && email) {
-      await markBackInStockSubscribed({
-        variantId: input.variantId,
-        email,
-        customerId,
-      });
-    }
-    return subscribed;
-  } catch {
-    return false;
+  const response = await api.get(`/api/back-in-stock?${params.toString()}`, {
+    auth: 'active-customer',
+    sessionOverride: input.sessionToken,
+    includeGuestCart: false,
+    marketQuery: false,
+    optional: true,
+    retries: 0,
+    coalesce: false,
+  });
+
+  if (!response) return false;
+
+  const data = response.data as Record<string, unknown>;
+  const subscribed = parseSubscribedFlag(data);
+  if (subscribed && email) {
+    await markBackInStockSubscribed({
+      variantId: input.variantId,
+      email,
+      customerId,
+    });
   }
+  return subscribed;
 }
 
 export async function subscribeBackInStock(
@@ -128,8 +125,7 @@ export async function subscribeBackInStock(
     return { ok: false, error: 'Back-in-stock alerts are not configured.' };
   }
 
-  const root = apiRoot();
-  if (!root) {
+  if (!apiRoot()) {
     return { ok: false, error: 'Back-in-stock alerts are not configured.' };
   }
 
@@ -142,31 +138,17 @@ export async function subscribeBackInStock(
   };
 
   try {
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    };
-    if (options?.sessionToken?.trim()) {
-      const authHeaders = await buildKokobayCustomerAuthHeaders(options.sessionToken, {
-        includeGuestCart: false,
-      });
-      Object.assign(headers, authHeaders);
-    }
-
-    const res = await fetchWithTimeout(`${root}/api/back-in-stock`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
+    const response = await api.post('/api/back-in-stock', payload, {
+      auth: options?.sessionToken?.trim() ? 'active-customer' : 'none',
+      sessionOverride: options?.sessionToken,
+      includeGuestCart: false,
+      marketQuery: false,
+      retries: 0,
+      coalesce: false,
     });
-    const text = await res.text();
-    let data: Record<string, unknown> | null = null;
-    try {
-      data = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: 'Unexpected response from the server.' };
-    }
 
-    if (!res.ok || data?.ok !== true) {
+    const data = response.data as Record<string, unknown>;
+    if (data?.ok !== true) {
       return {
         ok: false,
         error: parseErrorMessage(data, 'Could not save your alert. Please try again.'),
@@ -184,8 +166,15 @@ export async function subscribeBackInStock(
       customerId: options?.customerId,
     });
 
-    return { ok: true, alreadySubscribed };
-  } catch {
+    return { ok: true, ...(alreadySubscribed ? { alreadySubscribed: true } : {}) };
+  } catch (error) {
+    if (isApiError(error) && error.kind === 'http') {
+      const data = legacyApiErrorBody(error);
+      return {
+        ok: false,
+        error: parseErrorMessage(data, 'Could not save your alert. Please try again.'),
+      };
+    }
     return { ok: false, error: 'Could not save your alert. Please try again.' };
   }
 }

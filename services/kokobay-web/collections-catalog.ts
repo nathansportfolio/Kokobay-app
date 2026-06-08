@@ -2,11 +2,6 @@ import type { Collection, Image } from '@/types/shopify';
 
 import { fetchKokobayCollectionsJson } from './client';
 
-const CACHE_MS = 60_000;
-
-let cache: { at: number; collections: Collection[] } | null = null;
-let inFlight: Promise<Collection[] | null> | null = null;
-
 function normalizeImage(raw: unknown): Image | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -56,32 +51,20 @@ function parseCollectionsPayload(data: Record<string, unknown> | null): Collecti
 }
 
 /**
- * Published custom + smart collections from `GET /api/collections`, with short in-memory cache.
- * Returns `null` on network / parse failure.
+ * Published custom + smart collections from `GET /api/collections`.
+ * React Query owns caching — no service-layer cache.
  */
 export async function getKokobayWebCollections(first = 250): Promise<Collection[] | null> {
-  const now = Date.now();
-  if (cache && now - cache.at < CACHE_MS) {
-    return cache.collections.slice(0, first);
+  try {
+    const json = await fetchKokobayCollectionsJson();
+    const collections = parseCollectionsPayload(json);
+    return collections.slice(0, first);
+  } catch {
+    return null;
   }
-  if (inFlight) {
-    const list = await inFlight;
-    return list?.slice(0, first) ?? null;
-  }
-  inFlight = (async () => {
-    try {
-      const json = await fetchKokobayCollectionsJson();
-      const collections = parseCollectionsPayload(json);
-      cache = { at: Date.now(), collections };
-      return collections;
-    } finally {
-      inFlight = null;
-    }
-  })();
-  return inFlight;
 }
 
+/** @deprecated React Query invalidation replaces service cache clearing. */
 export function clearKokobayWebCollectionsCache(): void {
-  cache = null;
-  inFlight = null;
+  /** No-op — kept for call-site compatibility during migration. */
 }

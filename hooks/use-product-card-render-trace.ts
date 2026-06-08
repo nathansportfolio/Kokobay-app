@@ -23,7 +23,7 @@ import { isProductFullySoldOut } from '@/utils/product-availability';
 
 type ProductCardRenderSnapshot = Pick<
   ProductCardProps,
-  'gridColumns' | 'tileWidth' | 'imagePriority' | 'perfTraceIndex' | 'className'
+  'gridColumns' | 'tileWidth' | 'imagePriority' | 'perfTraceIndex' | 'className' | 'productLink'
 > & {
   productId: string;
   title: string;
@@ -42,6 +42,7 @@ function snapshotFromProps(props: ProductCardProps): ProductCardRenderSnapshot {
     imagePriority: props.imagePriority,
     perfTraceIndex: props.perfTraceIndex,
     className: props.className,
+    productLink: props.productLink,
   };
 }
 
@@ -60,18 +61,27 @@ function diffProductCardRenderReasons(
   if (prev.imagePriority !== next.imagePriority) reasons.push('image_priority');
   if (prev.perfTraceIndex !== next.perfTraceIndex) reasons.push('perf_index');
   if (prev.className !== next.className) reasons.push('className');
+  if (prev.productLink !== next.productLink) reasons.push('productLink');
   return reasons.length ? reasons.join(',') : 'unknown';
 }
 
-/** Dev-only — logs `[PRODUCT_CARD_RENDER]` and optional storm diff diagnostics. */
-export function useProductCardRenderTrace(props: ProductCardProps): void {
+/**
+ * Dev-only ProductCard render audit (`[PRODUCT_CARD_RENDER]`).
+ *
+ * Fires on every ProductCardInner render (memo bypass only). Reasons:
+ * - mount — first render for a mounted cell
+ * - product|title|price|… — prop snapshot changed vs previous render of same instance
+ * - unknown — rerender with identical tracked props (parent/context forced reconcile)
+ *
+ * Does not fire on visibility-only changes while a cell stays mounted; FlashList
+ * remounting off-screen cells logs mount again.
+ */
+function useProductCardRenderTraceDev(props: ProductCardProps): void {
   const prevRef = useRef<ProductCardRenderSnapshot | null>(null);
   const diffPrevRef = useRef<ProductCardTraceSnapshot | null>(null);
   const pathname = usePathname();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const marketKey = useMarketStore((s) => s.countryCode);
-
-  if (!__DEV__) return;
 
   const next = snapshotFromProps(props);
   const reason = diffProductCardRenderReasons(prevRef.current, next);
@@ -110,10 +120,19 @@ export function useProductCardRenderTrace(props: ProductCardProps): void {
   prevRef.current = next;
 }
 
+/** Dev-only child — keeps router/market subscriptions out of production ProductCard. */
+export function ProductCardRenderTrace(props: ProductCardProps) {
+  useProductCardRenderTraceDev(props);
+  return null;
+}
+
 export function productCardPropsEqual(prev: ProductCardProps, next: ProductCardProps): boolean {
   return (
     prev.product.id === next.product.id &&
     prev.product.handle === next.product.handle &&
+    prev.productLink === next.productLink &&
+    prev.onProductPress === next.onProductPress &&
+    prev.onPrefetchProduct === next.onPrefetchProduct &&
     prev.product.title === next.product.title &&
     prev.product.priceRange.minVariantPrice.amount ===
       next.product.priceRange.minVariantPrice.amount &&

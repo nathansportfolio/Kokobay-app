@@ -1,5 +1,8 @@
-import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { z } from 'zod';
+
+import { api, isApiError } from '@/src/core/api';
+
+import { isKokobayApiConfigured } from './api-config';
 
 export type CmsCollectionTile = {
   slug: string;
@@ -7,6 +10,8 @@ export type CmsCollectionTile = {
   imageUrl: string;
   url: string;
 };
+
+const cmsArraySchema = z.array(z.unknown());
 
 function normalizeTile(raw: unknown): CmsCollectionTile | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -25,35 +30,39 @@ function normalizeTile(raw: unknown): CmsCollectionTile | null {
 export async function getCollectionsCms(
   init?: { signal?: AbortSignal },
 ): Promise<CmsCollectionTile[]> {
-  const root = resolveKokobayApiBaseUrl();
-  if (!root || !isKokobayApiConfigured()) {
+  if (!isKokobayApiConfigured()) {
     throw new Error('Koko Bay API is not configured');
   }
 
-  const url = `${root}/api/collections-cms`;
-  const res = await fetchWithTimeout(url, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    signal: init?.signal,
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`collections-cms ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  let json: unknown;
   try {
-    json = JSON.parse(text) as unknown;
-  } catch {
-    throw new Error('collections-cms invalid JSON');
-  }
+    const response = await api.get('/api/collections-cms', {
+      auth: 'none',
+      marketQuery: false,
+      signal: init?.signal,
+      coalesce: false,
+      schema: cmsArraySchema,
+    });
 
-  if (!Array.isArray(json)) return [];
+    const json = response.data;
+    if (!Array.isArray(json)) return [];
 
-  const tiles: CmsCollectionTile[] = [];
-  for (const entry of json) {
-    const tile = normalizeTile(entry);
-    if (tile) tiles.push(tile);
+    const tiles: CmsCollectionTile[] = [];
+    for (const entry of json) {
+      const tile = normalizeTile(entry);
+      if (tile) tiles.push(tile);
+    }
+    return tiles;
+  } catch (error) {
+    if (isApiError(error) && error.kind === 'http') {
+      const preview =
+        typeof error.body === 'string'
+          ? error.body.slice(0, 200)
+          : JSON.stringify(error.body ?? '').slice(0, 200);
+      throw new Error(`collections-cms ${error.status}: ${preview}`);
+    }
+    if (isApiError(error) && error.kind === 'parse') {
+      throw new Error('collections-cms invalid JSON');
+    }
+    throw error instanceof Error ? error : new Error('collections-cms request failed');
   }
-  return tiles;
 }

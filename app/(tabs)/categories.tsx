@@ -1,16 +1,15 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { FlashListRef } from '@shopify/flash-list';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
 import { ShopCollectionsList } from '@/components/shop/shop-collections-list';
-import { CollectionListSkeleton } from '@/components/ui/collection-list-skeleton';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
-import { resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
+import { markShopTabViewportExpected, resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
 import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
@@ -19,6 +18,7 @@ import { canonicalCollectionHandle } from '@/utils/collection-handles';
 import { cmsCollectionTilesToDisplayItems } from '@/utils/cms-collection-tiles';
 import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
+import { prefetchShopCollectionCoverImages } from '@/utils/shop-collection-cover-prefetch';
 
 const LIST_CONTENT = {
   paddingBottom: 48,
@@ -48,6 +48,7 @@ function CollectionsHeader({ isError = false }: { isError?: boolean }) {
 
 export default function CategoriesScreen() {
   const listRef = useRef<FlashListRef<CmsCollectionDisplayItem>>(null);
+  const { width: screenWidth } = useWindowDimensions();
 
   useEffect(() => {
     resetShopTabPerfTrace({ routeKey: 'categories-tab' });
@@ -130,11 +131,17 @@ export default function CategoriesScreen() {
 
   const showCatalogError = cmsError && !fallbackPending && fallbackCollections !== undefined;
 
+  useEffect(() => {
+    if (showCollectionsSkeleton || displayItems.length === 0) return;
+    const prefetched = prefetchShopCollectionCoverImages(displayItems, { screenWidth });
+    markShopTabViewportExpected(prefetched);
+  }, [displayItems, screenWidth, showCollectionsSkeleton]);
+
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
-  const listEnabled = !showCollectionsSkeleton && displayItems.length > 0;
+  const listEnabled = showCollectionsSkeleton || displayItems.length > 0;
   const { onScroll } = useBindScrollToTop(scrollToTop, listEnabled);
 
   const renderBranch = showCollectionsSkeleton
@@ -183,20 +190,7 @@ export default function CategoriesScreen() {
     [displayItems.length, showCatalogError],
   );
 
-  if (showCollectionsSkeleton) {
-    return (
-      <View style={CATEGORIES_SHELL}>
-        <View style={HEADER_WRAP}>
-          <CollectionsHeader />
-        </View>
-        <View style={{ paddingHorizontal: 20 }}>
-          <CollectionListSkeleton layout="strip" />
-        </View>
-      </View>
-    );
-  }
-
-  if (displayItems.length === 0) {
+  if (!showCollectionsSkeleton && displayItems.length === 0) {
     return (
       <View style={CATEGORIES_SHELL}>
         <View style={HEADER_WRAP}>
@@ -213,6 +207,7 @@ export default function CategoriesScreen() {
     <View style={CATEGORIES_SHELL}>
       <ShopCollectionsList
         ref={listRef}
+        loading={showCollectionsSkeleton}
         items={displayItems}
         ListHeaderComponent={listHeader}
         contentContainerStyle={LIST_CONTENT}

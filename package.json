@@ -1,7 +1,7 @@
 {
   "name": "Koko Bay",
   "main": "expo-router/entry",
-  "version": "1.0.69",
+  "version": "1.0.89",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "start": "expo start --dev-client",
@@ -26,6 +26,14 @@
     "android:build": "expo run:android",
     "web": "expo start --web",
     "lint": "expo lint",
+    "check-api-migration": "node ./scripts/check-api-migration.mjs",
+    "verify:android-release": "node ./scripts/verify-android-release.mjs",
+    "sync:app-icons": "bash ./scripts/sync-app-icons.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test '**/*.test.ts'",
+    "test:auth-refresh": "node --import tsx --test src/core/auth/refresh-customer-session.test.ts",
+    "test:cart-integration": "tsx --tsconfig tests/cart/tsconfig.integration.json --import ./tests/cart/setup-globals.mjs --test store/cart.integration.test.ts",
+    "test:cart-reliability": "tsx --tsconfig tests/cart/tsconfig.integration.json --import ./tests/cart/setup-globals.mjs --test store/cart-reliability.integration.test.ts && node --import tsx --test store/cart-snapshot-validate.test.ts",
     "push:preview-payload": "node scripts/preview-push-payload.mjs",
     "well-known:generate": "node scripts/generate-well-known.mjs"
   },
@@ -87,6 +95,7 @@
     "jsdom": "26.0.0",
     "react-test-renderer": "19.1.0",
     "tailwindcss": "3.4.17",
+    "tsx": "^4.20.3",
     "typescript": "~5.9.2"
   },
   "private": true

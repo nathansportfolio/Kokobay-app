@@ -174,3 +174,12 @@ export async function persistCartGuestId(guestId: string | null): Promise<void> 
     /* persist best-effort */
   }
 }
+
+/** Dev/admin recovery — wipe all cart keys from SecureStore. */
+export async function clearCartSecureStore(): Promise<void> {
+  await Promise.all([
+    SecureStore.deleteItemAsync(STORAGE_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(SHOPIFY_CART_ID_KEY).catch(() => {}),
+    SecureStore.deleteItemAsync(CART_GUEST_ID_KEY).catch(() => {}),
+  ]);
+}

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TOAST_LAYOUT, TOAST_VARIANTS } from '@/constants/toast-theme';
@@ -8,12 +9,30 @@ import { useToastStore } from '@/store/toast';
 
 /** Gap below status bar / notch */
 const TOP_TOAST_PAD = 10;
+/** Gap above tab bar / sticky chrome */
+const BOTTOM_TOAST_PAD = 4;
+
+/** Aligns with ScrollToTopFab — keeps toast above tab bar / PDP sticky CTA. */
+function useToastBottomLift(): number {
+  const pathname = usePathname();
+  const noTabBar =
+    pathname === '/search' ||
+    pathname === '/search-overlay' ||
+    pathname.startsWith('/checkout');
+  const isPdp = /\/product\//.test(pathname);
+
+  if (isPdp) return 128;
+  if (noTabBar) return 8;
+  return 32;
+}
 
 export function ToastHost() {
   const insets = useSafeAreaInsets();
+  const bottomLift = useToastBottomLift();
   const toast = useToastStore((s) => s.toast);
   const visible = useToastStore((s) => s.visible);
   const progress = useSharedValue(0);
+  const isBottom = toast?.position === 'bottom';
 
   useEffect(() => {
     progress.value = withTiming(visible ? 1 : 0, { duration: 220 });
@@ -21,8 +40,13 @@ export function ToastHost() {
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    /** Hidden: slightly above; visible: flush — reads as dropping in from the top */
-    transform: [{ translateY: (progress.value - 1) * 14 }],
+    transform: [
+      {
+        translateY: isBottom
+          ? (1 - progress.value) * 14
+          : (progress.value - 1) * 14,
+      },
+    ],
   }));
 
   if (!toast) {
@@ -33,7 +57,13 @@ export function ToastHost() {
   const Icon = theme.Icon;
 
   return (
-    <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.layer]}>
+    <View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFillObject,
+        styles.layer,
+        isBottom ? styles.layerBottom : styles.layerTop,
+      ]}>
       <Animated.View
         accessibilityLiveRegion="polite"
         accessibilityRole="alert"
@@ -49,7 +79,9 @@ export function ToastHost() {
             borderColor: theme.borderColor,
           },
           TOAST_LAYOUT.shadow,
-          { marginTop: insets.top + TOP_TOAST_PAD },
+          isBottom
+            ? { marginBottom: insets.bottom + bottomLift + BOTTOM_TOAST_PAD }
+            : { marginTop: insets.top + TOP_TOAST_PAD },
           animatedStyle,
         ]}>
         <View style={[styles.row, { gap: TOAST_LAYOUT.gap }]}>
@@ -88,9 +120,14 @@ export function ToastHost() {
 const styles = StyleSheet.create({
   layer: {
     zIndex: 20000,
-    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: 20,
+  },
+  layerTop: {
+    justifyContent: 'flex-start',
+  },
+  layerBottom: {
+    justifyContent: 'flex-end',
   },
   bubble: {
     width: '100%',

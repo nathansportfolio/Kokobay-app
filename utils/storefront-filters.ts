@@ -2,6 +2,7 @@ import type { KokobayStorefrontFilter } from '@/services/kokobay-web/storefront-
 import type { PlpFilters, PlpSort } from '@/types/plp';
 import {
   colourGroupLabelsFromRawValues,
+  estimateColourGroupUnionCount,
   expandColourFilterSelection,
   groupsForRawColourValue,
   normColourLabel,
@@ -114,6 +115,64 @@ export function createStorefrontFilterLookup(
   return { sizeByLabel, categoryByLabel, colorByLabel };
 }
 
+function isShopifyFilterSettingGroupInput(input: string): boolean {
+  try {
+    const parsed = JSON.parse(input) as { variantOption?: { value?: string } };
+    const value = parsed.variantOption?.value ?? '';
+    return value.includes('FilterSettingGroup') || value.startsWith('gid://');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeFilterInputDedupeKey(input: string): string {
+  try {
+    const parsed = JSON.parse(input) as { variantOption?: { name?: string; value?: string } };
+    if (parsed.variantOption) {
+      return JSON.stringify({
+        name: normColourLabel(parsed.variantOption.name ?? ''),
+        value: normColourLabel(parsed.variantOption.value ?? ''),
+      });
+    }
+  } catch {
+    /* ignore malformed filter JSON */
+  }
+  return input.trim();
+}
+
+/** One Shopify filter input per selected editorial colour group (prefer S&D group filters). */
+export function resolveColourFilterInputsForSelection(
+  selectedGroups: string[],
+  lookup: StorefrontFilterLookup,
+): string[] {
+  const inputs: string[] = [];
+  const seen = new Set<string>();
+
+  for (const group of selectedGroups) {
+    const expanded = expandColourFilterSelection([group]);
+    const matches: { label: string; input: string }[] = [];
+    for (const [label, input] of lookup.colorByLabel) {
+      if (expanded.has(normColourLabel(label))) {
+        matches.push({ label, input });
+      }
+    }
+    if (!matches.length) continue;
+
+    const groupNamed = matches.find((m) => normColourLabel(m.label) === normColourLabel(group));
+    const groupSetting = matches.find((m) => isShopifyFilterSettingGroupInput(m.input));
+    const toAppend = groupNamed ? [groupNamed] : groupSetting ? [groupSetting] : matches;
+
+    for (const { input } of toAppend) {
+      const key = normalizeFilterInputDedupeKey(input);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      inputs.push(input);
+    }
+  }
+
+  return inputs;
+}
+
 export function facetsFromStorefrontFilters(filters: KokobayStorefrontFilter[]): StorefrontFilterFacets {
   let priceMin = 0;
   let priceMax = 0;
@@ -123,7 +182,21 @@ export function facetsFromStorefrontFilters(filters: KokobayStorefrontFilter[]):
   const categories = new Set<string>();
   const categoryCounts: PlpFacetCounts = {};
   const colors = new Set<string>();
-  const colourGroupCounts: PlpFacetCounts = {};
+  const groupsWithNamedFacet = new Set<string>();
+  const colourGroupMemberCounts = new Map<string, number[]>();
+
+  for (const f of filters) {
+    const bucket = filterBucket(f);
+    if (bucket !== 'color') continue;
+    for (const v of f.values) {
+      if (v.count <= 0) continue;
+      for (const group of groupsForRawColourValue(v.label)) {
+        if (normColourLabel(v.label) === normColourLabel(group)) {
+          groupsWithNamedFacet.add(group);
+        }
+      }
+    }
+  }
 
   for (const f of filters) {
     const bucket = filterBucket(f);
@@ -156,10 +229,33 @@ export function facetsFromStorefrontFilters(filters: KokobayStorefrontFilter[]):
       } else {
         colors.add(v.label);
         for (const group of groupsForRawColourValue(v.label)) {
-          colourGroupCounts[group] = (colourGroupCounts[group] ?? 0) + v.count;
+          if (groupsWithNamedFacet.has(group)) continue;
+          const memberCounts = colourGroupMemberCounts.get(group) ?? [];
+          memberCounts.push(v.count);
+          colourGroupMemberCounts.set(group, memberCounts);
         }
       }
     }
+  }
+
+  const colourGroupCounts: PlpFacetCounts = {};
+  for (const f of filters) {
+    if (filterBucket(f) !== 'color') continue;
+    for (const v of f.values) {
+      if (v.count <= 0) continue;
+      for (const group of groupsForRawColourValue(v.label)) {
+        if (
+          groupsWithNamedFacet.has(group) &&
+          normColourLabel(v.label) === normColourLabel(group)
+        ) {
+          colourGroupCounts[group] = v.count;
+        }
+      }
+    }
+  }
+  for (const [group, memberCounts] of colourGroupMemberCounts) {
+    if (colourGroupCounts[group] != null) continue;
+    colourGroupCounts[group] = estimateColourGroupUnionCount(memberCounts);
   }
 
   return {
@@ -180,8 +276,8 @@ export function plpSortToCollectionSortParam(sort: PlpSort): string {
       return 'price_asc';
     case 'price-desc':
       return 'price_desc';
-    case 'title-asc':
-      return 'title';
+    case 'newest':
+      return 'created';
     default:
       return 'featured';
   }
@@ -193,6 +289,8 @@ export function plpSortToSearchSortParam(sort: PlpSort): string {
       return 'price_asc';
     case 'price-desc':
       return 'price_desc';
+    case 'newest':
+      return 'created';
     default:
       return 'relevance';
   }
@@ -204,7 +302,6 @@ export function appendPlpFiltersToSearchParams(
   storefrontFilters: KokobayStorefrontFilter[],
 ): void {
   const lookup = createStorefrontFilterLookup(storefrontFilters);
-  const expandedColors = expandColourFilterSelection(plpFilters.colors);
 
   for (const size of plpFilters.sizes) {
     const input = lookup.sizeByLabel.get(size);
@@ -217,10 +314,16 @@ export function appendPlpFiltersToSearchParams(
     if (input) params.append('filter', input);
   }
 
-  for (const [label, input] of lookup.colorByLabel) {
-    if (expandedColors.has(normColourLabel(label))) {
-      params.append('filter', input);
-    }
+  for (const input of resolveColourFilterInputsForSelection(plpFilters.colors, lookup)) {
+    params.append('filter', input);
+  }
+
+  if (__DEV__ && plpFilters.colors.length > 0) {
+    console.info('[plp-filters]', {
+      selectedColorGroups: plpFilters.colors,
+      chosenFilterInputs: resolveColourFilterInputsForSelection(plpFilters.colors, lookup),
+      filterParams: params.getAll('filter'),
+    });
   }
 
   if (plpFilters.priceMin != null && Number.isFinite(plpFilters.priceMin)) {

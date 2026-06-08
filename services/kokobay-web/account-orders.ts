@@ -9,15 +9,11 @@ import type {
   AccountOrdersResult,
 } from '@/types/account-order';
 import type { Money } from '@/types/shopify';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { api, isApiError, legacyApiErrorBody } from '@/src/core/api';
 
 import { resolveKokobayApiBaseUrl } from './api-config';
-import { kokobayCustomerMe } from './customer-auth';
 import { isKokobayWebProductsConfigured } from './client';
-import {
-  buildKokobayCustomerAuthHeaders,
-  resolveActiveCustomerSessionToken,
-} from './customer-session';
+import { resolveActiveCustomerSessionToken } from './customer-session';
 import { logAccountOrders, summarizeOrder, summarizeOrders } from '@/utils/account-order-debug';
 
 type FetchOptions = {
@@ -263,25 +259,24 @@ async function fetchAccountOrdersOnce(
     params.set('after', options.after.trim());
   }
 
-  const url = `${root}/api/account/orders?${params.toString()}`;
-  const headers = await buildKokobayCustomerAuthHeaders(sessionToken, {
-    includeGuestCart: false,
-  });
+  const path = `/api/account/orders?${params.toString()}`;
 
-  logAccountOrders('fetch request', { url, after: options.after ?? null, first });
+  logAccountOrders('fetch request', { path, after: options.after ?? null, first });
 
   try {
-    const res = await fetchWithTimeout(url, { headers });
-    const text = await res.text();
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return { ok: false, error: 'Could not read order history.' };
-    }
+    const response = await api.get(path, {
+      auth: 'active-customer',
+      sessionOverride: sessionToken,
+      includeGuestCart: false,
+      marketQuery: false,
+      retries: 0,
+      coalesce: false,
+    });
+
+    const parsed = response.data as Record<string, unknown>;
 
     logAccountOrders('fetch response meta', {
-      status: res.status,
+      status: response.status,
       ok: parsed.ok,
       rawOrderCount: Array.isArray(parsed.orders) ? parsed.orders.length : 0,
       pagination: parsed.pagination,
@@ -302,7 +297,7 @@ async function fetchAccountOrdersOnce(
       );
     }
 
-    if (res.status === 401 || parsed.code === 'unauthorized') {
+    if (response.status === 401 || parsed.code === 'unauthorized') {
       return {
         ok: false,
         error: typeof parsed.error === 'string' ? parsed.error : 'Sign in to view your orders',
@@ -311,7 +306,7 @@ async function fetchAccountOrdersOnce(
       };
     }
 
-    if (!res.ok || parsed.ok === false) {
+    if (parsed.ok === false) {
       return {
         ok: false,
         error:
@@ -331,7 +326,28 @@ async function fetchAccountOrdersOnce(
       orders,
       pagination: normalizePagination(parsed.pagination, first),
     };
-  } catch {
+  } catch (error) {
+    if (isApiError(error) && error.kind === 'http') {
+      const parsed = legacyApiErrorBody(error);
+      if (error.status === 401 || parsed?.code === 'unauthorized') {
+        return {
+          ok: false,
+          error:
+            typeof parsed?.error === 'string' ? parsed.error : 'Sign in to view your orders',
+          code: 'unauthorized',
+          unauthorized: true,
+        };
+      }
+      if (parsed) {
+        return {
+          ok: false,
+          error:
+            typeof parsed.error === 'string' ? parsed.error : 'Could not load order history.',
+          code: typeof parsed.code === 'string' ? parsed.code : undefined,
+        };
+      }
+      return { ok: false, error: 'Could not read order history.' };
+    }
     return { ok: false, error: 'Could not load order history. Check your connection.' };
   }
 }
@@ -344,16 +360,5 @@ export async function fetchAccountOrders(options: FetchOptions = {}): Promise<Ac
     return { ok: false, error: 'Orders are not configured.' };
   }
 
-  let result = await fetchAccountOrdersOnce(options);
-  if (!result.ok && result.unauthorized) {
-    const refreshed = await kokobayCustomerMe();
-    if (refreshed.status === 'ok') {
-      result = await fetchAccountOrdersOnce({
-        ...options,
-        sessionToken: refreshed.session.accessToken,
-      });
-    }
-  }
-
-  return result;
+  return fetchAccountOrdersOnce(options);
 }

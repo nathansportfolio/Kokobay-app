@@ -2,7 +2,8 @@ import { router } from 'expo-router';
 import { Linking } from 'react-native';
 
 import { trackBeginCheckout } from '@/lib/gtm';
-import { ensureCartSyncedForCheckout, useAuthStore, useCartStore } from '@/store';
+import { cartEngine } from '@/src/core/cart';
+import { useAuthStore, useCartStore } from '@/store';
 import { showCheckoutUnavailableModal } from '@/store/checkout-unavailable-modal';
 import { resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
 import {
@@ -45,7 +46,15 @@ async function tryOpenCheckoutExternally(url: string): Promise<boolean> {
  */
 export async function openCheckoutFromBag(): Promise<OpenCheckoutFromBagResult> {
   const customerEmail = useAuthStore.getState().user?.email?.trim();
-  await ensureCartSyncedForCheckout(customerEmail ?? undefined);
+  const synced = await cartEngine.checkout(customerEmail ?? undefined);
+  if (!synced && isRemoteCartConfigured()) {
+    showCheckoutUnavailableModal({
+      onTryAgain: () => {
+        void openCheckoutFromBag();
+      },
+    });
+    return 'unavailable';
+  }
 
   const checkoutUrl = getCheckoutUrl();
   if (!assertCheckoutAvailable(checkoutUrl, { source: 'openCheckoutFromBag' })) {

@@ -299,7 +299,7 @@ export function recordProductCardRenderDiff(
     !parentReferenceChanged
   ) {
     console.log(
-      `[PRODUCT_CARD_DIFF_MEMO_BYPASS] handle=${next.handle} memo_props_equal_likely=true internal_hooks=useProductHref,usePrefetchProduct`,
+      `[PRODUCT_CARD_DIFF_MEMO_BYPASS] handle=${next.handle} memo_props_equal_likely=true internal_hooks=none`,
     );
   }
 

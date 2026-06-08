@@ -1,4 +1,5 @@
 import type { Product, ProductVariant } from '@/types/shopify';
+import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
 /** Unique size labels in first-seen order (matches Shopify variant / option order from the API). */
 export function getProductSizeOptions(product: Product): string[] {
@@ -30,4 +31,10 @@ export function getVariantForSize(product: Product, size: string): ProductVarian
     v.selectedOptions.some((o) => o.name.toLowerCase() === 'size' && o.value === size),
   );
   return matches.find((v) => v.availableForSale) ?? matches[0];
+}
+
+/** Match a variant by numeric id or Shopify GID. */
+export function findVariantById(product: Product, variantId: string): ProductVariant | undefined {
+  const key = shopifyVariantKey(variantId);
+  return product.variants.find((v) => shopifyVariantKey(v.id) === key);
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { getAuthAccessToken } from '@/src/core/auth/token';
 import { checkBackInStockSubscription } from '@/services/kokobay-web/back-in-stock';
 
 export function useBackInStockSubscription(input: {
   variantId: string | undefined;
   email: string | undefined;
   customerId: string | undefined;
-  sessionToken: string | undefined;
   enabled: boolean;
 }) {
   const [subscribed, setSubscribed] = useState(false);
@@ -23,14 +23,14 @@ export function useBackInStockSubscription(input: {
         variantId: input.variantId,
         email: input.email,
         customerId: input.customerId,
-        sessionToken: input.sessionToken,
+        sessionToken: getAuthAccessToken(),
       });
       setSubscribed(active);
       return active;
     } finally {
       setChecking(false);
     }
-  }, [input.customerId, input.email, input.enabled, input.sessionToken, input.variantId]);
+  }, [input.customerId, input.email, input.enabled, input.variantId]);
 
   useEffect(() => {
     void refresh();

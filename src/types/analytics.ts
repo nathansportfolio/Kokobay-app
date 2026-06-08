@@ -14,7 +14,11 @@ export type FirebaseAnalyticsEventName =
   | 'login'
   | 'sign_up'
   | 'add_to_wishlist'
-  | 'screen_view';
+  | 'screen_view'
+  | 'app_update_required_shown'
+  | 'app_update_optional_shown'
+  | 'app_update_clicked'
+  | 'app_update_dismissed';
 
 export type FirebaseAnalyticsItem = FirebaseAnalyticsTypes.Item;
 

@@ -39,13 +39,50 @@ function discountCodesOnCart(discountCodes: CartDiscountCode[]): CartDiscountCod
   return discountCodes.filter((entry) => entry.code.trim());
 }
 
-/** Savings reflected in cart cost: subtotal − total − tax. */
+function sumDiscountCodeAmounts(codes: CartDiscountCode[]): number {
+  let sum = 0;
+  let found = false;
+  for (const entry of codes) {
+    if (!entry.amount?.amount) continue;
+    const value = parseAmount(entry.amount);
+    if (value > 0.005) {
+      sum += value;
+      found = true;
+    }
+  }
+  return found ? sum : 0;
+}
+
+/**
+ * Merchandise discount savings for bag summary — excludes shipping baked into cart `total`.
+ * Prefers explicit API discount fields over subtotal − total (which mixes shipping in).
+ */
 function resolveCartDiscountSavings(pricing: CartApiPricing): number {
+  const codes = discountCodesOnCart(pricing.discountCodes ?? []);
+  if (!codes.length) return 0;
+
   const subtotalN = parseAmount(pricing.subtotal);
   const totalN = parseAmount(pricing.total);
   const taxN = pricing.totalTax ? parseAmount(pricing.totalTax) : 0;
-  const savings = subtotalN - totalN - taxN;
-  return Number.isFinite(savings) && savings > 0.005 ? savings : 0;
+
+  const apiDiscountN = pricing.cartDiscountAmount ? parseAmount(pricing.cartDiscountAmount) : 0;
+  if (apiDiscountN > 0.005) {
+    if (totalN >= subtotalN - 0.005) return 0;
+    return apiDiscountN;
+  }
+
+  const codeSum = sumDiscountCodeAmounts(codes);
+  if (codeSum > 0.005) {
+    if (totalN >= subtotalN - 0.005) return 0;
+    return codeSum;
+  }
+
+  if (totalN <= subtotalN + 0.005) {
+    const savings = subtotalN - totalN - taxN;
+    return Number.isFinite(savings) && savings > 0.005 ? savings : 0;
+  }
+
+  return 0;
 }
 
 /** Derive discount rows — amount must reconcile: subtotal − discount = total. */
@@ -92,13 +129,14 @@ export function deriveCartCostBreakdown(
   discountCodes: CartDiscountCode[] = [],
   _lineMerchandiseSubtotal?: Money | null,
   _lineMerchandiseTotal?: Money | null,
-  _cartDiscountAmount?: Money | null,
+  cartDiscountAmount?: Money | null,
 ): CartCostBreakdown {
   const appliedDiscounts = deriveAppliedDiscountsFromCart({
     subtotal,
     total,
     totalTax,
     discountCodes,
+    cartDiscountAmount,
   });
 
   const sub = parseAmount(subtotal);
@@ -110,6 +148,21 @@ export function deriveCartCostBreakdown(
     totalTax && Number.isFinite(taxN) && taxN > 0.005
       ? { amount: totalTax.amount, currencyCode: totalTax.currencyCode }
       : null;
+
+  const discountN = appliedDiscounts.reduce(
+    (sum, entry) => sum + parseAmount(entry.amount),
+    0,
+  );
+
+  if (discountN > 0.005) {
+    return {
+      subtotal,
+      appliedDiscounts,
+      delivery: null,
+      tax,
+      total: money(Math.max(0, sub - discountN), currencyCode),
+    };
+  }
 
   if (!Number.isFinite(sub) || !Number.isFinite(tot) || tot < sub - 0.005) {
     return { subtotal, appliedDiscounts, delivery: null, tax, total };
@@ -196,6 +249,9 @@ export function resolveCartCostBreakdownForDisplay(options: {
       shopifyTotal,
       options.shopifyTotalTax,
       options.shopifyDiscountCodes ?? [],
+      options.shopifyLineMerchandiseSubtotal,
+      options.shopifyLineMerchandiseTotal,
+      options.shopifyCartDiscountAmount,
     );
   }
 

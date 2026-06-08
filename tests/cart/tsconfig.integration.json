@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "paths": {
+      "@/src/core/api": ["tests/cart/stubs/core-api-index.ts"],
+      "@/src/core/api/apiClient": ["tests/cart/stubs/api-client.ts"],
+      "@/store/cart-native-lifecycle": ["tests/cart/stubs/cart-native-lifecycle.ts"],
+      "@/store/toast": ["tests/cart/stubs/toast.ts"],
+      "@/lib/gtm": ["tests/cart/stubs/gtm.ts"],
+      "@/lib/appErrorLog": ["tests/cart/stubs/app-error-log.ts"],
+      "expo-constants": ["tests/cart/stubs/expo-constants.ts"],
+      "react-native": ["tests/cart/stubs/react-native.ts"],
+      "expo-secure-store": ["tests/cart/stubs/expo-secure-store.ts"],
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "../../store/cart.integration.test.ts",
+    "./**/*.ts"
+  ]
+}

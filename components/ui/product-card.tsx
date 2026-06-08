@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, type Href } from 'expo-router';
 import { memo, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
@@ -12,12 +12,12 @@ import Animated, {
 import { QuickAddToBag } from '@/components/cart/quick-add-to-bag';
 import { ProductCardWishlistHeart } from '@/components/ui/product-card-wishlist-heart';
 import { palette } from '@/constants/theme';
-import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
+import type { ProductPrefetchImageHint } from '@/hooks/use-prefetch-product';
+import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
 import {
+  ProductCardRenderTrace,
   productCardPropsEqual,
-  useProductCardRenderTrace,
 } from '@/hooks/use-product-card-render-trace';
-import { useProductHref } from '@/hooks/use-product-href';
 import { logPlpFirstImageLoad } from '@/lib/plp-perf-trace';
 import type { Product } from '@/types/shopify';
 import { firstValidProductImage } from '@/utils/catalog-image';
@@ -36,6 +36,12 @@ const TITLE_PRESS_MS = { in: 120, out: 200 } as const;
 
 export type ProductCardProps = {
   product: Product;
+  /** Precomputed at the list/screen level — avoids per-tile router subscriptions. */
+  productLink: Href;
+  /** When set, navigates via callback (e.g. related PDP `router.push`). */
+  onProductPress?: () => void;
+  /** Screen-level prefetch — avoids per-tile React Query subscriptions. */
+  onPrefetchProduct?: (handle: string, imageHint?: ProductPrefetchImageHint) => void;
   className?: string;
   /** De-prioritize decoding when many tiles are on screen (e.g. collection grid). */
   imagePriority?: 'low' | 'normal' | 'high' | null;
@@ -54,6 +60,9 @@ export type ProductCardProps = {
 
 function ProductCardInner({
   product,
+  productLink,
+  onProductPress,
+  onPrefetchProduct,
   className,
   imagePriority,
   gridColumns = 2,
@@ -62,8 +71,11 @@ function ProductCardInner({
   perfTraceScreen = 'plp',
   disableImageTransition = true,
 }: ProductCardProps) {
-  useProductCardRenderTrace({
-    product,
+  useProductCardParentRerenderTrace('ProductCard', {
+    productId: product.id,
+    productLink,
+    onProductPressRef: onProductPress,
+    onPrefetchProductRef: onPrefetchProduct,
     className,
     imagePriority,
     gridColumns,
@@ -72,8 +84,20 @@ function ProductCardInner({
     perfTraceScreen,
     disableImageTransition,
   });
-  const prefetch = usePrefetchProduct();
-  const productLink = useProductHref(product.handle);
+
+  const traceProps = {
+    product,
+    productLink,
+    onProductPress,
+    onPrefetchProduct,
+    className,
+    imagePriority,
+    gridColumns,
+    tileWidth,
+    perfTraceIndex,
+    perfTraceScreen,
+    disableImageTransition,
+  };
   const sourceImage = firstValidProductImage(product);
   const imageUrl = useMemo(() => {
     if (!sourceImage) return undefined;
@@ -153,32 +177,103 @@ function ProductCardInner({
     </Animated.View>
   );
 
+  const imageLink = onProductPress ? (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
+      onPress={onProductPress}
+      onPressIn={() => {
+        imagePressed.value = withTiming(1, {
+          duration: IMAGE_PRESS_MS.in,
+          easing: easeOutCubic,
+        });
+        onPrefetchProduct?.(product.handle, sourceImage);
+      }}
+      onPressOut={() => {
+        imagePressed.value = withTiming(0, {
+          duration: IMAGE_PRESS_MS.out,
+          easing: easeOutCubic,
+        });
+      }}
+      className="absolute inset-0">
+      <Animated.View className="absolute inset-0" style={imagePressStyle}>
+        {imageInner}
+      </Animated.View>
+    </Pressable>
+  ) : (
+    <Link href={productLink} asChild>
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
+        onPressIn={() => {
+          imagePressed.value = withTiming(1, {
+            duration: IMAGE_PRESS_MS.in,
+            easing: easeOutCubic,
+          });
+          onPrefetchProduct?.(product.handle, sourceImage);
+        }}
+        onPressOut={() => {
+          imagePressed.value = withTiming(0, {
+            duration: IMAGE_PRESS_MS.out,
+            easing: easeOutCubic,
+          });
+        }}
+        className="absolute inset-0">
+        <Animated.View className="absolute inset-0" style={imagePressStyle}>
+          {imageInner}
+        </Animated.View>
+      </Pressable>
+    </Link>
+  );
+
+  const titleLink = onProductPress ? (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={soldOut ? `${product.title}, title and price, no stock` : undefined}
+      onPress={onProductPress}
+      onPressIn={() => {
+        titlePressed.value = withTiming(1, {
+          duration: TITLE_PRESS_MS.in,
+          easing: easeOutCubic,
+        });
+        onPrefetchProduct?.(product.handle, sourceImage);
+      }}
+      onPressOut={() => {
+        titlePressed.value = withTiming(0, {
+          duration: TITLE_PRESS_MS.out,
+          easing: easeOutCubic,
+        });
+      }}>
+      {titleBlock}
+    </Pressable>
+  ) : (
+    <Link href={productLink} asChild>
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={soldOut ? `${product.title}, title and price, no stock` : undefined}
+        onPressIn={() => {
+          titlePressed.value = withTiming(1, {
+            duration: TITLE_PRESS_MS.in,
+            easing: easeOutCubic,
+          });
+          onPrefetchProduct?.(product.handle, sourceImage);
+        }}
+        onPressOut={() => {
+          titlePressed.value = withTiming(0, {
+            duration: TITLE_PRESS_MS.out,
+            easing: easeOutCubic,
+          });
+        }}>
+        {titleBlock}
+      </Pressable>
+    </Link>
+  );
+
   return (
     <View className={cn('bg-transparent', className)}>
+      {__DEV__ ? <ProductCardRenderTrace {...traceProps} /> : null}
       <View className="relative aspect-[3/4] w-full overflow-hidden bg-elevated">
-        <Link href={productLink} asChild>
-          <Pressable
-            accessibilityRole="link"
-            accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
-            onPressIn={() => {
-              imagePressed.value = withTiming(1, {
-                duration: IMAGE_PRESS_MS.in,
-                easing: easeOutCubic,
-              });
-              prefetch(product.handle, sourceImage);
-            }}
-            onPressOut={() => {
-              imagePressed.value = withTiming(0, {
-                duration: IMAGE_PRESS_MS.out,
-                easing: easeOutCubic,
-              });
-            }}
-            className="absolute inset-0">
-            <Animated.View className="absolute inset-0" style={imagePressStyle}>
-              {imageInner}
-            </Animated.View>
-          </Pressable>
-        </Link>
+        {imageLink}
         {soldOut ? (
           <View
             pointerEvents="none"
@@ -205,26 +300,7 @@ function ProductCardInner({
         <ProductCardWishlistHeart handle={product.handle} actionSize={actionSize} />
         {!soldOut ? <QuickAddToBag product={product} relaxed={comfort} /> : null}
       </View>
-      <Link href={productLink} asChild>
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel={soldOut ? `${product.title}, title and price, no stock` : undefined}
-          onPressIn={() => {
-            titlePressed.value = withTiming(1, {
-              duration: TITLE_PRESS_MS.in,
-              easing: easeOutCubic,
-            });
-            prefetch(product.handle, sourceImage);
-          }}
-          onPressOut={() => {
-            titlePressed.value = withTiming(0, {
-              duration: TITLE_PRESS_MS.out,
-              easing: easeOutCubic,
-            });
-          }}>
-          {titleBlock}
-        </Pressable>
-      </Link>
+      {titleLink}
     </View>
   );
 }

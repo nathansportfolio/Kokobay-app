@@ -136,7 +136,6 @@ function HomeShopByCategoryInner({
             variant="strip"
             imagePriority={index < 6 ? 'normal' : 'low'}
             disableImageTransition
-            useShopCoverUri={!item.cmsUrl}
             screenWidth={screenWidth}
           />
         </View>

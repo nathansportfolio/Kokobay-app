@@ -3,16 +3,15 @@ import { Pressable } from 'react-native';
 
 import { AccountDeleteAccountModal } from '@/components/account/account-delete-account-modal';
 import { Text } from '@/components/ui/text';
+import { getAuthAccessToken } from '@/src/core/auth/token';
 import { submitAccountDeletionRequest } from '@/services/kokobay-web/account-deletion';
 import { showToast } from '@/store/toast';
 
 type AccountDeleteAccountSectionProps = {
-  sessionToken: string | null;
   onDeletionRequested: () => void | Promise<void>;
 };
 
 export function AccountDeleteAccountSection({
-  sessionToken,
   onDeletionRequested,
 }: AccountDeleteAccountSectionProps) {
   const [modalVisible, setModalVisible] = useState(false);
@@ -30,6 +29,11 @@ export function AccountDeleteAccountSection({
     if (busy) return;
     setBusy(true);
     try {
+      const sessionToken = getAuthAccessToken();
+      if (!sessionToken) {
+        showToast({ variant: 'error', title: 'Sign in to delete your account.' });
+        return;
+      }
       const result = await submitAccountDeletionRequest(sessionToken);
       if (!result.ok) {
         showToast({ variant: 'error', title: result.error });
@@ -42,7 +46,7 @@ export function AccountDeleteAccountSection({
     } finally {
       setBusy(false);
     }
-  }, [busy, onDeletionRequested, sessionToken]);
+  }, [busy, onDeletionRequested]);
 
   return (
     <>

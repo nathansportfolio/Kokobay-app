@@ -1,6 +1,15 @@
 import type { ExpoConfig } from 'expo/config';
+import { AndroidConfig, withAndroidManifest, type ConfigPlugin } from 'expo/config-plugins';
 import fs from 'fs';
 import path from 'path';
+
+/** Required with `useLegacyPackaging: true` — compressed JNI libs must be extracted at install time. */
+const withAndroidExtractNativeLibs: ConfigPlugin = (config) =>
+  withAndroidManifest(config, (config) => {
+    const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(config.modResults);
+    mainApplication.$['android:extractNativeLibs'] = 'true';
+    return config;
+  });
 
 /** Deep link / universal link values (keep in sync with `lib/deep-link-constants.ts`). */
 const APP_URL_SCHEME = 'kokobay';
@@ -68,19 +77,27 @@ const firebaseStaticLinkModules = [
 
 const basePlugins = [...(expo.plugins ?? [])];
 
-const firebasePlugins: NonNullable<ExpoConfig['plugins']> = useFirebaseNative
-  ? [
-      '@react-native-firebase/app',
-      ...(firebaseCrashlyticsEnabled ? (['@react-native-firebase/crashlytics'] as const) : []),
-      [
-        'expo-build-properties',
-        {
+const buildPropertiesPlugin: NonNullable<ExpoConfig['plugins']>[number] = [
+  'expo-build-properties',
+  {
+    android: {
+      useLegacyPackaging: true,
+    },
+    ...(useFirebaseNative
+      ? {
           ios: {
             useFrameworks: 'static',
             forceStaticLinking: firebaseStaticLinkModules,
           },
-        },
-      ],
+        }
+      : {}),
+  },
+];
+
+const firebasePlugins: NonNullable<ExpoConfig['plugins']> = useFirebaseNative
+  ? [
+      '@react-native-firebase/app',
+      ...(firebaseCrashlyticsEnabled ? (['@react-native-firebase/crashlytics'] as const) : []),
     ]
   : [];
 
@@ -148,7 +165,7 @@ const config: ExpoConfig = {
     ],
     intentFilters: [...(expo.android?.intentFilters ?? []), ...androidIntentFilters],
   },
-  plugins: [...basePlugins, ...firebasePlugins, ...klaviyoPlugins, ['expo-notifications', {
+  plugins: [...basePlugins, buildPropertiesPlugin, withAndroidExtractNativeLibs, ...firebasePlugins, ...klaviyoPlugins, ['expo-notifications', {
     icon: './assets/images/icon.png',
     color: '#8E6E66',
     defaultChannel: 'default',

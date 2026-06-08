@@ -1,14 +1,16 @@
-import { useAppBenefitsStore } from '@/store/app-benefits';
+import { useAppBenefitsQuery } from '@/hooks/use-app-benefits-query';
 
 export function useAppBenefits() {
-  const isFirstAppOrder = useAppBenefitsStore((s) => s.isFirstAppOrder);
-  const appOrdersCount = useAppBenefitsStore((s) => s.appOrdersCount);
-  const eligibleDiscounts = useAppBenefitsStore((s) => s.eligibleDiscounts);
+  const query = useAppBenefitsQuery();
+  const isFirstAppOrder = query.data?.isFirstAppOrder ?? null;
+  const appOrdersCount = query.data?.appOrdersCount ?? null;
+  const eligibleDiscounts = query.data?.eligibleDiscounts ?? [];
 
   return {
     isFirstAppOrder,
     appOrdersCount,
     eligibleDiscounts,
+    isLoading: query.isPending,
     hasOrderedOnAppBefore:
       isFirstAppOrder === null && appOrdersCount === null
         ? null

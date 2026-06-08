@@ -1,6 +1,7 @@
 import { usePathname, useSegments } from 'expo-router';
 import { useEffect, useRef } from 'react';
 
+import { useBootstrapPhase } from '@/hooks/use-bootstrap-phase';
 import { trackPageView } from '@/lib/gtm';
 
 const SCREEN_TITLES: Record<string, string> = {
@@ -36,8 +37,11 @@ export function GtmRouteTracker() {
   const pathname = usePathname();
   const segments = useSegments();
   const lastTracked = useRef<string | null>(null);
+  const { servicesReady } = useBootstrapPhase();
 
   useEffect(() => {
+    if (!servicesReady) return;
+
     const pagePath = pathname || (segments.length ? `/${segments.join('/')}` : '/');
     if (!pagePath || lastTracked.current === pagePath) return;
     lastTracked.current = pagePath;
@@ -46,7 +50,7 @@ export function GtmRouteTracker() {
       pagePath,
       pageTitle: titleFromSegments([...segments]),
     });
-  }, [pathname, segments]);
+  }, [pathname, segments, servicesReady]);
 
   return null;
 }

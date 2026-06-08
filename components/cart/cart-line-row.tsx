@@ -2,18 +2,17 @@ import { Link } from 'expo-router';
 import { Minus, Plus, Trash2 } from 'lucide-react-native';
 import { logCartAuditLineItem } from '@/lib/cart-pricing-audit';
 import { memo, useEffect, useMemo } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 import { Pressable, View } from 'react-native';
 
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { useProductHref } from '@/hooks/use-product-href';
-import { showToast, useCartStore } from '@/store';
+import { cartEngine } from '@/src/core/cart';
+import { showToast } from '@/store';
 import type { CartLine } from '@/types/cart';
 import { isLikelyRemoteImageUrl } from '@/utils/catalog-image';
-import { selectIsLineQuantityPricePending } from '@/store/cart';
-import { cartLineStockLabel, isCartLineOverServerSubtotal } from '@/utils/cart-line-stock';
+import { cartLineStockLabel } from '@/utils/cart-line-stock';
 import { lineSubtotalMoney, resolveCartLineUnitPrice } from '@/utils/cart-line-pricing';
 import { inventoryLimitToast } from '@/utils/cart-inventory';
 import { variantSnapshotValueLines } from '@/utils/cart-display';
@@ -26,6 +25,8 @@ const ICON_SOFT = { strokeWidth: 1.2 as const };
 
 export type CartLineRowProps = {
   line: CartLine;
+  qtySyncPending?: boolean;
+  showOverServerSubtotalWarning?: boolean;
 };
 
 function resolveImageUrl(line: CartLine) {
@@ -45,7 +46,11 @@ function CartLineSubtotal({ line }: { line: CartLine }) {
   );
 }
 
-function CartLineRowInner({ line }: CartLineRowProps) {
+function CartLineRowInner({
+  line,
+  qtySyncPending = false,
+  showOverServerSubtotalWarning = false,
+}: CartLineRowProps) {
   const productLink = useProductHref(line.handle);
   const imageUrl = resolveImageUrl(line);
 
@@ -64,18 +69,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
   const unit = resolveCartLineUnitPrice(line);
   const atCatalogCap = line.maxQty != null && line.qty >= line.maxQty;
   const atHardCap = line.qty >= 99;
-  const qtySyncPending = useCartStore(selectIsLineQuantityPricePending(line.variantId));
   const stockLabel = useMemo(() => cartLineStockLabel(line), [line.maxQty, line.qty]);
-  const overServerSubtotal = useCartStore(
-    useShallow((s) =>
-      isCartLineOverServerSubtotal(
-        line,
-        s.lines,
-        s.shopifySubtotal,
-        s.shopifyDiscountCodes,
-      ),
-    ),
-  );
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -86,10 +80,10 @@ function CartLineRowInner({ line }: CartLineRowProps) {
     hapticLight();
     if (delta < 0) {
       if (line.qty <= 1) {
-        useCartStore.getState().removeItem(line.variantId);
+        cartEngine.removeItem(line.variantId);
         showToast({ variant: 'success', title: 'Removed from Bag' });
       } else {
-        useCartStore.getState().nudgeCartLineQuantity(line.variantId, -1);
+        cartEngine.nudgeQty(line.variantId, -1);
       }
       return;
     }
@@ -97,7 +91,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
       if (line.maxQty != null) showToast(inventoryLimitToast(line.maxQty, { kind: 'max' }));
       return;
     }
-    useCartStore.getState().nudgeCartLineQuantity(line.variantId, 1);
+    cartEngine.nudgeQty(line.variantId, 1);
   };
 
   return (
@@ -159,7 +153,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
                     {stockLabel}
                   </Text>
                 ) : null}
-                {!stockLabel && overServerSubtotal && !qtySyncPending ? (
+                {!stockLabel && showOverServerSubtotalWarning && !qtySyncPending ? (
                   <Text
                     className="mt-2 font-sans-md text-[13px] leading-5 text-amber-900/90"
                     accessibilityRole="text">
@@ -178,7 +172,7 @@ function CartLineRowInner({ line }: CartLineRowProps) {
               <Pressable
                 onPress={() => {
                   hapticLight();
-                  useCartStore.getState().removeItem(line.variantId);
+                  cartEngine.removeItem(line.variantId);
                   showToast({ variant: 'success', title: 'Removed from Bag' });
                 }}
                 accessibilityRole="button"
@@ -239,5 +233,7 @@ export const CartLineRow = memo(
     prev.line.listUnitPrice?.amount === next.line.listUnitPrice?.amount &&
     prev.line.listUnitPrice?.currencyCode === next.line.listUnitPrice?.currencyCode &&
     prev.line.shopifyLineId === next.line.shopifyLineId &&
-    prev.line.maxQty === next.line.maxQty,
+    prev.line.maxQty === next.line.maxQty &&
+    prev.qtySyncPending === next.qtySyncPending &&
+    prev.showOverServerSubtotalWarning === next.showOverServerSubtotalWarning,
 );

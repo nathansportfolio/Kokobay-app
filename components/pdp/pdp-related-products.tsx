@@ -1,16 +1,57 @@
-import { useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { usePathname, useRouter, type Href } from 'expo-router';
 
 import { ProductCard } from '@/components/ui/product-card';
+import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { Text } from '@/components/ui/text';
 import type { Product } from '@/types/shopify';
+import { pdpRelatedProductReturnTo, productHref } from '@/utils/product-navigation';
 
 export type PdpRelatedProductsProps = {
   products: Product[];
+  /** Original PLP path — preserved when replacing between related PDPs. */
+  returnTo?: string;
 };
 
-export function PdpRelatedProducts({ products }: PdpRelatedProductsProps) {
+type RelatedProductCardProps = {
+  product: Product;
+  tileWidth: number;
+  returnTo?: string;
+  onPrefetchProduct: ReturnType<typeof usePrefetchProduct>;
+};
+
+const RelatedProductCard = memo(function RelatedProductCard({
+  product,
+  tileWidth,
+  returnTo,
+  onPrefetchProduct,
+}: RelatedProductCardProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const link = useMemo(
+    () => productHref(product.handle, pdpRelatedProductReturnTo(pathname, returnTo)),
+    [product.handle, pathname, returnTo],
+  );
+  const onProductPress = useCallback(() => {
+    router.push(link as Href);
+  }, [router, link]);
+
+  return (
+    <ProductCard
+      product={product}
+      tileWidth={tileWidth}
+      perfTraceScreen="pdp-related"
+      productLink={link}
+      onProductPress={onProductPress}
+      onPrefetchProduct={onPrefetchProduct}
+    />
+  );
+});
+
+export function PdpRelatedProducts({ products, returnTo }: PdpRelatedProductsProps) {
   const { width } = useWindowDimensions();
+  const prefetchProduct = usePrefetchProduct();
   const itemW = Math.min(200, Math.round(width * 0.42));
 
   const contentStyle = useMemo(
@@ -37,7 +78,12 @@ export function PdpRelatedProducts({ products }: PdpRelatedProductsProps) {
         contentContainerStyle={contentStyle}>
         {products.map((product) => (
           <View key={`${product.handle}:${product.id}`} style={{ width: itemW }} className="mr-4">
-            <ProductCard product={product} tileWidth={itemW} perfTraceScreen="pdp-related" />
+            <RelatedProductCard
+              product={product}
+              tileWidth={itemW}
+              returnTo={returnTo}
+              onPrefetchProduct={prefetchProduct}
+            />
           </View>
         ))}
       </ScrollView>

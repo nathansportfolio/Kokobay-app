@@ -1,12 +1,18 @@
 import { FIRST_APP_ORDER_DISCOUNT_CODE } from '@/constants/first-app-order-discount';
 import { logAppFirstOrder } from '@/services/cart/app-first-order-log';
+import {
+  applyAutoDiscountCartSnapshot,
+  getAutoDiscountCartState,
+} from '@/services/cart/auto-discount-cart-access';
 import { isRemoteCartConfigured, usesKokobayCartProxy } from '@/services/cart/remote-cart';
-import { getCartCustomerEmail } from '@/services/kokobay-web/cart-customer';
+import { getCartCustomerEmail, getCartCustomerUserId } from '@/services/kokobay-web/cart-customer';
 import { applyKokobayCartDiscountCode } from '@/services/kokobay-web/cart';
-import { fetchCustomerAppBenefits } from '@/services/kokobay-web/app-benefits';
 import { resolveCustomerSessionToken } from '@/services/kokobay-web/customer-session';
-import { useAppBenefitsStore } from '@/store/app-benefits';
-import { useCartStore } from '@/store/cart';
+import {
+  fetchAppBenefitsQuery,
+  getAppBenefitsSync,
+  getIsFirstAppOrderSync,
+} from '@/src/core/query/app-benefits-query';
 import { loadCartGuestId, persistCartGuestId } from '@/store/cart-persist';
 
 import {
@@ -35,16 +41,16 @@ function cartHasAnyDiscountCodes(discountCodes: { code: string }[]): boolean {
 }
 
 function benefitsSnapshot(): Record<string, unknown> {
-  const { isFirstAppOrder, appOrdersCount, eligibleDiscounts } = useAppBenefitsStore.getState();
+  const benefits = getAppBenefitsSync();
   return {
-    isFirstAppOrder,
-    appOrdersCount,
-    eligibleDiscounts,
+    isFirstAppOrder: benefits?.isFirstAppOrder ?? null,
+    appOrdersCount: benefits?.appOrdersCount ?? null,
+    eligibleDiscounts: benefits?.eligibleDiscounts ?? [],
   };
 }
 
 function cartDiscountSnapshot(): Record<string, unknown> {
-  const { lines, shopifyDiscountCodes } = useCartStore.getState();
+  const { lines, shopifyDiscountCodes } = getAutoDiscountCartState();
   return {
     lineCount: lines.length,
     discountCodes: shopifyDiscountCodes.map((entry) => ({
@@ -66,8 +72,8 @@ export function resetFirstAppOrderDiscountAutoApplyState(): void {
  * for first-app-order customers (same session, new bag).
  */
 export function allowFirstAppOrderDiscountAutoApplyRetry(): void {
-  if (useAppBenefitsStore.getState().isFirstAppOrder === false) return;
-  const { lines, shopifyDiscountCodes } = useCartStore.getState();
+  if (getIsFirstAppOrderSync() === false) return;
+  const { lines, shopifyDiscountCodes } = getAutoDiscountCartState();
   if (cartHasAnyDiscountCodes(shopifyDiscountCodes)) return;
   if (!isFirstAppOrderDiscountApplySettled()) return;
   clearFirstAppOrderDiscountApplySettled();
@@ -101,11 +107,11 @@ function getAutoApplySkipReason(): AutoApplySkipReason | null {
   if (!usesKokobayCartProxy()) return 'not_kokobay_proxy';
   if (!getCartCustomerEmail()) return 'not_logged_in';
 
-  const isFirst = useAppBenefitsStore.getState().isFirstAppOrder;
+  const isFirst = getIsFirstAppOrderSync();
   if (isFirst === false) return 'not_first_app_order';
   if (isFirst !== true) return 'first_order_unknown';
 
-  const { lines, shopifyDiscountCodes } = useCartStore.getState();
+  const { lines, shopifyDiscountCodes } = getAutoDiscountCartState();
   if (!lines.length) return 'empty_cart';
   if (cartHasAnyDiscountCodes(shopifyDiscountCodes)) return 'has_discount_codes';
   if (isFirstAppOrderDiscountApplySettled()) return 'already_settled';
@@ -114,7 +120,7 @@ function getAutoApplySkipReason(): AutoApplySkipReason | null {
 }
 
 async function ensureFirstAppOrderEligibilityLoaded(): Promise<boolean | null> {
-  const known = useAppBenefitsStore.getState().isFirstAppOrder;
+  const known = getIsFirstAppOrderSync();
   if (known !== null) {
     logFirstAppOrderDiscount({
       action: 'eligibility_cached',
@@ -127,20 +133,14 @@ async function ensureFirstAppOrderEligibilityLoaded(): Promise<boolean | null> {
   logFirstAppOrderDiscount({ action: 'eligibility_fetch_start' });
 
   const sessionToken = await resolveCustomerSessionToken();
-  if (!sessionToken) {
+  const userId = getCartCustomerUserId();
+  if (!sessionToken || !userId) {
     logFirstAppOrderDiscount({ action: 'eligibility_fetch_skip', reason: 'no_session_token' });
     return null;
   }
 
-  const result = await fetchCustomerAppBenefits(sessionToken);
-  if (result.ok) {
-    useAppBenefitsStore.setState({
-      isFirstAppOrder: result.benefits.isFirstAppOrder,
-      appOrdersCount: result.benefits.appOrdersCount,
-      eligibleDiscounts: result.benefits.eligibleDiscounts,
-    });
-  }
-  const loaded = useAppBenefitsStore.getState().isFirstAppOrder;
+  const benefits = await fetchAppBenefitsQuery(sessionToken, userId, { applyDiscount: false });
+  const loaded = benefits?.isFirstAppOrder ?? null;
   logFirstAppOrderDiscount({
     action: 'eligibility_fetch_done',
     isFirstAppOrder: loaded,
@@ -243,7 +243,7 @@ async function runAutoApplyFirstAppOrderDiscount(customerEmail?: string): Promis
     return;
   }
 
-  const lines = useCartStore.getState().lines;
+  const lines = getAutoDiscountCartState().lines;
   if (!lines.length) {
     logFirstAppOrderDiscount({ action: 'apply_abort', reason: 'empty_cart' });
     return;
@@ -303,13 +303,13 @@ async function runAutoApplyFirstAppOrderDiscount(customerEmail?: string): Promis
     return;
   }
 
-  if (!useCartStore.getState().lines.length) {
+  if (!getAutoDiscountCartState().lines.length) {
     logFirstAppOrderDiscount({ action: 'apply_abort', reason: 'empty_cart' });
     return;
   }
 
   setFirstAppOrderDiscountApplySettled(true);
-  useCartStore.getState().applyRemoteSnapshot(result.snapshot);
+  applyAutoDiscountCartSnapshot(result.snapshot);
   logFirstAppOrderDiscount({
     action: 'apply_success',
     code: FIRST_APP_ORDER_DISCOUNT_CODE,

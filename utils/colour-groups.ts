@@ -76,6 +76,7 @@ export function expandColourFilterSelection(selectedGroups: string[]): Set<strin
   for (const sel of selectedGroups) {
     const def = COLOUR_GROUP_DEFINITIONS.find((d) => d.group === sel);
     if (def) {
+      out.add(normColourLabel(def.group));
       for (const m of def.members) {
         out.add(normColourLabel(m));
       }
@@ -84,4 +85,25 @@ export function expandColourFilterSelection(selectedGroups: string[]): Set<strin
     }
   }
   return out;
+}
+
+/**
+ * Estimate unique products for a colour group from Shopify per-label facet counts.
+ * Summing member counts double-counts products with variants in multiple member labels
+ * (e.g. Floral + Print). Filter application uses OR semantics — this aligns chip counts.
+ */
+export function estimateColourGroupUnionCount(memberCounts: number[]): number {
+  if (memberCounts.length === 0) return 0;
+  if (memberCounts.length === 1) return memberCounts[0]!;
+
+  const sum = memberCounts.reduce((a, b) => a + b, 0);
+  const max = Math.max(...memberCounts);
+  const excessMass = sum - max;
+  if (excessMass <= 0) return max;
+
+  const doubleCountAllowance = Math.min(
+    excessMass,
+    Math.ceil((memberCounts.length - 1) * (2 / 3)),
+  );
+  return Math.max(max, sum - doubleCountAllowance);
 }

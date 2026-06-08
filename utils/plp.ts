@@ -7,7 +7,7 @@ import {
   groupsForRawColourValue,
   normColourLabel,
 } from '@/utils/colour-groups';
-import type { PlpFacetCounts } from '@/utils/storefront-filters';
+import type { PlpFacetCounts, StorefrontFilterFacets } from '@/utils/storefront-filters';
 import { sortCategoryLabels } from '@/utils/category-sort';
 import { sortSizeLabels } from '@/utils/size-sort';
 
@@ -240,6 +240,19 @@ export function extractFacets(products: Product[]) {
   };
 }
 
+/** Prefer per-product deduped colour counts once every catalog page is loaded. */
+export function webCatalogFacetsWithAccurateColourCounts(
+  storefrontFacets: StorefrontFilterFacets,
+  products: Product[] | undefined,
+  allPagesLoaded: boolean,
+): StorefrontFilterFacets {
+  if (!allPagesLoaded || !products?.length) return storefrontFacets;
+  return {
+    ...storefrontFacets,
+    colourGroupCounts: extractFacets(products).colourGroupCounts,
+  };
+}
+
 export function applyPlpFilters(products: Product[], f: PlpFilters): Product[] {
   return products.filter((p) => {
     if (f.sizes.length) {
@@ -273,8 +286,8 @@ export function applyPlpSort(products: Product[], sort: PlpSort): Product[] {
       return copy.sort((a, b) => productMinPrice(a) - productMinPrice(b));
     case 'price-desc':
       return copy.sort((a, b) => productMinPrice(b) - productMinPrice(a));
-    case 'title-asc':
-      return copy.sort((a, b) => a.title.localeCompare(b.title));
+    case 'newest':
+      return copy;
     default:
       return copy;
   }

@@ -6,13 +6,14 @@ import {
   type PropsWithChildren,
 } from 'react';
 
+import { cartEngine } from '@/src/core/cart';
+import type { CartAddItemInput } from '@/src/core/cart';
 import { useCartBagLineKeys, useCartBagUnitCount } from '@/hooks/use-cart-selectors';
 import { trackAddToCart } from '@/lib/gtm';
-import { useCartStore, type AddToCartInput } from '@/store';
 import { showToast } from '@/store/toast';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 
-export type AddToBagParams = AddToCartInput;
+export type AddToBagParams = CartAddItemInput;
 
 export type BagActionsContextValue = {
   /** Optimistic add — remote sync is debounced via `scheduleSync` in the cart store. */
@@ -29,10 +30,10 @@ const BagActionsContext = createContext<BagActionsContextValue | null>(null);
 const BagStateContext = createContext<BagStateContextValue | null>(null);
 
 function BagActionsProvider({ children }: PropsWithChildren) {
-  const addToBag = useCallback((params: AddToCartInput) => {
-    useCartStore.getState().addToCart(params);
+  const addToBag = useCallback((params: CartAddItemInput) => {
+    cartEngine.addItem(params);
     trackAddToCart(params);
-    showToast({ variant: 'success', title: 'Added to Bag' });
+    showToast({ variant: 'success', title: 'Added to Bag', position: 'bottom' });
   }, []);
 
   const value = useMemo(() => ({ addToBag }), [addToBag]);

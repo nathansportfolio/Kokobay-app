@@ -1,5 +1,6 @@
-import { isKokobayApiConfigured, resolveKokobayApiBaseUrl } from './api-config';
-import { fetchWithTimeout } from '@/utils/fetch-with-timeout';
+import { legacyApiGetOptional } from '@/src/core/api';
+
+import { isKokobayApiConfigured, kokobayApiEnvDebug } from './api-config';
 
 export type AppErrorBannerPayload = {
   active: boolean;
@@ -10,33 +11,59 @@ export type AppErrorBannerPayload = {
 export async function fetchAppErrorBanner(
   init?: { signal?: AbortSignal },
 ): Promise<AppErrorBannerPayload | null> {
-  const root = resolveKokobayApiBaseUrl();
-  if (!root || !isKokobayApiConfigured()) return null;
+  const incidentEnabled = process.env.EXPO_PUBLIC_INCIDENT_BANNER_ENABLED === 'true';
 
-  const url = `${root}/api/app-error`;
-
-  try {
-    const res = await fetchWithTimeout(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: init?.signal,
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return null;
+  if (!isKokobayApiConfigured()) {
+    if (__DEV__) {
+      console.log('[INCIDENT_BANNER]', { visible: false, reason: 'api_not_configured', incidentEnabled });
     }
-    let json: Record<string, unknown> | null = null;
-    try {
-      json = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-    const active = json.active === true;
-    const message = typeof json.message === 'string' ? json.message.trim() : '';
-    if (!active || !message) return null;
-    return { active: true, message };
-  } catch {
-    if (init?.signal?.aborted) return null;
     return null;
   }
+
+  const json = await legacyApiGetOptional('/api/app-error', {
+    auth: 'none',
+    marketQuery: false,
+    signal: init?.signal,
+    retries: 0,
+    coalesce: false,
+  });
+
+  if (init?.signal?.aborted) {
+    if (__DEV__) {
+      console.log('[INCIDENT_BANNER]', { visible: false, reason: 'aborted', incidentEnabled });
+    }
+    return null;
+  }
+
+  if (!json) {
+    if (__DEV__) {
+      console.log('[INCIDENT_BANNER]', {
+        baseUrl: kokobayApiEnvDebug().baseUrl,
+        visible: false,
+        reason: 'no_response',
+        incidentEnabled,
+      });
+    }
+    return null;
+  }
+
+  const active = json.active === true;
+  const message = typeof json.message === 'string' ? json.message.trim() : '';
+  const visible = incidentEnabled && active && Boolean(message);
+
+  if (__DEV__) {
+    console.log('[INCIDENT_BANNER]', {
+      baseUrl: kokobayApiEnvDebug().baseUrl,
+      incidentEnabled,
+      rawActive: active,
+      rawMessage: json.message ?? null,
+      rawError: typeof json.error === 'string' ? json.error : null,
+      visible,
+      message: message || null,
+      ...(incidentEnabled ? {} : { note: 'Set EXPO_PUBLIC_INCIDENT_BANNER_ENABLED=true to show strip' }),
+    });
+  }
+
+  if (!active || !message) return null;
+  return { active: true, message };
 }

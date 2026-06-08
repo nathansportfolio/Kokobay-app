@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ACCOUNT_ORDERS_QUERY_KEY } from '@/components/account/account-orders-section';
+import { accountQueryKeys } from '@/src/core/query/query-keys';
 import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
 import { AccountAppSettings } from '@/components/account/account-app-settings';
@@ -19,6 +19,7 @@ import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAccountMode } from '@/hooks/use-account-mode';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { markSignOutPerf } from '@/lib/sign-out-perf';
+import { useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/store';
 import { isAllowedCheckoutUrl } from '@/utils/checkout-url';
 
@@ -48,9 +49,7 @@ export default function AccountScreen() {
     orderNumber?: string;
   }>();
   const queryClient = useQueryClient();
-  const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const hasHydrated = useAuthStore((s) => s.hasHydrated);
+  const { user, isReady, isAuthenticated } = useAuth();
   const logout = useAuthStore((s) => s.logout);
   const clearSessionAfterAccountDeletion = useAuthStore((s) => s.clearSessionAfterAccountDeletion);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -70,12 +69,12 @@ export default function AccountScreen() {
     closeSettings,
     returnTo,
     clearReturnTo,
-  } = useAccountMode({ isAuthenticated: Boolean(user) });
+  } = useAccountMode({ isAuthenticated });
 
   const scrollToTop = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
-  const { onScroll } = useBindScrollToTop(scrollToTop, hasHydrated);
+  const { onScroll } = useBindScrollToTop(scrollToTop, isReady);
 
   const registerSettingsRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
     settingsRefreshRef.current = refresh;
@@ -135,12 +134,12 @@ export default function AccountScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!accessToken || !user?.id) return;
+      if (!user?.id || !isAuthenticated) return;
       void queryClient.refetchQueries({
-        queryKey: [...ACCOUNT_ORDERS_QUERY_KEY, user.id, accessToken],
+        queryKey: accountQueryKeys.orders(user.id),
         type: 'active',
       });
-    }, [accessToken, queryClient, user?.id]),
+    }, [isAuthenticated, queryClient, user?.id]),
   );
 
   const settingsPanel = (
@@ -155,7 +154,6 @@ export default function AccountScreen() {
     <AccountModeTransition modeKey="dashboard" direction={transitionDirection}>
       <AccountDashboard
         user={user}
-        accessToken={accessToken}
         openOrderId={typeof orderId === 'string' ? orderId : undefined}
         openOrderNumber={typeof orderNumber === 'string' ? orderNumber : undefined}
         isLoggingOut={isLoggingOut}
@@ -202,7 +200,7 @@ export default function AccountScreen() {
 
   const showsTabTitleHeader = Boolean(user) || (!user && currentGuestMode === 'landing');
 
-  if (!hasHydrated) {
+  if (!isReady) {
     return (
       <SafeAreaView style={ACCOUNT_SHELL} edges={['left', 'right']}>
         <View style={ACCOUNT_SHELL}>

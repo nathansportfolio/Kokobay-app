@@ -106,6 +106,18 @@ export default function TabLayout() {
             }}
           />
           <Tabs.Screen
+            name="search"
+            options={{ href: null, headerShown: false, sceneStyle: { backgroundColor: palette.surface } }}
+          />
+          <Tabs.Screen
+            name="collection/[handle]"
+            options={{ href: null, headerShown: false, sceneStyle: { backgroundColor: palette.surface } }}
+          />
+          <Tabs.Screen
+            name="product/[handle]"
+            options={{ href: null, headerShown: false, sceneStyle: { backgroundColor: palette.canvas } }}
+          />
+          <Tabs.Screen
             name="cart"
             options={{
               title: 'Cart',

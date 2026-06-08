@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
 import { APP_PROMOTION_BANNER_STRIP_HEIGHT } from '@/constants/app-promotion-banner';
+import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import {
   appPromotionBannerQueryOptions,
   appPromotionBannerVisible,
@@ -15,10 +16,11 @@ export { APP_PROMOTION_BANNER_QUERY_KEY } from '@/lib/app-promotion-banner-query
 /** Subscribe to promotion banner query — no AppState listeners (see AppPromotionBannerSync). */
 export function useAppPromotionBannerContent() {
   const queryClient = useQueryClient();
+  const marketKey = useMarketQueryKey();
   const enabled = isAppPromotionBannerQueryEnabled();
 
   const query = useQuery<AppPromotionBannerPayload | null>({
-    ...appPromotionBannerQueryOptions,
+    ...appPromotionBannerQueryOptions(marketKey),
     enabled,
     placeholderData: (previous) => previous,
   });
@@ -40,9 +42,10 @@ export function useAppPromotionBannerContent() {
 
 /** Lightweight visibility subscriber — same cache, no side effects. */
 export function useAppPromotionBannerVisible(): boolean {
+  const marketKey = useMarketQueryKey();
   const enabled = isAppPromotionBannerQueryEnabled();
   const query = useQuery<AppPromotionBannerPayload | null>({
-    ...appPromotionBannerQueryOptions,
+    ...appPromotionBannerQueryOptions(marketKey),
     enabled,
     placeholderData: (previous) => previous,
   });

@@ -26,7 +26,7 @@ import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscripti
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { getProduct } from '@/services/shopify';
-import { useAuthStore } from '@/store';
+import { useAuth } from '@/hooks/use-auth';
 import type { Product } from '@/types/shopify';
 import { imageUrlForCartLine, variantLabelForCart } from '@/utils/cart-display';
 import { resolveVariantQuantityCap } from '@/utils/cart-inventory';
@@ -56,37 +56,35 @@ export type QuickAddToBagProps = {
   triggerClassName?: string;
 };
 
-function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBagProps) {
+type QuickAddToBagSheetProps = {
+  product: Product;
+  relaxed?: boolean;
+  onClose: () => void;
+};
+
+function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   const insets = useSafeAreaInsets();
   const marketKey = useMarketQueryKey();
   const { addToBag } = useBagActions();
-  const prefetchProduct = usePrefetchProduct();
-  const [open, setOpen] = useState(false);
   const [addingToBag, setAddingToBag] = useState(false);
   const [backInStockOpen, setBackInStockOpen] = useState(false);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
-  const customerEmail = useAuthStore((s) => s.user?.email);
-  const customerId = useAuthStore((s) => s.user?.id);
-  const sessionToken = useAuthStore((s) => s.accessToken);
-  const triggerPressed = useSharedValue(0);
-  const triggerPressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: interpolate(triggerPressed.value, [0, 1], [1, 0.94]) }],
-    opacity: interpolate(triggerPressed.value, [0, 1], [1, 0.9]),
-  }));
+  const { user } = useAuth();
+  const customerEmail = user?.email;
+  const customerId = user?.id;
 
   const needsFullProduct = isCatalogPreviewProduct(product);
   const { data: loadedProduct, isPending: loadingProduct } = useQuery({
     queryKey: productQueryKey(product.handle, marketKey),
     queryFn: ({ signal }) => getProduct(product.handle, { signal }),
-    enabled: open && needsFullProduct,
+    enabled: needsFullProduct,
     staleTime: PRODUCT_QUERY_STALE_TIME_MS,
     gcTime: PRODUCT_QUERY_GC_TIME_MS,
   });
 
   const activeProduct = loadedProduct ?? product;
-  const variantsLoading = open && needsFullProduct && loadingProduct && !loadedProduct;
+  const variantsLoading = needsFullProduct && loadingProduct && !loadedProduct;
 
-  const soldOut = isProductFullySoldOut(product);
   const sizeOptions = useMemo(() => getProductSizeOptions(activeProduct), [activeProduct]);
   const sizeAvailability = useMemo(() => {
     if (sizeOptions.length === 0) return undefined;
@@ -98,16 +96,16 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
   }, [activeProduct, sizeOptions]);
 
   const close = useCallback(() => {
-    setOpen(false);
+    onClose();
     setBackInStockOpen(false);
-  }, []);
+  }, [onClose]);
 
   useEffect(() => {
     setSelectedSize(null);
   }, [product.handle]);
 
   useEffect(() => {
-    if (!open || variantsLoading) return;
+    if (variantsLoading) return;
     if (sizeOptions.length === 0) {
       setSelectedSize(null);
       return;
@@ -115,7 +113,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
     const first =
       sizeOptions.find((s) => isSizeAvailable(activeProduct, s)) ?? sizeOptions[0] ?? null;
     setSelectedSize(first);
-  }, [open, activeProduct, sizeOptions, variantsLoading]);
+  }, [activeProduct, sizeOptions, variantsLoading]);
 
   const sizeValue = selectedSize ?? sizeOptions[0] ?? null;
 
@@ -141,9 +139,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
       variantId: selectedVariant?.id,
       email: customerEmail,
       customerId,
-      sessionToken: sessionToken ?? undefined,
-      enabled:
-        open && showBackInStockCta && Boolean(customerEmail?.trim() && selectedVariant?.id),
+      enabled: showBackInStockCta && Boolean(customerEmail?.trim() && selectedVariant?.id),
     });
 
   const backInStockCtaLabel = backInStockSubscribed
@@ -166,11 +162,11 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
         quantityAvailable: resolveVariantQuantityCap(selectedVariant),
       });
       hapticSuccess();
-      setOpen(false);
+      onClose();
     } finally {
       setAddingToBag(false);
     }
-  }, [activeProduct, addToBag, addingToBag, canAdd, selectedVariant]);
+  }, [activeProduct, addToBag, addingToBag, canAdd, onClose, selectedVariant]);
 
   const onBackInStock = useCallback(() => {
     if (!selectedVariant) return;
@@ -178,14 +174,8 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
     setBackInStockOpen(true);
   }, [selectedVariant]);
 
-  const actionSize = relaxed ? 'md' : 'sm';
-
   const sizeScrollTall = sizeOptions.length > 9;
   const sheetBottomPad = Math.max(insets.bottom, 28);
-
-  if (soldOut) {
-    return null;
-  }
 
   const sizeBlock = variantsLoading ? (
     <View className="min-h-[88px] items-center justify-center py-6">
@@ -213,29 +203,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
 
   return (
     <>
-      <AnimatedPressable
-        accessibilityRole="button"
-        accessibilityLabel={`Quick add ${product.title} to bag`}
-        hitSlop={10}
-        onPressIn={() => {
-          triggerPressed.value = withTiming(1, { duration: 100 });
-        }}
-        onPressOut={() => {
-          triggerPressed.value = withTiming(0, { duration: 200 });
-        }}
-        onPress={() => {
-          hapticLight();
-          prefetchProduct(product.handle);
-          setOpen(true);
-        }}
-        className={cn('absolute bottom-4 left-4 z-10', triggerClassName)}
-        style={triggerPressStyle}>
-        <LuxuryCardActionSurface size={actionSize}>
-          <Plus size={PLUS_SIZE} color={LUXURY_CARD_ACTION_ICON_COLOR} {...PLUS_ICON} />
-        </LuxuryCardActionSurface>
-      </AnimatedPressable>
-
-      <Modal visible={open} animationType="fade" transparent statusBarTranslucent onRequestClose={close}>
+      <Modal visible animationType="fade" transparent statusBarTranslucent onRequestClose={close}>
         <View className="flex-1 justify-end">
           <Pressable
             accessibilityRole="button"
@@ -309,14 +277,59 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
           variant={selectedVariant}
           customerEmail={customerEmail ?? undefined}
           customerId={customerId}
-          sessionToken={sessionToken ?? undefined}
           onSubscribed={() => {
             markBackInStockSubscribed();
-            setOpen(false);
+            onClose();
             setBackInStockOpen(false);
           }}
         />
       ) : null}
+    </>
+  );
+}
+
+function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBagProps) {
+  const prefetchProduct = usePrefetchProduct();
+  const [open, setOpen] = useState(false);
+  const triggerPressed = useSharedValue(0);
+  const triggerPressStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(triggerPressed.value, [0, 1], [1, 0.94]) }],
+    opacity: interpolate(triggerPressed.value, [0, 1], [1, 0.9]),
+  }));
+
+  const soldOut = isProductFullySoldOut(product);
+  const actionSize = relaxed ? 'md' : 'sm';
+  const close = useCallback(() => setOpen(false), []);
+
+  if (soldOut) {
+    return null;
+  }
+
+  return (
+    <>
+      <AnimatedPressable
+        accessibilityRole="button"
+        accessibilityLabel={`Quick add ${product.title} to bag`}
+        hitSlop={10}
+        onPressIn={() => {
+          triggerPressed.value = withTiming(1, { duration: 100 });
+        }}
+        onPressOut={() => {
+          triggerPressed.value = withTiming(0, { duration: 200 });
+        }}
+        onPress={() => {
+          hapticLight();
+          prefetchProduct(product.handle);
+          setOpen(true);
+        }}
+        className={cn('absolute bottom-4 left-4 z-10', triggerClassName)}
+        style={triggerPressStyle}>
+        <LuxuryCardActionSurface size={actionSize}>
+          <Plus size={PLUS_SIZE} color={LUXURY_CARD_ACTION_ICON_COLOR} {...PLUS_ICON} />
+        </LuxuryCardActionSurface>
+      </AnimatedPressable>
+
+      {open ? <QuickAddToBagSheet product={product} relaxed={relaxed} onClose={close} /> : null}
     </>
   );
 }

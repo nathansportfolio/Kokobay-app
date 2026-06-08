@@ -1,6 +1,10 @@
 import { getQueryClient } from '@/hooks/use-query-client';
 
-/** User-scoped React Query prefixes cleared on auth change (wishlist/catalog stay active). */
+/**
+ * User-scoped React Query prefixes cleared on auth change.
+ * Includes orders, app-benefits, and future account queries.
+ * Catalog, wishlist, product, and CMS queries stay active.
+ */
 const USER_QUERY_ROOTS = [['account']] as const;
 
 /**

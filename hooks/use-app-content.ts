@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchAppContent, peekAppContentCache } from '@/services/kokobay-web/app-content';
+import { fetchAppContent } from '@/services/kokobay-web/app-content';
+import { cmsQueryKeys } from '@/src/core/query/query-keys';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { useMarketStore } from '@/store/market-preference';
 import type { AppContent, UseAppContentResult } from '@/types/app-content';
@@ -44,18 +45,14 @@ export function useAppContent(
   const live = options?.live === true;
 
   const query = useQuery<AppContent | null>({
-    queryKey: ['app-content', safeSlug, country],
+    queryKey: cmsQueryKeys.content(safeSlug, country),
     enabled,
     staleTime: live ? 60_000 : APP_CONTENT_STALE_MS,
     gcTime: 60 * 60_000,
     refetchOnWindowFocus: live,
     refetchOnReconnect: live,
     placeholderData: (previous) => previous,
-    queryFn: async ({ signal }) => {
-      const hit = peekAppContentCache(safeSlug, country);
-      if (hit !== undefined) return hit;
-      return fetchAppContent(safeSlug, country, { signal });
-    },
+    queryFn: ({ signal }) => fetchAppContent(safeSlug, country, { signal }),
   });
 
   const data = query.data ?? null;

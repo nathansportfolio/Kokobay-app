@@ -12,12 +12,16 @@ const RESUME_SYNC_DEFER_MS = 120;
 
 export type CartSyncRunner = (customerEmail?: string) => Promise<void>;
 
+export type CartSyncArmReason = 'debounce' | 'foreground_resume' | 'flush';
+
 export type CartSyncSchedulerOptions = {
   debounceMs?: number;
   /** When false, scheduled/ resumed syncs are skipped (cart already matches server). */
   shouldSync?: () => boolean;
   /** Foreground resume gate — return false to skip resume debounce/network. */
   shouldForegroundResume?: () => boolean;
+  /** Called when a debounced or resume sync is armed (before the timer fires). */
+  onSyncArm?: (reason: CartSyncArmReason) => void;
   lifecycle?: AppLifecycle;
   /** Dev lifecycle perf — unique AppState listener id. */
   lifecycleListenerId?: string;
@@ -39,6 +43,7 @@ export function createCartSyncScheduler(
   const debounceMs = options.debounceMs ?? CART_SYNC_DEBOUNCE_MS;
   const shouldSync = options.shouldSync ?? (() => true);
   const shouldForegroundResume = options.shouldForegroundResume ?? (() => true);
+  const onSyncArm = options.onSyncArm;
   const lifecycle = options.lifecycle ?? resolveNativeAppLifecycle();
   const lifecycleListenerId = options.lifecycleListenerId;
 
@@ -83,7 +88,8 @@ export function createCartSyncScheduler(
     void runChain();
   };
 
-  const armDebounce = () => {
+  const armDebounce = (reason: CartSyncArmReason) => {
+    onSyncArm?.(reason);
     cancelDebounce();
     debounceTimer = setTimeout(fireDebounced, debounceMs);
   };
@@ -98,7 +104,7 @@ export function createCartSyncScheduler(
       if (!lifecycle.isActive()) return;
       if (!shouldForegroundResume()) return;
       if (!shouldSync()) return;
-      armDebounce();
+      armDebounce('foreground_resume');
     }, RESUME_SYNC_DEFER_MS);
   };
 
@@ -132,11 +138,12 @@ export function createCartSyncScheduler(
       if (!shouldSync()) return;
       if (!lifecycle.isActive()) return;
       cartPerfLog(`scheduleSync armed debounce ${debounceMs}ms`);
-      armDebounce();
+      armDebounce('debounce');
     },
 
     flushSync(customerEmail?: string) {
       attachLifecycleListener();
+      onSyncArm?.('flush');
       cancelDebounce();
       if (!lifecycle.isActive()) return chain;
       return runChain(customerEmail);

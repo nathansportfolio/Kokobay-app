@@ -7,6 +7,7 @@ import {
   isAppPromotionBannerQueryEnabled,
   isAppPromotionBannerQueryFresh,
 } from '@/lib/app-promotion-banner-query';
+import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { registerTrackedAppStateListener } from '@/lib/lifecycle-perf/install';
 import {
   logPromotionForegroundMetrics,
@@ -18,6 +19,7 @@ import {
 /** One global AppState listener + initial fetch for the promotion banner query. */
 export function AppPromotionBannerSync() {
   const queryClient = useQueryClient();
+  const marketKey = useMarketQueryKey();
   const enabled = isAppPromotionBannerQueryEnabled();
   const prevStateRef = useRef<AppStateStatus>(AppState.currentState);
 
@@ -34,7 +36,7 @@ export function AppPromotionBannerSync() {
 
       resetPromotionInvalidateCount();
 
-      if (isAppPromotionBannerQueryFresh(queryClient)) {
+      if (isAppPromotionBannerQueryFresh(queryClient, marketKey)) {
         logResumePerf('promotion_invalidate_skipped', { reason: 'query_fresh' });
         logPromotionForegroundMetrics();
         return;
@@ -45,7 +47,7 @@ export function AppPromotionBannerSync() {
       });
       logPromotionForegroundMetrics();
     });
-  }, [enabled, queryClient]);
+  }, [enabled, marketKey, queryClient]);
 
   return null;
 }

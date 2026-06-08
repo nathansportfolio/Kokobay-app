@@ -8,15 +8,24 @@ export function PdpProductInfoSections() {
 
   return (
     <>
-      {PRODUCT_INFO_SECTIONS.map((section) => (
-        <PdpCmsAccordionSection
-          key={section.slug}
-          slug={section.slug}
-          fallbackTitle={section.title}
-          countryCode={countryCode}
-          footerLink={'footerLink' in section ? section.footerLink : undefined}
-        />
-      ))}
+      {PRODUCT_INFO_SECTIONS.map((section) => {
+        const countryInSlug = 'countryInSlug' in section && section.countryInSlug;
+        const slug = countryInSlug
+          ? `${section.slug}-${countryCode.trim().toLowerCase()}`
+          : section.slug;
+
+        return (
+          <PdpCmsAccordionSection
+            key={section.slug}
+            slug={slug}
+            omitCountry={countryInSlug}
+            fallbackTitle={section.title}
+            fallbackContent={'fallbackContent' in section ? section.fallbackContent : undefined}
+            countryCode={countryCode}
+            footerLink={'footerLink' in section ? section.footerLink : undefined}
+          />
+        );
+      })}
     </>
   );
 }

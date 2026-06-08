@@ -1,7 +1,7 @@
-import { useNavigation } from '@react-navigation/native';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
 import { CollectionPlpSortModal } from '@/components/plp/collection-plp-sort-modal';
 import { CollectionPlpToolbar } from '@/components/plp/collection-plp-toolbar';
+import { CollectionPlpProductGrid } from '@/components/plp/collection-plp-product-grid';
 import { CollectionProductTile } from '@/components/plp/collection-product-tile';
 import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-footer';
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
@@ -42,6 +43,9 @@ import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-b
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
 import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
 import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
+import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
+import { usePlpProductLink } from '@/hooks/use-plp-product-link';
+import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
 import { useReturnToGoBack } from '@/hooks/use-return-to-go-back';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { useStableTopInset } from '@/hooks/use-stable-top-inset';
@@ -59,20 +63,26 @@ import {
   extractFacets,
   normalizePlpPriceRangeForDraft,
   plpPriceSliderMetaForCurrency,
+  webCatalogFacetsWithAccurateColourCounts,
 } from '@/utils/plp';
 import { collectionHandlesMatch, resolveCollectionHandleForApi } from '@/utils/collection-handles';
 import { navigateToHomeTab } from '@/utils/collection-navigation';
 import { collectionBlurb, collectionEditorialEyebrow } from '@/utils/collection-text';
 import { collectionProductCellHeight } from '@/utils/plp-layout';
+import { resolvePlpProductCount } from '@/utils/plp-product-count';
 import { keepPreviousDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
 import { hasActivePlpFilters } from '@/utils/storefront-filters';
 
 export default function CollectionScreen() {
   useRenderTrace('Collection');
   const { handle } = useLocalSearchParams<{ handle: string }>();
+  const pathname = usePathname();
+  const isFocused = useIsFocused();
   const router = useRouter();
   const navigation = useNavigation();
   const goBack = useReturnToGoBack();
+  const productLinkFor = usePlpProductLink();
+  const prefetchProduct = usePrefetchProduct();
   const topInset = useStableTopInset();
   const appErrorBannerHeight = useAppErrorBannerChromeHeight();
   const listHeaderPaddingTop = useLuxuryPlpListHeaderPaddingTop(appErrorBannerHeight);
@@ -199,9 +209,18 @@ export default function CollectionScreen() {
   );
 
   const facets = useMemo(() => {
-    if (isWebCatalog) return kokobayCatalog.filterFacets;
-    return extractFacets(allProducts ?? []);
-  }, [isWebCatalog, kokobayCatalog.filterFacets, allProducts]);
+    if (!isWebCatalog) return extractFacets(allProducts ?? []);
+    return webCatalogFacetsWithAccurateColourCounts(
+      kokobayCatalog.filterFacets,
+      allProducts,
+      !kokobayCatalog.hasNextPage,
+    );
+  }, [
+    isWebCatalog,
+    kokobayCatalog.filterFacets,
+    kokobayCatalog.hasNextPage,
+    allProducts,
+  ]);
 
   const serverSideFiltersActive =
     isWebCatalog &&
@@ -237,10 +256,29 @@ export default function CollectionScreen() {
     reason: plpTraceReason,
   });
 
-  const displayProductCount =
-    isWebCatalog && kokobayCatalog.totalProductCount != null
-      ? kokobayCatalog.totalProductCount
-      : totalFiltered;
+  const displayProductCount = useMemo(
+    () =>
+      resolvePlpProductCount({
+        hasSelectedFilters,
+        isWebCatalog,
+        totalProductCount: kokobayCatalog.totalProductCount,
+        totalFiltered,
+        hasNextPage: kokobayCatalog.hasNextPage ?? false,
+        filters,
+        facets,
+        priceMeta,
+      }),
+    [
+      hasSelectedFilters,
+      isWebCatalog,
+      kokobayCatalog.totalProductCount,
+      kokobayCatalog.hasNextPage,
+      totalFiltered,
+      filters,
+      facets,
+      priceMeta,
+    ],
+  );
 
   const onEndReached = useKokobayPlpEndReached({
     screen: 'collection',
@@ -334,6 +372,19 @@ export default function CollectionScreen() {
     dataEpoch: catalogDataUpdatedAt,
   });
 
+  const plpWasBlurredRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (plpWasBlurredRef.current) {
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+      }
+      plpWasBlurredRef.current = false;
+      return () => {
+        plpWasBlurredRef.current = true;
+      };
+    }, []),
+  );
+
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false, title: collection?.title ?? '' });
     return () => {
@@ -369,6 +420,7 @@ export default function CollectionScreen() {
     ({ item, index }: { item: Product; index: number }) => (
       <CollectionProductTile
         product={item}
+        productLink={productLinkFor(item.handle)}
         itemWidth={itemWidth}
         cellHeight={cellHeight}
         numColumns={numColumns}
@@ -376,9 +428,10 @@ export default function CollectionScreen() {
         columnGap={columnGap}
         perfTraceIndex={index}
         perfTraceScreen="collection"
+        onPrefetchProduct={prefetchProduct}
       />
     ),
-    [itemWidth, cellHeight, numColumns, columnGap],
+    [productLinkFor, prefetchProduct, itemWidth, cellHeight, numColumns, columnGap],
   );
 
   const keyExtractor = useCallback((item: Product) => item.id, []);
@@ -535,6 +588,22 @@ export default function CollectionScreen() {
     ],
   });
 
+  useProductCardParentRerenderTrace('CollectionScreen', {
+    pathname,
+    isFocused,
+    safeHandle,
+    renderBranch,
+    flatItemsRef: flatItems,
+    flatItemsLen: flatItems.length,
+    allProductsRef: allProducts,
+    productLinkForRef: productLinkFor,
+    renderItemRef: renderItem,
+    listExtra,
+    plpTraceReason,
+    catalogRefetching,
+    catalogPending,
+  });
+
   if (!collection) {
     return (
       <Screen scroll>
@@ -587,14 +656,14 @@ export default function CollectionScreen() {
 
   return (
     <SafeAreaView style={plpScreenShell} collapsable={false} edges={['left', 'right']}>
-      <FlashList<Product>
+      <CollectionPlpProductGrid
         ref={listRef}
         style={plpScreenShell}
-        key={`${safeHandle}-${numColumns}-${sort}`}
         data={flatItems}
         numColumns={numColumns}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        traceRenderItemRef={renderItem}
         getItemType={() => 'productTile'}
         overrideItemLayout={overrideItemLayout}
         extraData={listExtra}

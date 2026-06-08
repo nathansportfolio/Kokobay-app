@@ -32,4 +32,13 @@ describe('shopCollectionCoverUri', () => {
     const original = 'https://example.com/image.jpg';
     assert.equal(shopCollectionCoverUri({ url: original }), original);
   });
+
+  it('resizes CMS collection file URLs from cdn.shopify.com', () => {
+    const original =
+      'https://cdn.shopify.com/s/files/1/0064/3828/9461/files/IMG_5737_2.jpg?v=1779960972';
+    const out = shopCollectionCoverUri({ url: original, screenWidth: 390 });
+    const parsed = new URL(out);
+    assert.equal(parsed.searchParams.get('format'), 'webp');
+    assert.equal(parsed.searchParams.get('width'), '800');
+  });
 });

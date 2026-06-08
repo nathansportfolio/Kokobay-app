@@ -9,12 +9,14 @@
  */
 
 import type { AppContent } from '@/types/app-content';
+import type { AppCartDeliveryTextPayload } from '@/services/kokobay-web/app-cart-delivery-text';
 import type { AppHomeHeroPayload } from '@/services/kokobay-web/app-home-hero';
 import type { AppErrorBannerPayload } from '@/services/kokobay-web/app-error';
 import type { AppPromotionBannerPayload } from '@/services/kokobay-web/app-promotion-banner';
 import type { CmsCollectionTile } from '@/services/kokobay-web/collections-cms';
 
 export const APP_HOME_HERO_METAOBJECT_TYPE = 'app_home_hero' as const;
+export const APP_CART_DELIVERY_TEXT_METAOBJECT_TYPE = 'app_cart_delivery_text' as const;
 export const APP_CONTENT_METAOBJECT_TYPE = 'app_content' as const;
 export const APP_ERROR_METAOBJECT_TYPE = 'app_error' as const;
 export const APP_PROMOTION_BANNER_METAOBJECT_TYPE = 'app_promotion_banner' as const;
@@ -23,6 +25,7 @@ export const COLLECTIONS_CMS_METAOBJECT_TYPE = 'collections' as const;
 
 export type {
   AppContent,
+  AppCartDeliveryTextPayload,
   AppHomeHeroPayload,
   AppErrorBannerPayload,
   AppPromotionBannerPayload,
@@ -90,6 +93,20 @@ export const SHOPIFY_CMS_METAOBJECT_DEFS = {
     ],
     exampleHandles: ['gb', 'us', 'eu'],
   },
+  appCartDeliveryText: {
+    type: APP_CART_DELIVERY_TEXT_METAOBJECT_TYPE,
+    adminName: 'App Cart Delivery Text',
+    apiRoutes: [
+      'GET /api/content/app-cart-delivery-text-gb',
+      'GET /api/content/app-cart-delivery-text-us',
+      'GET /api/content/app-cart-delivery-text-eu',
+    ],
+    fields: [
+      { key: 'text', type: 'single_line_text_field', label: 'Text' },
+      { key: 'country', type: 'single_line_text_field', label: 'Country' },
+    ],
+    exampleHandles: ['gb', 'us', 'eu'],
+  },
   appContent: {
     type: APP_CONTENT_METAOBJECT_TYPE,
     adminName: 'App Content',
@@ -101,7 +118,14 @@ export const SHOPIFY_CMS_METAOBJECT_DEFS = {
       { key: 'slug', type: 'single_line_text_field' },
       { key: 'title', type: 'single_line_text_field' },
     ],
-    exampleHandles: ['returns-info-gb', 'return-info-us', 'returns-info-eu'],
+    exampleHandles: [
+      'returns-info-gb',
+      'return-info-us',
+      'returns-info-eu',
+      'shipping-info-gb',
+      'shipping-info-us',
+      'shipping-info-eu',
+    ],
   },
   appError: {
     type: APP_ERROR_METAOBJECT_TYPE,
@@ -116,12 +140,13 @@ export const SHOPIFY_CMS_METAOBJECT_DEFS = {
   appPromotionBanner: {
     type: APP_PROMOTION_BANNER_METAOBJECT_TYPE,
     adminName: 'App Promotion Banner',
-    apiRoutes: ['GET /api/app-promotion-banner'],
+    apiRoutes: ['GET /api/app-promotion-banner?country={GB|US|EU}'],
     fields: [
       { key: 'active', type: 'boolean' },
       { key: 'content', type: 'single_line_text_field' },
+      { key: 'country', type: 'single_line_text_field', label: 'Country' },
     ],
-    exampleHandles: ['100-off-everything'],
+    exampleHandles: ['gb', 'us', 'eu'],
   },
   deliveryThreshold: {
     type: DELIVERY_THRESHOLD_METAOBJECT_TYPE,
@@ -168,6 +193,7 @@ export function shopifyCmsMetaobjectDefByType(
 /** Parsed payload type per metaobject key (after kokobay API fetch). */
 export type ShopifyCmsApiPayload = {
   appHomeHero: AppHomeHeroPayload;
+  appCartDeliveryText: AppCartDeliveryTextPayload;
   appContent: AppContent;
   appError: AppErrorBannerPayload;
   appPromotionBanner: AppPromotionBannerPayload;
@@ -178,6 +204,7 @@ export type ShopifyCmsApiPayload = {
 /** Successful JSON response shape per metaobject key. */
 export type ShopifyCmsApiResponse = {
   appHomeHero: AppHomeHeroPayload;
+  appCartDeliveryText: AppCartDeliveryTextPayload;
   appContent: AppContent;
   appError: AppErrorBannerPayload;
   appPromotionBanner: AppPromotionBannerPayload;

@@ -62,6 +62,19 @@ export function reconcileLinesWithSnapshotSubtotal(
   };
 }
 
+/** Variant id when a single-line cart exceeds the synced server subtotal; otherwise null. */
+export function singleLineOverServerSubtotalVariantId(
+  lines: CartLine[],
+  shopifySubtotal: Money | null,
+  shopifyDiscountCodes: CartDiscountCode[],
+): string | null {
+  if (lines.length !== 1) return null;
+  const line = lines[0]!;
+  return isCartLineOverServerSubtotal(line, lines, shopifySubtotal, shopifyDiscountCodes)
+    ? line.variantId
+    : null;
+}
+
 /** True when synced server subtotal is materially below this line's local extension. */
 export function isCartLineOverServerSubtotal(
   line: CartLine,
