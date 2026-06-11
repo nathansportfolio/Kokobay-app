@@ -25,6 +25,7 @@ import { useBagActions } from '@/contexts/bag-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
+import { trackQuickAddToBagClicked, trackQuickAddToBagModalShown } from '@/lib/gtm';
 import { getProduct } from '@/services/shopify';
 import { useAuth } from '@/hooks/use-auth';
 import type { Product } from '@/types/shopify';
@@ -103,6 +104,10 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   useEffect(() => {
     setSelectedSize(null);
   }, [product.handle]);
+
+  useEffect(() => {
+    trackQuickAddToBagModalShown({ product });
+  }, [product]);
 
   useEffect(() => {
     if (variantsLoading) return;
@@ -319,6 +324,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
         }}
         onPress={() => {
           hapticLight();
+          trackQuickAddToBagClicked({ product });
           prefetchProduct(product.handle);
           setOpen(true);
         }}

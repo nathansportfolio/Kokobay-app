@@ -144,7 +144,7 @@ function ShopCollectionEditorialCardInner({
                 pointerEvents="none"
                 style={{
                   ...StyleSheet.absoluteFillObject,
-                  backgroundColor: 'rgba(28, 26, 24, 0.48)',
+                  backgroundColor: 'rgba(28, 26, 24, 0.32)',
                 }}
               />
               <View
@@ -154,16 +154,17 @@ function ShopCollectionEditorialCardInner({
                   right: 0,
                   top: 0,
                   bottom: 0,
-                  justifyContent: 'flex-end',
+                  justifyContent: 'center',
                   paddingHorizontal: 20,
-                  paddingBottom: 14,
                 }}>
                 <Text
                   numberOfLines={2}
                   style={{
                     fontFamily: 'InstrumentSans-SemiBold',
-                    fontSize: 17,
-                    lineHeight: 22,
+                    fontSize: 13,
+                    lineHeight: 18,
+                    letterSpacing: 1.4,
+                    textTransform: 'uppercase',
                     color: '#FFFFFF',
                     textShadowColor: 'rgba(0, 0, 0, 0.55)',
                     textShadowOffset: { width: 0, height: 1 },
@@ -177,8 +178,8 @@ function ShopCollectionEditorialCardInner({
                     style={{
                       marginTop: 4,
                       fontFamily: 'InstrumentSans',
-                      fontSize: 12,
-                      lineHeight: 16,
+                      fontSize: 11,
+                      lineHeight: 15,
                       color: 'rgba(255, 255, 255, 0.88)',
                       textShadowColor: 'rgba(0, 0, 0, 0.55)',
                       textShadowOffset: { width: 0, height: 1 },

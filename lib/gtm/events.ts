@@ -253,3 +253,44 @@ export function trackAppUpdateDismissed(
     app_version_latest: input.latestVersion,
   });
 }
+
+export function trackQuickAddToBagClicked(input: { product: Product }) {
+  const item = gtmItemFromProduct(input.product);
+
+  pushToDataLayer({
+    event: 'quick_add_to_bag_clicked',
+    item_id: item.item_id,
+    item_name: item.item_name,
+    product_handle: input.product.handle,
+  });
+}
+
+export function trackQuickAddToBagModalShown(input: { product: Product }) {
+  const item = gtmItemFromProduct(input.product);
+
+  pushToDataLayer({
+    event: 'quick_add_to_bag_modal_shown',
+    item_id: item.item_id,
+    item_name: item.item_name,
+    product_handle: input.product.handle,
+  });
+}
+
+export type PlpFilterAnalyticsType = 'size' | 'category' | 'colour';
+
+export function trackFilterSelected(input: {
+  filterType: PlpFilterAnalyticsType;
+  filterValue: string;
+  selected: boolean;
+  listId?: string;
+  listName?: string;
+}) {
+  pushToDataLayer({
+    event: 'filter_selected',
+    filter_type: input.filterType,
+    filter_value: input.filterValue,
+    selected: input.selected,
+    ...(input.listId ? { list_id: input.listId } : {}),
+    ...(input.listName ? { list_name: input.listName } : {}),
+  });
+}

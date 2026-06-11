@@ -12,7 +12,9 @@ import { PdpImageCarousel } from '@/components/pdp/pdp-image-carousel';
 import { PdpQtyStepper } from '@/components/pdp/pdp-qty-stepper';
 import { PdpRelatedProducts } from '@/components/pdp/pdp-related-products';
 import { PdpRelatedProductsSkeleton } from '@/components/pdp/pdp-related-products-skeleton';
+import { PdpSizeGuideModal } from '@/components/pdp/pdp-size-guide-modal';
 import { PdpSizeSelector } from '@/components/pdp/pdp-size-selector';
+import { ProductFitWidget } from '@/components/product/product-fit-widget';
 import { Button } from '@/components/ui/button';
 import { AppErrorBoundary } from '@/components/ui/error-boundary';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -34,6 +36,7 @@ import { usePdpGoBack } from '@/hooks/use-pdp-go-back';
 import { useProductQueryCleanup } from '@/hooks/use-product-query-cleanup';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useRenderTrace } from '@/hooks/use-render-trace';
+import { useSizeGuideQuery } from '@/hooks/use-size-guide-query';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewItem } from '@/lib/gtm';
 import { getProductRecommendations } from '@/services/product-recommendations';
@@ -114,6 +117,7 @@ export default function ProductScreen() {
   /** Never render PDP content until cache data matches the route handle (avoids previous-product flicker). */
   const displayProduct = product?.handle === safeHandle ? product : undefined;
   const productReady = Boolean(displayProduct);
+  useSizeGuideQuery(productReady);
   const showProductSkeleton = Boolean(safeHandle) && !displayProduct && !isError;
 
   const sizeOptions = useMemo(
@@ -132,6 +136,7 @@ export default function ProductScreen() {
   const [addingToBag, setAddingToBag] = useState(false);
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [backInStockOpen, setBackInStockOpen] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const { user } = useAuth();
   const customerEmail = user?.email;
   const customerId = user?.id;
@@ -147,6 +152,7 @@ export default function ProductScreen() {
     setQty(1);
     setLightbox({ open: false, index: 0 });
     setBackInStockOpen(false);
+    setSizeGuideOpen(false);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [safeHandle]);
 
@@ -492,10 +498,13 @@ export default function ProductScreen() {
             value={selectedSize ?? sizeOptions[0] ?? ''}
             onChange={setSelectedSize}
             sizeAvailable={sizeAvailability}
+            onOpenSizeGuide={() => setSizeGuideOpen(true)}
           />
           <View className="mt-2">
             <PdpQtyStepper value={qty} onChange={setQty} disabled={!canAdd} />
           </View>
+
+          <ProductFitWidget fitData={displayProduct.fitData} />
 
           <View className="mt-10">
             <PdpAccordion title="Description" defaultOpen={false}>
@@ -547,6 +556,8 @@ export default function ProductScreen() {
           onSubscribed={markBackInStockSubscribed}
         />
       ) : null}
+
+      <PdpSizeGuideModal visible={sizeGuideOpen} onClose={() => setSizeGuideOpen(false)} />
 
       <View className="absolute bottom-0 left-0 right-0 bg-transparent">
         <View className="px-5 pt-1" style={{ paddingBottom: ctaBottomPad }}>

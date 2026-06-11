@@ -34,7 +34,7 @@ export function CollectionStripSkeletonRow() {
             style={{
               ...StyleSheet.absoluteFillObject,
               borderRadius: SHOP_COLLECTION_STRIP_BORDER_RADIUS,
-              backgroundColor: 'rgba(28, 26, 24, 0.48)',
+              backgroundColor: 'rgba(28, 26, 24, 0.32)',
             }}
           />
           <View

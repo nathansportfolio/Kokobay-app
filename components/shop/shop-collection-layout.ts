@@ -7,7 +7,7 @@ const EDITORIAL_CARD_GAP = 44;
 
 /** Shop tab — short cover strip with title overlaid (see `variant="strip"`). */
 export const SHOP_COLLECTION_STRIP_HEIGHT = 100;
-export const SHOP_COLLECTION_STRIP_GAP = 12;
+export const SHOP_COLLECTION_STRIP_GAP = 8;
 /** Horizontal inset for strip cards — keep in sync with `ShopCollectionEditorialCard`. */
 export const SHOP_COLLECTION_STRIP_HORIZONTAL_PADDING = 20;
 export const SHOP_COLLECTION_STRIP_BORDER_RADIUS = 8;

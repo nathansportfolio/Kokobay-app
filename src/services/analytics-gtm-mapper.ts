@@ -227,6 +227,47 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
         },
       ];
 
+    case 'quick_add_to_bag_clicked':
+      return [
+        {
+          type: 'custom',
+          name: 'quick_add_to_bag_clicked',
+          params: {
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.product_handle,
+          },
+        },
+      ];
+
+    case 'quick_add_to_bag_modal_shown':
+      return [
+        {
+          type: 'custom',
+          name: 'quick_add_to_bag_modal_shown',
+          params: {
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.product_handle,
+          },
+        },
+      ];
+
+    case 'filter_selected':
+      return [
+        {
+          type: 'custom',
+          name: 'filter_selected',
+          params: {
+            filter_type: event.filter_type,
+            filter_value: event.filter_value,
+            selected: event.selected,
+            list_id: event.list_id,
+            list_name: event.list_name,
+          },
+        },
+      ];
+
     default:
       return [];
   }

@@ -1,5 +1,7 @@
 /** Shapes returned by Koko Bay web Storefront search routes (`/api/search`, `/api/search/predictive`). */
 
+import type { ProductFitData } from '@/types/product-fit';
+
 export type KokobayStorefrontMoney = {
   amount: string;
   currencyCode: string;
@@ -49,6 +51,7 @@ export type KokobayStorefrontProduct = {
     maxVariantPrice: KokobayStorefrontMoney | null;
   };
   variants: KokobayStorefrontVariant[];
+  fitData?: ProductFitData;
 };
 
 export type KokobayStorefrontProductPreview = Pick<

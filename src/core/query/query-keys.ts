@@ -35,6 +35,8 @@ export const catalogQueryKeys = {
 
 export const deliveryThresholdQueryKey = ['delivery-threshold'] as const;
 
+export const sizeGuideQueryKey = ['size-guide'] as const;
+
 export const searchQueryKeys = {
   predictive: ['search-predictive'] as const,
   overlayCarousel: ['search-overlay-carousel'] as const,

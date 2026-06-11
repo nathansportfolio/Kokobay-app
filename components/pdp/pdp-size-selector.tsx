@@ -11,6 +11,8 @@ export type PdpSizeSelectorProps = {
   disabled?: boolean;
   /** When false, size chip is disabled and shown as sold out. Omitted / missing key = available */
   sizeAvailable?: Record<string, boolean>;
+  /** Opens the size guide modal from the size row. */
+  onOpenSizeGuide?: () => void;
   /** Omit bottom margin when embedded (e.g. quick-add sheet) — chips match PDP exactly */
   embedBottom?: boolean;
 };
@@ -21,6 +23,7 @@ export function PdpSizeSelector({
   onChange,
   disabled,
   sizeAvailable,
+  onOpenSizeGuide,
   embedBottom = false,
 }: PdpSizeSelectorProps) {
   if (sizes.length === 0) {
@@ -29,9 +32,25 @@ export function PdpSizeSelector({
 
   return (
     <View className={embedBottom ? 'mb-0' : 'mb-10'}>
-      <Text variant="label" className="mb-4 text-[11px] uppercase tracking-[0.2em] text-muted">
-        Size
-      </Text>
+      <View className="mb-4 flex-row items-center justify-between gap-3">
+        <Text variant="label" className="text-[11px] uppercase tracking-[0.2em] text-muted">
+          Size
+        </Text>
+        {onOpenSizeGuide ? (
+          <Pressable
+            onPress={() => {
+              hapticSelection();
+              onOpenSizeGuide();
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Open size guide">
+            <Text className="font-sans text-[13px] tracking-[0.04em] text-accent underline">
+              Size guide
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
       <View className="flex-row flex-wrap gap-3">
         {sizes.map((s) => {
           const selected = s === value;

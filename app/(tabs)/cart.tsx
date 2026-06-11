@@ -7,7 +7,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { CartCheckoutBar } from '@/components/cart/cart-checkout-bar';
 import { CartFreeDeliveryProgress } from '@/components/cart/cart-free-delivery-progress';
 import { CartLineRow } from '@/components/cart/cart-line-row';
-import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
+import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
+import { LUXURY_TAB_SCREEN_EYEBROW_CLASS } from '@/components/navigation/luxury-tab-screen-header';
 import { Button } from '@/components/ui/button';
 import { CartLineSkeleton } from '@/components/ui/cart-line-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -27,9 +28,10 @@ import { useCartStore } from '@/store';
 import { useMarketStore } from '@/store/market-preference';
 import type { CartLine } from '@/types/cart';
 import { resolveCartCostBreakdownForDisplay } from '@/utils/cart-cost-breakdown';
+import { cn } from '@/utils/cn';
 
 /** Space below list so last lines clear the floating checkout card (card + air). */
-const FLOATING_CHECKOUT_CLEARANCE = 132;
+const FLOATING_CHECKOUT_CLEARANCE = 132 + 100;
 
 /** Inline shell — NativeWind flex-1 does not reliably apply on Android scroll/safe-area wrappers. */
 const CART_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
@@ -125,12 +127,7 @@ export default function CartScreen() {
   const listHeader = useMemo(
     () => (
       <>
-        <LuxuryTabScreenHeader title="Your bag" />
-        <Text
-          className="mb-8 font-sans text-[14px] leading-[21px]"
-          style={{ color: 'rgba(120, 118, 114, 0.88)' }}>
-          {bagUnitCount} {bagUnitCount === 1 ? 'item' : 'items'}
-        </Text>
+        <CartBagScreenHeader bagUnitCount={bagUnitCount} />
         <CartFreeDeliveryProgress
           subtotal={costBreakdown.subtotal}
           freeDeliveryThresholdGbp={freeDeliveryThresholdGbp}
@@ -170,8 +167,7 @@ export default function CartScreen() {
           contentContainerStyle={CART_SCROLL_CONTENT}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
-          <LuxuryTabScreenHeader title="Your bag" />
-          <Skeleton className="mb-10 h-4 w-24 rounded-sm" />
+          <CartBagScreenHeader bagUnitCount={0} />
           <CartLineSkeleton />
           <CartLineSkeleton />
           <CartLineSkeleton />
@@ -186,7 +182,7 @@ export default function CartScreen() {
       <SafeAreaView style={CART_SHELL} edges={['left', 'right']}>
         <View style={CART_SHELL}>
           <View className="px-[22px]">
-            <LuxuryTabScreenHeader title="Your bag" />
+            <CartBagScreenHeader bagUnitCount={0} />
           </View>
           <EmptyState
             title="Your bag is empty"
@@ -233,5 +229,23 @@ export default function CartScreen() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+function CartBagScreenHeader({ bagUnitCount }: { bagUnitCount: number }) {
+  const itemLabel = bagUnitCount === 1 ? 'item' : 'items';
+
+  return (
+    <>
+      <LuxuryTabBodySpacer />
+      <View className="mb-8 flex-row items-baseline justify-between gap-4">
+        <Text className={cn(LUXURY_TAB_SCREEN_EYEBROW_CLASS, 'mb-0')}>Your bag</Text>
+        <Text
+          className="shrink-0 font-sans text-[14px] leading-[21px]"
+          style={{ color: 'rgba(120, 118, 114, 0.88)' }}>
+          {bagUnitCount} {itemLabel}
+        </Text>
+      </View>
+    </>
   );
 }

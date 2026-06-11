@@ -701,6 +701,8 @@ export default function CollectionScreen() {
         priceSliderMin={priceMeta.min}
         priceSliderMax={priceMeta.max}
         priceCurrencyCode={priceMeta.currencyCode}
+        listId={safeHandle}
+        listName={collection?.title ?? safeHandle}
       />
       <CollectionPlpSortModal
         visible={sortOpen}

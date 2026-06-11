@@ -568,6 +568,8 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
         priceSliderMin={priceMeta.min}
         priceSliderMax={priceMeta.max}
         priceCurrencyCode={priceMeta.currencyCode}
+        listId="search"
+        listName={trimmedQ}
       />
       <CollectionPlpSortModal visible={sortOpen} onClose={() => setSortOpen(false)} sort={sort} onSelect={setSort} />
     </SafeAreaView>

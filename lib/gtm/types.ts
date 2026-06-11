@@ -40,7 +40,10 @@ export type GtmEventName =
   | 'app_update_required_shown'
   | 'app_update_optional_shown'
   | 'app_update_clicked'
-  | 'app_update_dismissed';
+  | 'app_update_dismissed'
+  | 'quick_add_to_bag_clicked'
+  | 'quick_add_to_bag_modal_shown'
+  | 'filter_selected';
 
 export type GtmDataLayerEvent = {
   event: GtmEventName;

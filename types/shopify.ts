@@ -1,5 +1,7 @@
 /** Normalized Storefront API shapes used by `services/shopify` */
 
+import type { ProductFitData } from '@/types/product-fit';
+
 export type Money = {
   amount: string;
   currencyCode: string;
@@ -41,6 +43,7 @@ export type Product = {
     minVariantPrice: Money;
     maxVariantPrice: Money;
   };
+  fitData?: ProductFitData;
 };
 
 export type Collection = {

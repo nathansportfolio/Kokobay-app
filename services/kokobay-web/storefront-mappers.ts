@@ -80,6 +80,7 @@ export function storefrontProductToProduct(node: KokobayStorefrontProduct | null
           },
         ],
     priceRange: node.priceRange,
+    ...(node.fitData ? { fitData: node.fitData } : {}),
   };
 }
 

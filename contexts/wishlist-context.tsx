@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type Dispatch,
@@ -23,7 +24,10 @@ import {
   recordJsFreezeStoreUpdate,
 } from '@/lib/js-freeze-audit';
 import { recordWishlistMapReferenceChange } from '@/lib/product-card-storm-trace';
+import { isAuthenticatedStatus } from '@/src/core/auth/types';
+import { pushWishlistToggleToRemote, syncWishlistWithRemote } from '@/utils/wishlist-remote-sync';
 import { showToast } from '@/store/toast';
+import { useAuthStore } from '@/store/auth-session';
 import {
   loadWishlistEntries,
   persistWishlistEntries,
@@ -95,10 +99,26 @@ function traceWishlistSetState(
 export function WishlistProvider({ children }: PropsWithChildren) {
   const [wishlistEntries, setWishlistEntriesState] = useState<WishlistEntry[]>([]);
   const [wishlistHydrated, setWishlistHydratedState] = useState(false);
+  const customerId = useAuthStore((state) =>
+    isAuthenticatedStatus(state.status) ? state.user?.id ?? null : null,
+  );
+  const remoteSyncGenerationRef = useRef(0);
+  const wishlistEntriesRef = useRef(wishlistEntries);
+  wishlistEntriesRef.current = wishlistEntries;
 
   const setWishlistEntries = useCallback((value: SetStateAction<WishlistEntry[]>) => {
     traceWishlistSetState(setWishlistEntriesState, value);
   }, []);
+
+  const pullRemoteWishlist = useCallback(
+    async (localEntries: WishlistEntry[], activeCustomerId?: string | null) => {
+      const generation = ++remoteSyncGenerationRef.current;
+      const merged = await syncWishlistWithRemote(localEntries, activeCustomerId);
+      if (!merged || generation !== remoteSyncGenerationRef.current) return;
+      setWishlistEntries(merged);
+    },
+    [setWishlistEntries],
+  );
 
   const setWishlistHydrated = useCallback((value: SetStateAction<boolean>) => {
     setWishlistHydratedState((prev) => {
@@ -134,7 +154,12 @@ export function WishlistProvider({ children }: PropsWithChildren) {
       setWishlistEntries(entries);
       setWishlistHydrated(true);
     });
-  }, []);
+  }, [setWishlistEntries, setWishlistHydrated]);
+
+  useEffect(() => {
+    if (!wishlistHydrated) return;
+    void pullRemoteWishlist(wishlistEntriesRef.current, customerId);
+  }, [customerId, pullRemoteWishlist, wishlistHydrated]);
 
   useEffect(() => {
     if (!wishlistHydrated) return;
@@ -181,15 +206,18 @@ export function WishlistProvider({ children }: PropsWithChildren) {
           ? { variant: 'info', title: 'Removed from wishlist' }
           : { variant: 'success', title: 'Saved' },
       );
+      void pushWishlistToggleToRemote(customerId, h, !wasPresent);
     },
-    [wishlistSet],
+    [customerId, wishlistSet],
   );
 
   const reloadWishlist = useCallback(async () => {
     const entries = await loadWishlistEntries();
     setWishlistEntries(entries);
     setWishlistHydrated(true);
-  }, []);
+    wishlistEntriesRef.current = entries;
+    await pullRemoteWishlist(entries, useAuthStore.getState().user?.id ?? null);
+  }, [pullRemoteWishlist, setWishlistEntries, setWishlistHydrated]);
 
   const value = useMemo(
     () => ({

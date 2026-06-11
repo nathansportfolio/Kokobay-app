@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
+import { trackFilterSelected } from '@/lib/gtm';
 import type { PlpFilters } from '@/types/plp';
 import { cn } from '@/utils/cn';
 import { hapticLight, hapticMedium } from '@/utils/haptics';
@@ -36,6 +37,8 @@ export type CollectionPlpFilterModalProps = {
   priceSliderMin: number;
   priceSliderMax: number;
   priceCurrencyCode: string;
+  listId?: string;
+  listName?: string;
 };
 
 function filterAccordionTitle(label: string, selectedCount: number): string {
@@ -281,6 +284,8 @@ export function CollectionPlpFilterModal({
   priceSliderMin,
   priceSliderMax,
   priceCurrencyCode,
+  listId,
+  listName,
 }: CollectionPlpFilterModalProps) {
   const insets = useSafeAreaInsets();
   const range = Math.max(priceSliderMax - priceSliderMin, 0);
@@ -316,6 +321,21 @@ export function CollectionPlpFilterModal({
     onClear();
   }, [onClear]);
 
+  const toggleFacetFilter = useCallback(
+    (filterType: 'size' | 'category' | 'colour', listKey: 'sizes' | 'categories' | 'colors', value: string) => {
+      const wasSelected = draft[listKey].includes(value);
+      onChangeDraft({ ...draft, [listKey]: toggleInList(draft[listKey], value) });
+      trackFilterSelected({
+        filterType,
+        filterValue: value,
+        selected: !wasSelected,
+        listId,
+        listName,
+      });
+    },
+    [draft, listId, listName, onChangeDraft],
+  );
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
       <SafeAreaView className="flex-1 bg-canvas" edges={['top', 'left', 'right']}>
@@ -348,9 +368,7 @@ export function CollectionPlpFilterModal({
                 options={visibleFacetSizes}
                 selected={draft.sizes}
                 countForOption={(option) => facetSizeCounts?.[option]}
-                onToggle={(value) =>
-                  onChangeDraft({ ...draft, sizes: toggleInList(draft.sizes, value) })
-                }
+                onToggle={(value) => toggleFacetFilter('size', 'sizes', value)}
               />
             </PdpAccordion>
           ) : null}
@@ -363,9 +381,7 @@ export function CollectionPlpFilterModal({
                 options={visibleFacetCategories}
                 selected={draft.categories}
                 countForOption={(option) => facetCategoryCounts?.[option]}
-                onToggle={(value) =>
-                  onChangeDraft({ ...draft, categories: toggleInList(draft.categories, value) })
-                }
+                onToggle={(value) => toggleFacetFilter('category', 'categories', value)}
               />
             </PdpAccordion>
           ) : null}
@@ -379,9 +395,7 @@ export function CollectionPlpFilterModal({
                 selected={draft.colors}
                 swatchForOption={swatchHexForColourGroup}
                 countForOption={(option) => facetColourGroupCounts?.[option]}
-                onToggle={(value) =>
-                  onChangeDraft({ ...draft, colors: toggleInList(draft.colors, value) })
-                }
+                onToggle={(value) => toggleFacetFilter('colour', 'colors', value)}
               />
             </PdpAccordion>
           ) : null}
