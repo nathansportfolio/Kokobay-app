@@ -2,11 +2,11 @@ import { useWindowDimensions, View } from 'react-native';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { pdpGalleryHeight } from '@/constants/pdp-layout';
-import { useTabChromeTop } from '@/hooks/use-luxury-chrome-top-padding';
+import { useChrome } from '@/contexts/chrome-context';
 
 export function ProductDetailSkeleton() {
   const { width, height: winH } = useWindowDimensions();
-  const chromeTop = useTabChromeTop();
+  const { topChromeHeight: chromeTop } = useChrome();
   const galleryH = pdpGalleryHeight(width, winH);
 
   return (

@@ -16,7 +16,7 @@ import {
   useWishlistProductsQuery,
   type WishlistProductsMap,
 } from '@/hooks/use-wishlist-products-query';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useScrollBottomPadding } from '@/contexts/chrome-context';
 import { newInCollectionHref } from '@/utils/collection-handles';
 
 /** Horizontal inset — `px-5` luxury breathing room */
@@ -58,7 +58,7 @@ export default function WishlistScreen() {
 
 function WishlistScreenContent() {
   const pathname = usePathname();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const listBottomPad = useScrollBottomPadding(LIST_BOTTOM_PAD);
   const { tileW, imageH, cellHeight } = useWishlistGridMetrics();
   const { wishlistHandles, wishlistHydrated } = useWishlist();
   const listRef = useRef<FlashListRef<string>>(null);
@@ -123,8 +123,6 @@ function WishlistScreenContent() {
     () => `${tileW}:${imageH}:${cellHeight}:${Object.keys(productsByHandle).length}`,
     [tileW, imageH, cellHeight, productsByHandle],
   );
-
-  const listBottomPad = tabBarHeight + LIST_BOTTOM_PAD;
 
   if (!wishlistHydrated) {
     return (

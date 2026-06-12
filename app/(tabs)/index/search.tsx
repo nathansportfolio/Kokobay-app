@@ -3,23 +3,23 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { BackHandler, useWindowDimensions, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
+import { CollectionPlpProductGrid } from '@/components/plp/collection-plp-product-grid';
 import { CollectionPlpSortModal } from '@/components/plp/collection-plp-sort-modal';
 import { CollectionPlpToolbar } from '@/components/plp/collection-plp-toolbar';
 import { CollectionProductTile } from '@/components/plp/collection-product-tile';
 import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-footer';
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
 import { PlpProductCountLabel } from '@/components/plp/plp-product-count-label';
+import { PlpScrollListHeader } from '@/components/plp/plp-scroll-list-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ProductGridSkeleton } from '@/components/ui/product-grid-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
-import { luxuryChrome } from '@/constants/luxury-nav';
-import { usePlpListHeaderTopSpacerHeight } from '@/hooks/use-luxury-chrome-top-padding';
 import {
   PLP_COLUMN_GAP,
   PLP_HORIZONTAL_PAD,
@@ -29,27 +29,27 @@ import {
 } from '@/constants/plp-scroll';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
 import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
-import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
 import { useKokobaySearchCatalog } from '@/hooks/use-kokobay-catalog-pages';
+import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
+import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
+import { useScrollBottomPadding } from '@/contexts/chrome-context';
+import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
-import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
-import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
-import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
-import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { usePlpProductLink } from '@/hooks/use-plp-product-link';
-import { useSearchPlpGoBack } from '@/hooks/use-search-plp-go-back';
+import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
+import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
+import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
+import { useSearchPlpGoBack } from '@/hooks/use-search-plp-go-back';
+import { trackSearch, trackViewItemList } from '@/lib/gtm';
 import { resetPlpPerfTrace } from '@/lib/plp-perf-trace';
 import { resetPlpScrollDebug } from '@/lib/plp-scroll-debug';
-import { trackSearch, trackViewItemList } from '@/lib/gtm';
+import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { searchProducts } from '@/services/shopify';
+import { useMarketStore } from '@/store/market-preference';
 import { defaultPlpFilters, type PlpFilters, type PlpSort } from '@/types/plp';
 import type { Product } from '@/types/shopify';
-import { useMarketQueryKey } from '@/hooks/use-market-query-key';
-import { useMarketStore } from '@/store/market-preference';
 import {
   countActivePlpFilters,
   extractFacets,
@@ -57,10 +57,10 @@ import {
   plpPriceSliderMetaForCurrency,
   webCatalogFacetsWithAccurateColourCounts,
 } from '@/utils/plp';
-import { hasActivePlpFilters } from '@/utils/storefront-filters';
 import { collectionProductCellHeight } from '@/utils/plp-layout';
 import { resolvePlpProductCount } from '@/utils/plp-product-count';
 import { keepPreviousDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
+import { hasActivePlpFilters } from '@/utils/storefront-filters';
 
 function normalizeParam(value: string | string[] | undefined): string {
   if (value == null) return '';
@@ -76,8 +76,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   const goBackFromSearch = useSearchPlpGoBack();
   const productLinkFor = usePlpProductLink();
   const prefetchProduct = usePrefetchProduct();
-  const plpListHeaderTopSpacer = usePlpListHeaderTopSpacerHeight();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const listBottomPad = useScrollBottomPadding(PLP_LIST_BOTTOM_PAD);
   const { width } = useWindowDimensions();
   const isWebCatalog = isKokobayWebProductsConfigured();
 
@@ -368,49 +367,36 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
 
   const listHeader = useMemo(() => {
     return (
-      <View style={{ marginHorizontal: -horizontalPad }}>
-        <View style={{ height: plpListHeaderTopSpacer }} />
-        <View
-          style={{
-            paddingBottom: 14,
-            backgroundColor: luxuryChrome.bg,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: luxuryChrome.line,
-          }}>
-          <View className="relative min-h-[48px] items-center justify-center px-14">
-            <Pressable
-              onPress={goBackFromSearch}
-              accessibilityRole="button"
-              accessibilityLabel="Back to collections"
-              hitSlop={14}
-              className="absolute bottom-0 left-4 top-0 z-10 justify-center p-1 active:opacity-70">
-              <IconSymbol name="chevron.left" size={18} color={palette.ink} />
-            </Pressable>
-            <View className="items-center">
-              <Text
-                variant="body"
-                className="text-center font-sans text-[13px] font-normal leading-5 tracking-wide"
-                numberOfLines={2}
-                accessibilityLabel={`Search: ${plpTitle}`}
-                style={{ color: palette.ink }}>
-                {quotedSearchTitle}
-              </Text>
-              <PlpProductCountLabel
-                count={displayProductCount}
-                visible={allProducts !== undefined}
-                reserveSpace={listLoading}
-              />
-            </View>
-          </View>
-        </View>
-        <CollectionPlpToolbar
-          onFilterPress={openFilter}
-          onSortPress={() => setSortOpen(true)}
-          onGridToggle={toggleGrid}
-          numColumns={numColumns}
-          activeFilterCount={countActivePlpFilters(filters, priceMeta.min, priceMeta.max)}
-        />
-      </View>
+      <PlpScrollListHeader
+        onBack={goBackFromSearch}
+        backAccessibilityLabel="Back to collections"
+        title={
+          <>
+            <Text
+              variant="body"
+              className="text-center font-sans text-[13px] font-normal leading-5 tracking-wide"
+              numberOfLines={2}
+              accessibilityLabel={`Search: ${plpTitle}`}
+              style={{ color: palette.ink }}>
+              {quotedSearchTitle}
+            </Text>
+            <PlpProductCountLabel
+              count={displayProductCount}
+              visible={allProducts !== undefined}
+              reserveSpace={listLoading}
+            />
+          </>
+        }
+        toolbar={
+          <CollectionPlpToolbar
+            onFilterPress={openFilter}
+            onSortPress={() => setSortOpen(true)}
+            onGridToggle={toggleGrid}
+            numColumns={numColumns}
+            activeFilterCount={countActivePlpFilters(filters, priceMeta.min, priceMeta.max)}
+          />
+        }
+      />
     );
   }, [
     plpTitle,
@@ -420,15 +406,11 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     toggleGrid,
     numColumns,
     filters,
-    horizontalPad,
-    plpListHeaderTopSpacer,
     priceMeta.max,
     priceMeta.min,
-    totalFiltered,
     displayProductCount,
     allProducts,
     listLoading,
-    isWebCatalog,
   ]);
 
   const listSkeleton = useMemo(
@@ -514,8 +496,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
 
   if (searchError && flatItems.length === 0) {
     return (
-      <Screen scroll>
-        <View style={{ height: plpListHeaderTopSpacer }} />
+      <Screen scroll edges={['left', 'right']}>
         <EmptyState title="Something went wrong" message="We could not load results for this search. Try again.">
           <Button title="Try again" variant="primary" onPress={() => void refetchSearch()} />
         </EmptyState>
@@ -523,40 +504,39 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     );
   }
 
-  const listBottomPad = tabBarHeight + PLP_LIST_BOTTOM_PAD;
-
   return (
-    <View style={plpScreenShell} collapsable={false}>
-      <FlashList<Product>
-        ref={listRef}
-        style={plpScreenShell}
-        data={showPlpSkeleton ? [] : flatItems}
-        numColumns={numColumns}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        getItemType={() => 'productTile'}
-        overrideItemLayout={overrideItemLayout}
-        extraData={listExtra}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
-        drawDistance={Math.max(400, cellHeight * 3)}
-        removeClippedSubviews={false}
-        scrollEnabled={!showPlpSkeleton}
-        {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
-          ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
-          : {})}
-        onEndReached={showPlpSkeleton ? undefined : onEndReached}
-        onEndReachedThreshold={0.35}
-        onScroll={onPlpScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={{
-          paddingHorizontal: horizontalPad,
-          paddingBottom: listBottomPad,
-        }}
-        contentInsetAdjustmentBehavior="never"
-        showsVerticalScrollIndicator={false}
-      />
+    <SafeAreaView style={plpScreenShell} collapsable={false} edges={['left', 'right']}>
+      <View style={plpScreenShell}>
+        <CollectionPlpProductGrid
+          ref={listRef}
+          style={{ flex: 1 }}
+          data={showPlpSkeleton ? [] : flatItems}
+          numColumns={numColumns}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          getItemType={() => 'productTile'}
+          overrideItemLayout={overrideItemLayout}
+          extraData={listExtra}
+          ListHeaderComponent={listHeader}
+          ListEmptyComponent={listEmpty}
+          ListFooterComponent={listFooter}
+          drawDistance={Math.max(400, cellHeight * 3)}
+          removeClippedSubviews={false}
+          scrollEnabled={!showPlpSkeleton}
+          {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
+            ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
+            : {})}
+          onEndReached={showPlpSkeleton ? undefined : onEndReached}
+          onEndReachedThreshold={0.35}
+          onScroll={onPlpScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{
+            paddingHorizontal: horizontalPad,
+            paddingBottom: listBottomPad,
+          }}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
       <CollectionPlpFilterModal
         visible={filterOpen}
         onClose={() => setFilterOpen(false)}
@@ -577,7 +557,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
         listName={trimmedQ}
       />
       <CollectionPlpSortModal visible={sortOpen} onClose={() => setSortOpen(false)} sort={sort} onSelect={setSort} />
-    </View>
+    </SafeAreaView>
   );
 }
 

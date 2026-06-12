@@ -3,7 +3,7 @@ import { type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
@@ -14,14 +14,13 @@ import { CollectionProductTile } from '@/components/plp/collection-product-tile'
 import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-footer';
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
 import { PlpProductCountLabel } from '@/components/plp/plp-product-count-label';
+import { PlpScrollListHeader } from '@/components/plp/plp-scroll-list-header';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ProductGridSkeleton } from '@/components/ui/product-grid-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
 import { ALL_PRODUCTS_COLLECTION, ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
-import { luxuryChrome } from '@/constants/luxury-nav';
 import {
   PLP_COLUMN_GAP,
   PLP_HORIZONTAL_PAD,
@@ -31,13 +30,12 @@ import {
 } from '@/constants/plp-scroll';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { usePlpListHeaderTopSpacerHeight } from '@/hooks/use-luxury-chrome-top-padding';
+import { useScrollBottomPadding } from '@/contexts/chrome-context';
 import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
 import { useKokobayCollectionCatalog } from '@/hooks/use-kokobay-catalog-pages';
 import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
 import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
 import { usePlpProductLink } from '@/hooks/use-plp-product-link';
 import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
@@ -81,8 +79,7 @@ export default function CollectionScreen() {
   const goBack = useReturnToGoBack();
   const productLinkFor = usePlpProductLink();
   const prefetchProduct = usePrefetchProduct();
-  const plpListHeaderTopSpacer = usePlpListHeaderTopSpacerHeight();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const listBottomPad = useScrollBottomPadding(PLP_LIST_BOTTOM_PAD);
   const { width } = useWindowDimensions();
   const safeHandle = typeof handle === 'string' ? handle : '';
   const apiHandle = resolveCollectionHandleForApi(safeHandle);
@@ -447,56 +444,40 @@ export default function CollectionScreen() {
   const listHeader = useMemo(() => {
     if (!collection) return null;
     return (
-      <View style={{ marginHorizontal: -horizontalPad }}>
-        <View style={{ height: plpListHeaderTopSpacer }} />
-        <View
-          style={{
-            paddingBottom: 14,
-            backgroundColor: luxuryChrome.bg,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: luxuryChrome.line,
-          }}>
-          <View className="relative min-h-[48px] items-center justify-center px-14">
-            <Pressable
-              onPress={goBack}
-              accessibilityRole="button"
-              accessibilityLabel="Go back"
-              hitSlop={14}
-              className="absolute bottom-0 left-4 top-0 z-10 justify-center p-1 active:opacity-70">
-              <IconSymbol name="chevron.left" size={18} color={palette.ink} />
-            </Pressable>
-            <View className="items-center px-2">
+      <PlpScrollListHeader
+        onBack={goBack}
+        backAccessibilityLabel="Go back"
+        title={
+          <>
+            <Text
+              variant="body"
+              className="text-center font-sans text-[13px] font-normal leading-5 tracking-wide"
+              numberOfLines={2}
+              style={{ color: palette.ink }}>
+              {collection.title}
+            </Text>
+            {collectionBlurbText ? (
               <Text
-                variant="body"
-                className="text-center font-sans text-[13px] font-normal leading-5 tracking-wide"
-                numberOfLines={2}
-                style={{ color: palette.ink }}>
-                {collection.title}
+                variant="caption"
+                className="mt-2 text-center font-sans text-[12px] leading-[18px]"
+                numberOfLines={3}
+                style={{ color: 'rgba(120, 118, 114, 0.9)' }}>
+                {collectionBlurbText}
               </Text>
-              {collectionBlurbText ? (
-                <Text
-                  variant="caption"
-                  className="mt-2 text-center font-sans text-[12px] leading-[18px]"
-                  numberOfLines={3}
-                  style={{ color: 'rgba(120, 118, 114, 0.9)' }}>
-                  {collectionBlurbText}
-                </Text>
-              ) : null}
-              <PlpProductCountLabel
-                count={displayProductCount}
-                visible={allProducts !== undefined}
-              />
-            </View>
-          </View>
-        </View>
-        <CollectionPlpToolbar
-          onFilterPress={openFilter}
-          onSortPress={() => setSortOpen(true)}
-          onGridToggle={toggleGrid}
-          numColumns={numColumns}
-          activeFilterCount={countActivePlpFilters(filters, priceMeta.min, priceMeta.max)}
-        />
-      </View>
+            ) : null}
+            <PlpProductCountLabel count={displayProductCount} visible={allProducts !== undefined} />
+          </>
+        }
+        toolbar={
+          <CollectionPlpToolbar
+            onFilterPress={openFilter}
+            onSortPress={() => setSortOpen(true)}
+            onGridToggle={toggleGrid}
+            numColumns={numColumns}
+            activeFilterCount={countActivePlpFilters(filters, priceMeta.min, priceMeta.max)}
+          />
+        }
+      />
     );
   }, [
     collection,
@@ -506,10 +487,8 @@ export default function CollectionScreen() {
     toggleGrid,
     numColumns,
     filters,
-    horizontalPad,
     priceMeta.max,
     priceMeta.min,
-    plpListHeaderTopSpacer,
     displayProductCount,
     allProducts,
   ]);
@@ -621,8 +600,6 @@ export default function CollectionScreen() {
     );
   }
 
-  const listBottomPad = tabBarHeight + PLP_LIST_BOTTOM_PAD;
-
   if (showPlpSkeleton) {
     return (
       <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
@@ -652,35 +629,37 @@ export default function CollectionScreen() {
 
   return (
     <SafeAreaView style={plpScreenShell} collapsable={false} edges={['left', 'right']}>
-      <CollectionPlpProductGrid
-        ref={listRef}
-        style={plpScreenShell}
-        data={flatItems}
-        numColumns={numColumns}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        traceRenderItemRef={renderItem}
-        getItemType={() => 'productTile'}
-        overrideItemLayout={overrideItemLayout}
-        extraData={listExtra}
-        ListHeaderComponent={listHeader}
-        ListEmptyComponent={listEmpty}
-        ListFooterComponent={listFooter}
-        drawDistance={Math.max(400, cellHeight * 3)}
-        removeClippedSubviews={false}
-        {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
-          ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
-          : {})}
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.35}
-        onScroll={onPlpScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={{
-          paddingHorizontal: horizontalPad,
-          paddingBottom: listBottomPad,
-        }}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={plpScreenShell}>
+        <CollectionPlpProductGrid
+          ref={listRef}
+          style={{ flex: 1 }}
+          data={flatItems}
+          numColumns={numColumns}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          traceRenderItemRef={renderItem}
+          getItemType={() => 'productTile'}
+          overrideItemLayout={overrideItemLayout}
+          extraData={listExtra}
+          ListHeaderComponent={listHeader}
+          ListEmptyComponent={listEmpty}
+          ListFooterComponent={listFooter}
+          drawDistance={Math.max(400, cellHeight * 3)}
+          removeClippedSubviews={false}
+          {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
+            ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
+            : {})}
+          onEndReached={onEndReached}
+          onEndReachedThreshold={0.35}
+          onScroll={onPlpScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={{
+            paddingHorizontal: horizontalPad,
+            paddingBottom: listBottomPad,
+          }}
+          showsVerticalScrollIndicator={false}
+        />
+      </View>
       <CollectionPlpFilterModal
         visible={filterOpen}
         onClose={() => setFilterOpen(false)}

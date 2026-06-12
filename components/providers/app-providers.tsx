@@ -3,6 +3,7 @@ import { PropsWithChildren } from 'react';
 
 import { CheckoutUnavailableModal } from '@/components/checkout/checkout-unavailable-modal';
 import { AppUpdateGate } from '@/components/update/app-update-gate';
+import { ChromeProvider } from '@/contexts/chrome-context';
 import { AppGlobalShell } from '@/components/providers/app-global-shell';
 import { AppErrorBannerSync } from '@/components/providers/app-error-banner-sync';
 import { AppHomeHeroSync } from '@/components/providers/app-home-hero-sync';
@@ -54,7 +55,9 @@ export function AppProviders({ children }: PropsWithChildren) {
       <WishlistProvider>
         <BagProvider>
           <ScrollToTopProvider>
-            <AppGlobalShell>{children}</AppGlobalShell>
+            <ChromeProvider>
+              <AppGlobalShell>{children}</AppGlobalShell>
+            </ChromeProvider>
             <CheckoutUnavailableModal />
             <AppUpdateGate />
           </ScrollToTopProvider>

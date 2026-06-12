@@ -39,17 +39,9 @@ export const luxuryHeaderRowHeight = tabHeaderRowHeight();
 
 /**
  * Space between the bottom of the fixed `LuxuryTabHeader` row and the start of page content.
- * Used by `LuxuryTabBodySpacer` and PLP scroll padding so every tab route matches.
+ * Added to `topChromeHeight` via `useScrollTopPadding()` in `ChromeProvider`.
  */
 export const LUXURY_TAB_HEADER_CONTENT_GAP = 12;
 
 /** Extra air above floating bottom chrome (checkout card, PDP add-to-bag). */
 export const LUXURY_TAB_CONTENT_EXTRA_BOTTOM = 10;
-
-/**
- * PLP list-header spacer below fixed tab chrome (status bar + header row + banners + gap).
- * Prefer `usePlpListHeaderTopSpacerHeight()` in screens — it reads live banner height.
- */
-export function luxuryTabPlpListHeaderPaddingTop(bannerStripHeight = 0): number {
-  return tabHeaderRowHeight() + bannerStripHeight + LUXURY_TAB_HEADER_CONTENT_GAP;
-}

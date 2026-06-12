@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Href } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 
 import { HomeNewInHero, homeNewInHeroHeight } from '@/components/home/home-new-in-hero';
 import { HomeNewInSection } from '@/components/home/home-new-in-section';
@@ -14,9 +13,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
 import { isAndroidDevClient } from '@/lib/dev-android-network';
-import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
+import { useChrome, useScrollBottomPadding } from '@/contexts/chrome-context';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useAppHomeHeroQuery } from '@/hooks/use-app-home-hero-query';
 import { useHomeRenderTrace } from '@/hooks/use-home-render-trace';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
@@ -34,6 +32,7 @@ import { orderCollectionsForDisplay } from '@/utils/order-collections';
 const COLLECTIONS_CMS_STALE_MS = 60 * 60_000;
 
 const SHOP_BY_CATEGORY_TOP = 56;
+const HOME_SCROLL_BOTTOM_EXTRA = 24;
 
 function orderHomeCollections(collections: Collection[]): Collection[] {
   return collectionsWithCoverImage(
@@ -60,7 +59,8 @@ export default function HomeScreen() {
 function HomeScreenContent() {
   useLifecycleRenderCount('home');
   useRenderTrace('Home');
-  const insets = useSafeAreaInsets();
+  const { topChromeHeight } = useChrome();
+  const scrollBottomPad = useScrollBottomPadding(HOME_SCROLL_BOTTOM_EXTRA);
   const { width } = useWindowDimensions();
   const mainScrollRef = useRef<ScrollView>(null);
   const loadingScrollRef = useRef<ScrollView>(null);
@@ -70,8 +70,8 @@ function HomeScreenContent() {
   const scrollToTopLoading = useCallback(() => {
     loadingScrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
-  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const headerStack = luxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
+  const headerStack = topChromeHeight;
+  const homeListBottomPad = Platform.OS === 'ios' ? scrollBottomPad : 40;
   const tileWidth = Math.min(280, Math.round(width * 0.78));
   const carouselHeight = tileWidth * (4 / 3) + 100;
   const heroQuery = useAppHomeHeroQuery();
@@ -100,7 +100,7 @@ function HomeScreenContent() {
     hasData: Boolean(data),
     isRefetching,
     cmsTilesCount: cmsTiles?.length ?? 0,
-    appErrorBannerHeight,
+    appErrorBannerHeight: topChromeHeight,
     width,
     newInHandle,
     heroPending: heroQuery.isPending,
@@ -137,7 +137,7 @@ function HomeScreenContent() {
           showsVerticalScrollIndicator={false}
           onScroll={onScrollLoading}
           scrollEventThrottle={16}
-          contentContainerStyle={{ paddingBottom: 48, paddingTop: 0 }}>
+          contentContainerStyle={{ paddingBottom: homeListBottomPad, paddingTop: 0 }}>
           <Skeleton
             className="mb-0 w-full rounded-none"
             style={{ height: homeNewInHeroHeight(width), borderRadius: 0 }}
@@ -164,7 +164,7 @@ function HomeScreenContent() {
     return (
       <ScrollView
         className="flex-1 bg-canvas"
-        contentContainerStyle={{ flexGrow: 1, paddingTop: headerStack, paddingBottom: 48 }}>
+        contentContainerStyle={{ flexGrow: 1, paddingTop: headerStack, paddingBottom: homeListBottomPad }}>
         <View className="px-5">
           <EmptyState title="The bay is quiet" message={connectionMessage} />
           <Button
@@ -187,7 +187,8 @@ function HomeScreenContent() {
         showsVerticalScrollIndicator={false}
         onScroll={onScrollMain}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 40 }}>
+        {...(Platform.OS === 'ios' ? { contentInsetAdjustmentBehavior: 'never' as const } : {})}
+        contentContainerStyle={{ paddingBottom: homeListBottomPad }}>
         <HomeNewInHero width={width} />
         <View style={{ paddingTop: 24 }}>
           <HomeNewInSection

@@ -18,7 +18,7 @@ import { AccountSignUpForm } from '@/components/account/account-sign-up-form';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useAccountMode } from '@/hooks/use-account-mode';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useChrome, useScrollBottomPadding } from '@/contexts/chrome-context';
 import { markSignOutPerf } from '@/lib/sign-out-perf';
 import { useAuth } from '@/hooks/use-auth';
 import { useAuthStore } from '@/store';
@@ -48,10 +48,10 @@ export default function AccountScreen() {
 
 function AccountScreenContent() {
   const router = useRouter();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const { bottomChromeHeight } = useChrome();
   const { height: winH } = useWindowDimensions();
   /** Explicit height — flex:1 ScrollView collapses on Android (guest + logged-in). */
-  const scrollHeight = Math.max(320, winH - tabBarHeight);
+  const scrollHeight = Math.max(320, winH - bottomChromeHeight);
   const scrollStyle = { height: scrollHeight, backgroundColor: '#FAF8F5' } as const;
   const { orderId, orderNumber } = useLocalSearchParams<{
     orderId?: string;

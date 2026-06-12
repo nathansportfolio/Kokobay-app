@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { Link, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CartCheckoutBar } from '@/components/cart/cart-checkout-bar';
@@ -19,7 +19,7 @@ import { useCartPricingAuditScreen } from '@/hooks/use-cart-pricing-audit';
 import { useCartScreenState } from '@/hooks/use-cart-screen-state';
 import { useAppCartDeliveryTextLabel } from '@/hooks/use-app-cart-delivery-text-query';
 import { useDeliveryThreshold } from '@/hooks/use-delivery-threshold';
-import { useLuxuryTabContentBottomPadding } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useFloatingBottomPadding } from '@/contexts/chrome-context';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
@@ -33,6 +33,9 @@ import { cn } from '@/utils/cn';
 
 /** Space below list so last lines clear the floating checkout card (card + air). */
 const FLOATING_CHECKOUT_CLEARANCE = 132 + 100;
+
+/** Android tab content already sits above the bar — keep the checkout card tight to it. */
+const ANDROID_CHECKOUT_BAR_BOTTOM_PAD = 0;
 
 /** Inline shell — NativeWind flex-1 does not reliably apply on Android scroll/safe-area wrappers. */
 const CART_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
@@ -54,7 +57,9 @@ export default function CartScreen() {
 function CartScreenContent() {
   useLifecycleRenderCount('cart');
   useRenderTrace('Cart');
-  const checkoutBottomInset = useLuxuryTabContentBottomPadding();
+  const checkoutBottomInset = useFloatingBottomPadding();
+  const checkoutBarBottomInset =
+    Platform.OS === 'android' ? ANDROID_CHECKOUT_BAR_BOTTOM_PAD : checkoutBottomInset;
   const {
     lines,
     hasHydrated,
@@ -162,7 +167,7 @@ function CartScreenContent() {
     [bagUnitCount, costBreakdown.subtotal, freeDeliveryThresholdGbp],
   );
 
-  const listBottomPad = FLOATING_CHECKOUT_CLEARANCE + checkoutBottomInset;
+  const listBottomPad = FLOATING_CHECKOUT_CLEARANCE + checkoutBarBottomInset;
 
   let renderBranch = 'content';
   if (!hasHydrated) renderBranch = 'skeleton';
@@ -246,7 +251,7 @@ function CartScreenContent() {
             freeDeliveryThresholdGbp={freeDeliveryThresholdGbp}
             deliveryAtCheckoutLabel={deliveryAtCheckoutLabel}
             marketCountryCode={marketCountryCode}
-            bottomInset={checkoutBottomInset}
+            bottomInset={checkoutBarBottomInset}
           />
         </View>
       </View>

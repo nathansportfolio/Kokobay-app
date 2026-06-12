@@ -6,3 +6,10 @@ export function useStableTopInset(): number {
   const fallback = initialWindowMetrics?.insets.top ?? 0;
   return Math.max(insets.top, fallback);
 }
+
+/** Same seeding strategy as {@link useStableTopInset}. */
+export function useStableBottomInset(): number {
+  const insets = useSafeAreaInsets();
+  const fallback = initialWindowMetrics?.insets.bottom ?? 0;
+  return Math.max(insets.bottom, fallback);
+}

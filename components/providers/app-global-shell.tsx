@@ -1,11 +1,9 @@
-import { usePathname, useSegments } from 'expo-router';
 import type { PropsWithChildren } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeaderBannerStack } from '@/components/cms/app-header-banner-stack';
 import { LuxuryTabHeader } from '@/components/navigation/luxury-tab-header';
-import { luxuryTabHeaderBarBottom } from '@/constants/luxury-nav';
+import { useChrome } from '@/contexts/chrome-context';
 
 const TAB_HEADER_Z_INDEX = 10_000;
 const TAB_BANNER_Z_INDEX = 10_001;
@@ -15,28 +13,23 @@ const TAB_BANNER_Z_INDEX = 10_001;
  * so it stays above scrolling native lists (FlashList) that ignore sibling z-index.
  *
  * Header/banner chrome lives here on iOS — not inside NativeTabs. Tab content stays
- * full-bleed; each screen clears chrome with its own spacer.
+ * full-bleed; each screen clears chrome via `useChrome()`.
  */
 export function AppGlobalShell({ children }: PropsWithChildren) {
-  const insets = useSafeAreaInsets();
-  const pathname = usePathname();
-  const segments = useSegments();
-  const isTabScene = segments[0] === '(tabs)';
-  const hideTabChrome = pathname === '/search-overlay';
-  const bannerTop = luxuryTabHeaderBarBottom(insets.top);
+  const { tabHeaderBottom, showsTabChrome } = useChrome();
 
   return (
     <View style={styles.root} pointerEvents="box-none" collapsable={false}>
       {children}
-      {isTabScene && Platform.OS === 'ios' && !hideTabChrome ? (
+      {Platform.OS === 'ios' && showsTabChrome ? (
         <View style={styles.headerHost} pointerEvents="box-none">
           <LuxuryTabHeader />
         </View>
       ) : null}
-      {isTabScene && !hideTabChrome ? (
+      {showsTabChrome ? (
         <View
           pointerEvents="box-none"
-          style={[styles.bannerHost, { top: bannerTop }]}>
+          style={[styles.bannerHost, { top: tabHeaderBottom }]}>
           <AppHeaderBannerStack />
         </View>
       ) : null}

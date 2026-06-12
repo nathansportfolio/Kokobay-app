@@ -9,7 +9,7 @@ import { ShopCollectionsList } from '@/components/shop/shop-collections-list';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useScrollBottomPadding } from '@/contexts/chrome-context';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { markShopTabViewportExpected, resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
 import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
@@ -57,8 +57,7 @@ export default function CategoriesScreen() {
 function CategoriesScreenContent() {
   const listRef = useRef<FlashListRef<CmsCollectionDisplayItem>>(null);
   const { width: screenWidth } = useWindowDimensions();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
-  const listBottomPad = tabBarHeight + LIST_BOTTOM_PAD;
+  const listBottomPad = useScrollBottomPadding(LIST_BOTTOM_PAD);
 
   useEffect(() => {
     resetShopTabPerfTrace({ routeKey: 'categories-tab' });

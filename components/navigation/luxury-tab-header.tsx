@@ -1,6 +1,6 @@
 import { Link, router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useChrome } from '@/contexts/chrome-context';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useRenderTrace } from '@/hooks/use-render-trace';
@@ -21,7 +21,7 @@ const TAB_CHROME_Z_INDEX = 10_000;
 /** Fixed Koko Bay bar (incident banner is rendered by `AppGlobalShell`). */
 export function LuxuryTabHeader() {
   useRenderTrace('Header');
-  const insets = useSafeAreaInsets();
+  const { topInset } = useChrome();
 
   return (
     <View
@@ -32,7 +32,7 @@ export function LuxuryTabHeader() {
         left: 0,
         right: 0,
         zIndex: TAB_CHROME_Z_INDEX,
-        paddingTop: insets.top,
+        paddingTop: topInset,
         backgroundColor: luxuryChrome.bg,
         borderBottomWidth: LUXURY_HEADER_BORDER,
         borderBottomColor: luxuryChrome.line,
