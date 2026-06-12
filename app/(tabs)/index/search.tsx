@@ -3,8 +3,7 @@ import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BackHandler, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
 import { CollectionPlpSortModal } from '@/components/plp/collection-plp-sort-modal';
@@ -20,8 +19,7 @@ import { ProductGridSkeleton } from '@/components/ui/product-grid-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
 import { luxuryChrome } from '@/constants/luxury-nav';
-import { useLuxuryPlpListHeaderPaddingTop } from '@/hooks/use-luxury-chrome-top-padding';
-import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
+import { usePlpListHeaderTopSpacerHeight } from '@/hooks/use-luxury-chrome-top-padding';
 import {
   PLP_COLUMN_GAP,
   PLP_HORIZONTAL_PAD,
@@ -40,7 +38,6 @@ import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
 import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
-import { useStableTopInset } from '@/hooks/use-stable-top-inset';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { usePlpProductLink } from '@/hooks/use-plp-product-link';
 import { useSearchPlpGoBack } from '@/hooks/use-search-plp-go-back';
@@ -79,10 +76,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   const goBackFromSearch = useSearchPlpGoBack();
   const productLinkFor = usePlpProductLink();
   const prefetchProduct = usePrefetchProduct();
-  const insets = useSafeAreaInsets();
-  const topInset = useStableTopInset();
-  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const listHeaderPaddingTop = useLuxuryPlpListHeaderPaddingTop(appErrorBannerHeight);
+  const plpListHeaderTopSpacer = usePlpListHeaderTopSpacerHeight();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const { width } = useWindowDimensions();
   const isWebCatalog = isKokobayWebProductsConfigured();
@@ -346,9 +340,16 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
         perfTraceIndex={index}
         perfTraceScreen="search"
         onPrefetchProduct={prefetchProduct}
+        selectItemContext={{
+          source_screen: 'search',
+          item_list_id: `search:${trimmedQ}`,
+          item_list_name: `Search: ${trimmedQ}`,
+          index,
+          search_term: trimmedQ,
+        }}
       />
     ),
-    [productLinkFor, prefetchProduct, itemWidth, cellHeight, numColumns, columnGap],
+    [productLinkFor, prefetchProduct, itemWidth, cellHeight, numColumns, columnGap, trimmedQ],
   );
 
   const keyExtractor = useCallback((item: Product) => item.id, []);
@@ -368,7 +369,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   const listHeader = useMemo(() => {
     return (
       <View style={{ marginHorizontal: -horizontalPad }}>
-        <View style={{ height: topInset + listHeaderPaddingTop }} />
+        <View style={{ height: plpListHeaderTopSpacer }} />
         <View
           style={{
             paddingBottom: 14,
@@ -397,6 +398,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
               <PlpProductCountLabel
                 count={displayProductCount}
                 visible={allProducts !== undefined}
+                reserveSpace={listLoading}
               />
             </View>
           </View>
@@ -419,17 +421,33 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
     numColumns,
     filters,
     horizontalPad,
-    insets.top,
-    topInset,
+    plpListHeaderTopSpacer,
     priceMeta.max,
     priceMeta.min,
     totalFiltered,
     displayProductCount,
     allProducts,
+    listLoading,
     isWebCatalog,
   ]);
 
+  const listSkeleton = useMemo(
+    () => (
+      <ProductGridSkeleton
+        columns={numColumns}
+        rows={numColumns === 2 ? 4 : 3}
+        itemWidth={itemWidth}
+        cellHeight={cellHeight}
+        columnGap={columnGap}
+      />
+    ),
+    [numColumns, itemWidth, cellHeight, columnGap],
+  );
+
   const listEmpty = useMemo(() => {
+    if (showPlpSkeleton) {
+      return listSkeleton;
+    }
     if (totalFiltered === 0 && (hasSelectedFilters || (allProducts?.length ?? 0) > 0)) {
       return (
         <PlpNoResultsSuggestions variant="filtered" onClearFilters={clearFilters} />
@@ -439,7 +457,15 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
       return <PlpNoResultsSuggestions variant="empty-search" />;
     }
     return null;
-  }, [totalFiltered, allProducts?.length, hasSelectedFilters, clearFilters, listLoading]);
+  }, [
+    showPlpSkeleton,
+    listSkeleton,
+    totalFiltered,
+    allProducts?.length,
+    hasSelectedFilters,
+    clearFilters,
+    listLoading,
+  ]);
 
   const listFooter = useMemo(() => {
     if (!isWebCatalog) return null;
@@ -489,7 +515,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
   if (searchError && flatItems.length === 0) {
     return (
       <Screen scroll>
-        <View style={{ height: topInset + listHeaderPaddingTop }} />
+        <View style={{ height: plpListHeaderTopSpacer }} />
         <EmptyState title="Something went wrong" message="We could not load results for this search. Try again.">
           <Button title="Try again" variant="primary" onPress={() => void refetchSearch()} />
         </EmptyState>
@@ -499,35 +525,12 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
 
   const listBottomPad = tabBarHeight + PLP_LIST_BOTTOM_PAD;
 
-  if (showPlpSkeleton) {
-    return (
-      <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
-        <ScrollView
-          style={plpScreenShell}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: horizontalPad,
-            paddingBottom: listBottomPad,
-          }}>
-          {listHeader}
-          <ProductGridSkeleton
-            columns={numColumns}
-            rows={numColumns === 2 ? 4 : 3}
-            itemWidth={itemWidth}
-            cellHeight={cellHeight}
-            columnGap={columnGap}
-          />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView style={plpScreenShell} collapsable={false} edges={['left', 'right']}>
+    <View style={plpScreenShell} collapsable={false}>
       <FlashList<Product>
         ref={listRef}
         style={plpScreenShell}
-        data={flatItems}
+        data={showPlpSkeleton ? [] : flatItems}
         numColumns={numColumns}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
@@ -539,10 +542,11 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
         ListFooterComponent={listFooter}
         drawDistance={Math.max(400, cellHeight * 3)}
         removeClippedSubviews={false}
+        scrollEnabled={!showPlpSkeleton}
         {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
           ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
           : {})}
-        onEndReached={onEndReached}
+        onEndReached={showPlpSkeleton ? undefined : onEndReached}
         onEndReachedThreshold={0.35}
         onScroll={onPlpScroll}
         scrollEventThrottle={16}
@@ -550,6 +554,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
           paddingHorizontal: horizontalPad,
           paddingBottom: listBottomPad,
         }}
+        contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
       />
       <CollectionPlpFilterModal
@@ -572,7 +577,7 @@ function SearchPlpView({ query: trimmedQ }: SearchPlpViewProps) {
         listName={trimmedQ}
       />
       <CollectionPlpSortModal visible={sortOpen} onClose={() => setSortOpen(false)} sort={sort} onSelect={setSort} />
-    </SafeAreaView>
+    </View>
   );
 }
 

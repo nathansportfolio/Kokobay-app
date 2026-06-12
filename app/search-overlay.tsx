@@ -22,6 +22,7 @@ import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { fetchKokobayPredictiveSearch } from '@/services/kokobay-web/search';
 import { searchProducts } from '@/services/shopify';
 import type { Product } from '@/types/shopify';
+import { closeSearchOverlay, leaveSearchOverlayFor } from '@/lib/search-overlay-navigation';
 import { hapticLight } from '@/utils/haptics';
 import { productHref } from '@/utils/product-navigation';
 
@@ -136,42 +137,56 @@ export default function SearchOverlayScreen() {
     [tileWidth],
   );
 
+  const openSearchPlp = useCallback(
+    (query: string) => {
+      const t = query.trim();
+      if (!t) return;
+      hapticLight();
+      void leaveSearchOverlayFor(router, { pathname: '/search', params: { q: t } } as Href);
+    },
+    [router],
+  );
+
   const commitSearch = useCallback(() => {
-    const t = q.trim();
-    if (!t) return;
-    hapticLight();
-    Keyboard.dismiss();
-    // Dismiss modal and land on `/search` in one step — `replace` alone can flash the underlying tab (e.g. home) first.
-    router.dismissTo({ pathname: '/search', params: { q: t } } as Href);
-  }, [q, router]);
+    openSearchPlp(q);
+  }, [q, openSearchPlp]);
 
   const onCancel = useCallback(() => {
-    Keyboard.dismiss();
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/' as Href);
-    }
+    hapticLight();
+    closeSearchOverlay(router);
   }, [router]);
 
   const onSuggestionPress = useCallback(
     (label: string) => {
       setQ(label);
-      Keyboard.dismiss();
-      router.dismissTo({ pathname: '/search', params: { q: label.trim() } } as Href);
+      openSearchPlp(label);
     },
-    [router],
+    [openSearchPlp],
   );
 
   const onProductFromSearchOverlay = useCallback(
     (handle: string) => {
-      Keyboard.dismiss();
-      router.dismiss();
-      requestAnimationFrame(() => {
-        router.push(productHref(handle, '/search'));
-      });
+      hapticLight();
+      void leaveSearchOverlayFor(router, productHref(handle, '/search'));
     },
     [router],
+  );
+
+  const carouselSelectItemContext = useMemo(
+    () =>
+      hasQuery
+        ? {
+            source_screen: 'search' as const,
+            item_list_id: `search:${trimmed}`,
+            item_list_name: `Search: ${trimmed}`,
+            search_term: trimmed,
+          }
+        : {
+            source_screen: 'home' as const,
+            item_list_id: 'home',
+            item_list_name: 'Home',
+          },
+    [hasQuery, trimmed],
   );
 
   const eyebrowStyle = {
@@ -259,12 +274,14 @@ export default function SearchOverlayScreen() {
           paddingBottom: Math.max(insets.bottom, 16) + 24,
           flexGrow: 1,
         }}
-        keyboardShouldPersistTaps="handled"
+        keyboardShouldPersistTaps="always"
+        nestedScrollEnabled
         keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}>
         {showSuggestionsSection ? (
           <Animated.View
             entering={FadeInDown.duration(FADE_MS).easing(easeOutCubic)}
+            pointerEvents="box-none"
             accessibilityLabel="Search suggestions">
             <Text style={eyebrowStyle}>Suggestions</Text>
             {suggestionsPending ? (
@@ -298,6 +315,7 @@ export default function SearchOverlayScreen() {
         <Animated.View
           key={carouselVisualKey}
           entering={FadeIn.duration(FADE_MS).easing(easeOutCubic)}
+          pointerEvents="box-none"
           className={showSuggestionsSection || !hasQuery ? 'mt-8 -mx-1' : 'mt-3 -mx-1'}
           style={{ height: carouselHeight, overflow: 'hidden' }}
           accessibilityLabel={
@@ -316,6 +334,7 @@ export default function SearchOverlayScreen() {
                 tileWidth={tileWidth}
                 contentPaddingEnd={CAROUSEL_END_INSET}
                 onProductPress={onProductFromSearchOverlay}
+                selectItemContext={carouselSelectItemContext}
               />
             ) : (
               <View className="flex-1 justify-center py-6" style={{ minHeight: carouselHeight * 0.45 }}>
@@ -332,6 +351,7 @@ export default function SearchOverlayScreen() {
               tileWidth={tileWidth}
               contentPaddingEnd={CAROUSEL_END_INSET}
               onProductPress={onProductFromSearchOverlay}
+              selectItemContext={carouselSelectItemContext}
             />
           ) : (
             <View className="flex-1 justify-center py-6" style={{ minHeight: carouselHeight * 0.5 }}>

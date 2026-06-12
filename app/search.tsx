@@ -7,7 +7,7 @@ export default function SearchDeepLinkScreen() {
   const q = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : '';
 
   if (q?.trim()) {
-    return <Redirect href={{ pathname: '/(tabs)/search', params: { q: q.trim() } }} />;
+    return <Redirect href={{ pathname: '/search', params: { q: q.trim() } }} />;
   }
 
   return <Redirect href="/search-overlay" />;

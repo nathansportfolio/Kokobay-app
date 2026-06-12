@@ -14,7 +14,11 @@ export function isProductPath(path: string): boolean {
 /** Collection/search PLP — explicit back targets from PDP `returnTo`. */
 export function isCatalogListingPath(path: string): boolean {
   const p = path.trim();
-  return p.startsWith('/collection/') || p.startsWith('/search');
+  return (
+    p.startsWith('/collection/') ||
+    p.startsWith('/categories/collection/') ||
+    p.startsWith('/search')
+  );
 }
 
 /** Preserve the originating PLP when opening another product from a PDP. */

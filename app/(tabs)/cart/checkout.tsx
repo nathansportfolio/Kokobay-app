@@ -213,11 +213,19 @@ export default function CheckoutScreen() {
       return;
     }
     hapticLight();
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace('/(tabs)/cart');
   }, [router]);
 
   const goToAppCartFromWebView = useCallback(() => {
     hapticLight();
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace('/(tabs)/cart');
   }, [router]);
 

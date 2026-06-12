@@ -131,6 +131,9 @@ export default function RootLayout() {
                 name="(tabs)"
                 options={{ headerShown: false, title: 'Home', headerBackTitle: '' }}
               />
+              <Stack.Screen name="login" options={{ headerShown: false }} />
+              <Stack.Screen name="register" options={{ headerShown: false }} />
+              <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
               <Stack.Screen
                 name="search-overlay"
                 options={{

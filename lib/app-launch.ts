@@ -4,6 +4,7 @@ import { Dimensions } from 'react-native';
 import { APP_HOME_HERO_QUERY_KEY } from '@/constants/app-home-hero-cms';
 import { homeNewInHeroImageUri } from '@/constants/home-hero';
 import { getQueryClient } from '@/hooks/use-query-client';
+import { HOME_HERO_STALE_MS } from '@/lib/app-home-hero-query';
 import { fetchAppHomeHero } from '@/services/kokobay-web/app-home-hero';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { initDeliveryThresholdOnStartup } from '@/src/core/query';
@@ -16,7 +17,6 @@ export const APP_LAUNCH_MIN_DURATION_MS = 600;
 export const APP_LAUNCH_FADE_DURATION_MS = 400;
 
 const HOME_CATALOG_STALE_TIME_MS = 4 * 60_000;
-const HOME_HERO_STALE_TIME_MS = 30 * 60_000;
 const COLLECTIONS_CMS_STALE_TIME_MS = 60 * 60_000;
 
 function homeCatalogQueryKey(marketKey: string, newInHandle: string) {
@@ -49,7 +49,7 @@ function scheduleLaunchWarmup(marketKey: string, screenWidth: number): void {
       await queryClient.prefetchQuery({
         queryKey: [...APP_HOME_HERO_QUERY_KEY, marketKey],
         queryFn: ({ signal }) => fetchAppHomeHero(marketKey, { signal }),
-        staleTime: HOME_HERO_STALE_TIME_MS,
+        staleTime: HOME_HERO_STALE_MS,
       });
     } catch {
       /** Home hero query surfaces error/placeholder after reveal. */

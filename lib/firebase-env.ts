@@ -14,6 +14,12 @@ export function isFirebaseAnalyticsEnabledFromEnv(): boolean {
   return value === '1' || value === 'true' || value === 'yes';
 }
 
+/** Runtime gate — always off in Metro/dev so no Analytics events or native debug logs fire. */
+export function isFirebaseAnalyticsRuntimeEnabled(): boolean {
+  if (__DEV__) return false;
+  return isFirebaseAnalyticsEnabledFromEnv();
+}
+
 export function isFirebaseAnalyticsDebugFromEnv(): boolean {
   const value = readFirebaseEnv('EXPO_PUBLIC_FIREBASE_ANALYTICS_DEBUG');
   return value === '1' || value === 'true' || value === 'yes';
@@ -28,4 +34,10 @@ export function isFirebaseCrashlyticsEnabledFromEnv(): boolean {
   if (value === undefined) return true;
   if (value === '0' || value === 'false' || value === 'no') return false;
   return value === '1' || value === 'true' || value === 'yes';
+}
+
+/** Runtime gate — always off in Metro/dev so no Crashlytics collection or logs fire. */
+export function isFirebaseCrashlyticsRuntimeEnabled(): boolean {
+  if (__DEV__) return false;
+  return isFirebaseCrashlyticsEnabledFromEnv();
 }

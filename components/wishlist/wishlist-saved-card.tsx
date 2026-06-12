@@ -1,6 +1,6 @@
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { X } from 'lucide-react-native';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,6 +19,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useProductHref } from '@/hooks/use-product-href';
+import { trackSelectItem } from '@/lib/gtm';
 import type { Product } from '@/types/shopify';
 import { firstValidProductImage } from '@/utils/catalog-image';
 import { hapticLight } from '@/utils/haptics';
@@ -78,6 +79,7 @@ export function WishlistSavedCard({
   tileWidth,
   imageHeight,
 }: WishlistSavedCardProps) {
+  const router = useRouter();
   const imagePressed = useSharedValue(0);
   const imagePressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(imagePressed.value, [0, 1], [1, 1.018]) }],
@@ -106,6 +108,18 @@ export function WishlistSavedCard({
   const title = product?.title ?? handle.replace(/-/g, ' ');
   const priceLabel = product ? formatMoney(product.priceRange.minVariantPrice) : '';
   const isLoading = isPending || !product;
+
+  const openProduct = useCallback(() => {
+    if (!product) return;
+    trackSelectItem({
+      product,
+      source_screen: 'wishlist',
+      item_list_id: 'wishlist',
+      item_list_name: 'Wishlist',
+      index,
+    });
+    router.push(productLink);
+  }, [index, product, productLink, router]);
 
   const removeControl = (
     <AnimatedPressable
@@ -144,17 +158,17 @@ export function WishlistSavedCard({
     <View>
       <View style={{ width: tileWidth }}>
         <View className="relative">
-          <Link href={productLink} asChild>
-            <AnimatedImagePress
-              onPressIn={() => {
-                imagePressed.value = withTiming(1, { duration: 160, easing: easeOutCubic });
-              }}
-              onPressOut={() => {
-                imagePressed.value = withTiming(0, { duration: 220, easing: easeOutCubic });
-              }}
-              accessibilityRole="link"
-              accessibilityLabel={`Open ${title}`}
-              style={imagePressStyle}>
+          <AnimatedImagePress
+            onPress={openProduct}
+            onPressIn={() => {
+              imagePressed.value = withTiming(1, { duration: 160, easing: easeOutCubic });
+            }}
+            onPressOut={() => {
+              imagePressed.value = withTiming(0, { duration: 220, easing: easeOutCubic });
+            }}
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${title}`}
+            style={imagePressStyle}>
               <View
                 className="w-full overflow-hidden rounded-2xl bg-warmElevated"
                 style={{ width: tileWidth, height: imageHeight }}>
@@ -170,7 +184,6 @@ export function WishlistSavedCard({
                 )}
               </View>
             </AnimatedImagePress>
-          </Link>
           {product && !isProductFullySoldOut(product) ? (
             <QuickAddToBag
               product={product}
@@ -181,8 +194,7 @@ export function WishlistSavedCard({
           {removeControl}
         </View>
 
-        <Link href={productLink} asChild>
-          <Pressable className="mt-2.5" accessibilityRole="link" accessibilityLabel={title}>
+        <Pressable className="mt-2.5" accessibilityRole="link" accessibilityLabel={title} onPress={openProduct}>
             <Text
               className="font-sans-md text-[15px] tracking-[-0.15px] text-ink"
               numberOfLines={2}
@@ -194,8 +206,7 @@ export function WishlistSavedCard({
                 {priceLabel}
               </Text>
             ) : null}
-          </Pressable>
-        </Link>
+        </Pressable>
       </View>
     </View>
   );

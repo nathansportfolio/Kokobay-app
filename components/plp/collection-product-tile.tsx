@@ -4,6 +4,7 @@ import type { Href } from 'expo-router';
 
 import { ProductCard } from '@/components/ui/product-card';
 import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
+import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { ProductPrefetchImageHint } from '@/hooks/use-prefetch-product';
 import type { Product } from '@/types/shopify';
 import { isProductFullySoldOut } from '@/utils/product-availability';
@@ -22,6 +23,13 @@ export type CollectionProductTileProps = {
   perfTraceIndex?: number;
   perfTraceScreen?: string;
   onPrefetchProduct?: (handle: string, imageHint?: ProductPrefetchImageHint) => void;
+  selectItemContext?: {
+    source_screen: SelectItemSourceScreen;
+    item_list_id: string;
+    item_list_name: string;
+    index?: number;
+    search_term?: string;
+  };
 };
 
 function CollectionProductTileInner({
@@ -35,6 +43,7 @@ function CollectionProductTileInner({
   perfTraceIndex,
   perfTraceScreen,
   onPrefetchProduct,
+  selectItemContext,
 }: CollectionProductTileProps) {
   const columnGapAfter =
     numColumns === 2 && tileIndex != null && tileIndex % 2 === 0 && columnGap > 0 ? columnGap : 0;
@@ -61,6 +70,7 @@ function CollectionProductTileInner({
         perfTraceIndex={perfTraceIndex}
         perfTraceScreen={perfTraceScreen}
         onPrefetchProduct={onPrefetchProduct}
+        selectItemContext={selectItemContext}
       />
     </View>
   );
@@ -77,6 +87,11 @@ export const CollectionProductTile = memo(
     prev.tileIndex === next.tileIndex &&
     prev.columnGap === next.columnGap &&
     prev.onPrefetchProduct === next.onPrefetchProduct &&
+    prev.selectItemContext?.source_screen === next.selectItemContext?.source_screen &&
+    prev.selectItemContext?.item_list_id === next.selectItemContext?.item_list_id &&
+    prev.selectItemContext?.item_list_name === next.selectItemContext?.item_list_name &&
+    prev.selectItemContext?.index === next.selectItemContext?.index &&
+    prev.selectItemContext?.search_term === next.selectItemContext?.search_term &&
     prev.product.title === next.product.title &&
     prev.product.priceRange.minVariantPrice.amount === next.product.priceRange.minVariantPrice.amount &&
     isProductFullySoldOut(prev.product) === isProductFullySoldOut(next.product),

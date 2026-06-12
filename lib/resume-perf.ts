@@ -21,6 +21,7 @@ const marks: ResumeMark[] = [];
 
 let promotionListenerCount = 0;
 let promotionInvalidateCount = 0;
+let homeHeroInvalidateCount = 0;
 
 export function onPromotionListenerRegistered(): void {
   promotionListenerCount += 1;
@@ -53,6 +54,22 @@ export function logPromotionForegroundMetrics(): void {
   logResume('promotion_invalidate_count', { count: promotionInvalidateCount });
 }
 
+export function resetHomeHeroInvalidateCount(): void {
+  homeHeroInvalidateCount = 0;
+}
+
+export function recordHomeHeroInvalidate(source: string): void {
+  homeHeroInvalidateCount += 1;
+  if (__DEV__) {
+    logResume('home_hero_invalidate_count', { count: homeHeroInvalidateCount, source });
+  }
+}
+
+export function logHomeHeroForegroundMetrics(): void {
+  if (!__DEV__) return;
+  logResume('home_hero_invalidate_count', { count: homeHeroInvalidateCount });
+}
+
 function nowMs(): number {
   return Math.round(performance.now());
 }
@@ -74,6 +91,7 @@ export function beginResumePerfRun(): string {
   marks.length = 0;
   markResumePerf('app_active');
   resetPromotionInvalidateCount();
+  resetHomeHeroInvalidateCount();
   return runId;
 }
 

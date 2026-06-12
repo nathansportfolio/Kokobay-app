@@ -43,7 +43,17 @@ export type GtmEventName =
   | 'app_update_dismissed'
   | 'quick_add_to_bag_clicked'
   | 'quick_add_to_bag_modal_shown'
-  | 'filter_selected';
+  | 'filter_selected'
+  | 'cart_quantity_increased'
+  | 'cart_quantity_decreased';
+
+/** Context for GA4 `select_item` — product tile taps before PDP navigation. */
+export type SelectItemSourceScreen =
+  | 'home'
+  | 'collection'
+  | 'search'
+  | 'wishlist'
+  | 'related_products';
 
 export type GtmDataLayerEvent = {
   event: GtmEventName;

@@ -23,8 +23,8 @@ function HomeNewInHeroInner({ width }: Props) {
   const pathname = usePathname();
   const height = useMemo(() => homeNewInHeroHeight(width), [width]);
   const hero = useAppHomeHeroContent(width, pathname);
-  const ctaTarget = hero.ctaTarget;
-
+  const ctaTarget = { kind: 'internal', href: '/collection/new-in' };
+console.log('ctaTarget', ctaTarget);
   const ctaPressable = (onPress?: () => void) => (
     <Pressable
       onPressIn={() => hapticLight()}
@@ -91,8 +91,8 @@ const styles = StyleSheet.create({
   },
   kicker: {
     fontFamily: 'InstrumentSans-Bold',
-    fontSize: 34,
-    letterSpacing: 2,
+    fontSize: 28,
+    letterSpacing: 1.6,
     textAlign: 'center',
     textShadowColor: 'rgba(0, 0, 0, 0.35)',
     textShadowOffset: { width: 0, height: 2 },

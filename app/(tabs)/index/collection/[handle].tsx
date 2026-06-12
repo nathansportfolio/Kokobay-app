@@ -1,28 +1,27 @@
-import { useNavigation, useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, usePathname, useRouter, useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
+import { CollectionPlpProductGrid } from '@/components/plp/collection-plp-product-grid';
 import { CollectionPlpSortModal } from '@/components/plp/collection-plp-sort-modal';
 import { CollectionPlpToolbar } from '@/components/plp/collection-plp-toolbar';
-import { CollectionPlpProductGrid } from '@/components/plp/collection-plp-product-grid';
 import { CollectionProductTile } from '@/components/plp/collection-product-tile';
 import { PlpInfiniteScrollFooter } from '@/components/plp/plp-infinite-scroll-footer';
 import { PlpNoResultsSuggestions } from '@/components/plp/plp-no-results-suggestions';
 import { PlpProductCountLabel } from '@/components/plp/plp-product-count-label';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ProductGridSkeleton } from '@/components/ui/product-grid-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
+import { ALL_PRODUCTS_COLLECTION, ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
 import { luxuryChrome } from '@/constants/luxury-nav';
-import { useLuxuryPlpListHeaderPaddingTop } from '@/hooks/use-luxury-chrome-top-padding';
-import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import {
   PLP_COLUMN_GAP,
   PLP_HORIZONTAL_PAD,
@@ -30,34 +29,36 @@ import {
   PLP_MAINTAIN_VISIBLE_CONTENT_POSITION,
   plpScreenShell,
 } from '@/constants/plp-scroll';
-import { ALL_PRODUCTS_COLLECTION, ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
+import { usePlpListHeaderTopSpacerHeight } from '@/hooks/use-luxury-chrome-top-padding';
 import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
-import { useRenderTrace } from '@/hooks/use-render-trace';
-import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
 import { useKokobayCollectionCatalog } from '@/hooks/use-kokobay-catalog-pages';
+import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
+import { useKokobayPlpEndReached } from '@/hooks/use-kokobay-plp-end-reached';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { usePlpDisplayProducts } from '@/hooks/use-plp-display-products';
-import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
-import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
-import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { usePlpProductLink } from '@/hooks/use-plp-product-link';
+import { usePlpScrollOffsetTrace } from '@/hooks/use-plp-scroll-offset-trace';
+import { usePlpScrollToTop } from '@/hooks/use-plp-scroll-to-top';
+import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
+import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useReturnToGoBack } from '@/hooks/use-return-to-go-back';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
-import { useStableTopInset } from '@/hooks/use-stable-top-inset';
+import { trackViewItemList } from '@/lib/gtm';
 import { resetPlpPerfTrace } from '@/lib/plp-perf-trace';
 import { resetPlpScrollDebug } from '@/lib/plp-scroll-debug';
-import { trackViewItemList } from '@/lib/gtm';
-import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
+import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
 import { getCollectionProducts } from '@/services/shopify';
 import { showToast, useMarketStore } from '@/store';
 import { defaultPlpFilters, type PlpFilters, type PlpSort } from '@/types/plp';
 import type { Collection, Product } from '@/types/shopify';
+import { collectionHandlesMatch, resolveCollectionHandleForApi } from '@/utils/collection-handles';
+import { navigateToHomeTab } from '@/utils/collection-navigation';
+import { collectionBlurb, collectionEditorialEyebrow } from '@/utils/collection-text';
 import {
   countActivePlpFilters,
   extractFacets,
@@ -65,9 +66,6 @@ import {
   plpPriceSliderMetaForCurrency,
   webCatalogFacetsWithAccurateColourCounts,
 } from '@/utils/plp';
-import { collectionHandlesMatch, resolveCollectionHandleForApi } from '@/utils/collection-handles';
-import { navigateToHomeTab } from '@/utils/collection-navigation';
-import { collectionBlurb, collectionEditorialEyebrow } from '@/utils/collection-text';
 import { collectionProductCellHeight } from '@/utils/plp-layout';
 import { resolvePlpProductCount } from '@/utils/plp-product-count';
 import { keepPreviousDataForQueryKeyMatch } from '@/utils/react-query-placeholder';
@@ -83,9 +81,7 @@ export default function CollectionScreen() {
   const goBack = useReturnToGoBack();
   const productLinkFor = usePlpProductLink();
   const prefetchProduct = usePrefetchProduct();
-  const topInset = useStableTopInset();
-  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const listHeaderPaddingTop = useLuxuryPlpListHeaderPaddingTop(appErrorBannerHeight);
+  const plpListHeaderTopSpacer = usePlpListHeaderTopSpacerHeight();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const { width } = useWindowDimensions();
   const safeHandle = typeof handle === 'string' ? handle : '';
@@ -388,7 +384,7 @@ export default function CollectionScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false, title: collection?.title ?? '' });
     return () => {
-      navigation.setOptions({ headerShown: true });
+      navigation.setOptions({ headerShown: false });
     };
   }, [navigation, collection?.title]);
 
@@ -452,7 +448,7 @@ export default function CollectionScreen() {
     if (!collection) return null;
     return (
       <View style={{ marginHorizontal: -horizontalPad }}>
-        <View style={{ height: topInset + listHeaderPaddingTop }} />
+        <View style={{ height: plpListHeaderTopSpacer }} />
         <View
           style={{
             paddingBottom: 14,
@@ -513,7 +509,7 @@ export default function CollectionScreen() {
     horizontalPad,
     priceMeta.max,
     priceMeta.min,
-    topInset,
+    plpListHeaderTopSpacer,
     displayProductCount,
     allProducts,
   ]);

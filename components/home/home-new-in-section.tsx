@@ -25,7 +25,15 @@ function HomeNewInSectionInner({ products, tileWidth, carouselHeight, viewAllHre
             New arrivals will show here when products are available.
           </Text>
         ) : (
-          <HomeProductCarousel products={products} tileWidth={tileWidth} />
+          <HomeProductCarousel
+            products={products}
+            tileWidth={tileWidth}
+            selectItemContext={{
+              source_screen: 'home',
+              item_list_id: 'home',
+              item_list_name: 'Home',
+            }}
+          />
         )}
       </View>
       <Link href={viewAllHref} asChild>

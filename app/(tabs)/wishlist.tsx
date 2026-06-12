@@ -5,6 +5,7 @@ import { View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
+import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { WishlistGridItem } from '@/components/wishlist/wishlist-grid-item';
 import { WishlistGridSkeleton } from '@/components/wishlist/wishlist-grid-skeleton';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,14 @@ function WishlistHeader() {
 }
 
 export default function WishlistScreen() {
+  return (
+    <TabScreenTouchRoot>
+      <WishlistScreenContent />
+    </TabScreenTouchRoot>
+  );
+}
+
+function WishlistScreenContent() {
   const pathname = usePathname();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const { tileW, imageH, cellHeight } = useWishlistGridMetrics();

@@ -15,7 +15,8 @@ import {
 
 import { hapticLight } from '@/utils/haptics';
 
-const TAB_CHROME_Z_INDEX = 221;
+/** Above FlashList (ignores sibling z-index) — keep in sync with `AppGlobalShell` banner host. */
+const TAB_CHROME_Z_INDEX = 10_000;
 
 /** Fixed Koko Bay bar (incident banner is rendered by `AppGlobalShell`). */
 export function LuxuryTabHeader() {

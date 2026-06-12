@@ -1,7 +1,7 @@
 {
   "name": "Koko Bay",
   "main": "expo-router/entry",
-  "version": "1.0.89",
+  "version": "1.0.104",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "start": "expo start --dev-client",
@@ -12,6 +12,7 @@
     "bump-version": "node ./scripts/bump-app-version.mjs",
     "increment-build": "node ./scripts/increment-build-number.mjs",
     "version:sync": "node ./scripts/sync-remote-build-version.mjs",
+    "version:sync-eas": "node ./scripts/sync-build-from-eas.mjs",
     "release": "node ./scripts/release-build.mjs",
     "release:build": "node ./scripts/release-build.mjs --build-only",
     "ios:release": "node ./scripts/ios-release.mjs",

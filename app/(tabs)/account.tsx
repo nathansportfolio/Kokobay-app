@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { accountQueryKeys } from '@/src/core/query/query-keys';
 import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
+import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { AccountAppSettings } from '@/components/account/account-app-settings';
 import { AccountDashboard } from '@/components/account/account-dashboard';
 import { AccountForgotPasswordForm } from '@/components/account/account-forgot-password-form';
@@ -38,6 +39,14 @@ const ACCOUNT_SCROLL_CONTENT_GUEST = {
 } as const;
 
 export default function AccountScreen() {
+  return (
+    <TabScreenTouchRoot>
+      <AccountScreenContent />
+    </TabScreenTouchRoot>
+  );
+}
+
+function AccountScreenContent() {
   const router = useRouter();
   const tabBarHeight = useOptionalBottomTabBarHeight();
   const { height: winH } = useWindowDimensions();

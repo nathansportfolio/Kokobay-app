@@ -1,26 +1,38 @@
-import { Link } from 'expo-router';
-import { memo, useMemo } from 'react';
+import { Link, useRouter } from 'expo-router';
+import { memo, useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
 import { Text } from '@/components/ui/text';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useProductHref } from '@/hooks/use-product-href';
+import { trackSelectItem } from '@/lib/gtm';
+import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { Product } from '@/types/shopify';
 import { firstValidProductImage } from '@/utils/catalog-image';
 import { formatMoney } from '@/utils/money';
 import { productTileImageUri } from '@/utils/product-tile-image-uri';
 import { cn } from '@/utils/cn';
 
+export type HomeProductTileSelectItemContext = {
+  source_screen: SelectItemSourceScreen;
+  item_list_id: string;
+  item_list_name: string;
+  search_term?: string;
+};
+
 type Props = {
   product: Product;
   width: number;
+  index?: number;
   /** When set, navigation uses this instead of the default in-tab `Link` (e.g. dismiss search modal first). */
   onProductPress?: (handle: string) => void;
+  selectItemContext?: HomeProductTileSelectItemContext;
 };
 
-function HomeProductTileInner({ product, width, onProductPress }: Props) {
+function HomeProductTileInner({ product, width, index, onProductPress, selectItemContext }: Props) {
   const prefetch = usePrefetchProduct();
+  const router = useRouter();
   const productLink = useProductHref(product.handle);
   const sourceImage = firstValidProductImage(product);
   const uri = useMemo(() => {
@@ -34,15 +46,30 @@ function HomeProductTileInner({ product, width, onProductPress }: Props) {
     });
   }, [product.handle, sourceImage, width]);
   const price = formatMoney(product.priceRange.minVariantPrice);
+  const usesProgrammaticNav = Boolean(selectItemContext || onProductPress);
 
-  const pressableProps = onProductPress
-    ? { onPress: () => onProductPress(product.handle) }
-    : {};
+  const handlePress = useCallback(() => {
+    if (selectItemContext) {
+      trackSelectItem({
+        product,
+        source_screen: selectItemContext.source_screen,
+        item_list_id: selectItemContext.item_list_id,
+        item_list_name: selectItemContext.item_list_name,
+        index,
+        search_term: selectItemContext.search_term,
+      });
+    }
+    if (onProductPress) {
+      onProductPress(product.handle);
+      return;
+    }
+    router.push(productLink);
+  }, [index, onProductPress, product, productLink, router, selectItemContext]);
 
   const inner = (
     <Pressable
       onPressIn={() => prefetch(product.handle, sourceImage)}
-      {...pressableProps}
+      onPress={usesProgrammaticNav ? handlePress : undefined}
       style={{ width }}
       className={cn(
         'mr-4 overflow-hidden rounded-2xl border border-line/50 bg-warmSurface/80 active:opacity-88',
@@ -61,7 +88,7 @@ function HomeProductTileInner({ product, width, onProductPress }: Props) {
     </Pressable>
   );
 
-  if (onProductPress) {
+  if (usesProgrammaticNav) {
     return inner;
   }
 
@@ -77,7 +104,12 @@ export const HomeProductTile = memo(
   (prev, next) =>
     prev.product.id === next.product.id &&
     prev.width === next.width &&
+    prev.index === next.index &&
     prev.onProductPress === next.onProductPress &&
+    prev.selectItemContext?.source_screen === next.selectItemContext?.source_screen &&
+    prev.selectItemContext?.item_list_id === next.selectItemContext?.item_list_id &&
+    prev.selectItemContext?.item_list_name === next.selectItemContext?.item_list_name &&
+    prev.selectItemContext?.search_term === next.selectItemContext?.search_term &&
     prev.product.title === next.product.title &&
     prev.product.priceRange.minVariantPrice.amount === next.product.priceRange.minVariantPrice.amount,
 );

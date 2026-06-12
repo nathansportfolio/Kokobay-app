@@ -60,7 +60,7 @@ function ShopCollectionEditorialCardInner({
     const handle = extractCollectionHandleFromCmsUrl(target);
     if (handle) {
       router.push(
-        collectionHref(handle, collectionReturnToParam(pathname)),
+        collectionHref(handle, collectionReturnToParam(pathname), pathname),
       );
       return;
     }

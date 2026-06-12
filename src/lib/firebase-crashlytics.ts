@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { isFirebaseCrashlyticsEnabledFromEnv } from '@/lib/firebase-env';
+import { isFirebaseCrashlyticsRuntimeEnabled } from '@/lib/firebase-env';
 import { isFirebaseNativeModuleAvailable } from '@/lib/firebase-native-safe';
 
 export type CrashlyticsReportInput = {
@@ -19,7 +19,7 @@ export type FirebaseCrashlyticsConfig = {
 
 export function getFirebaseCrashlyticsConfig(): FirebaseCrashlyticsConfig {
   return {
-    enabled: isFirebaseCrashlyticsEnabledFromEnv(),
+    enabled: isFirebaseCrashlyticsRuntimeEnabled(),
   };
 }
 
@@ -33,7 +33,7 @@ function loadCrashlyticsModule(): ReturnType<FirebaseCrashlyticsModule> | null {
     return crashlyticsInstance;
   }
 
-  if (!isFirebaseCrashlyticsEnabledFromEnv()) {
+  if (!isFirebaseCrashlyticsRuntimeEnabled()) {
     crashlyticsInstance = null;
     return null;
   }
@@ -67,6 +67,8 @@ export function getFirebaseCrashlytics() {
 export async function initializeFirebaseCrashlytics(): Promise<void> {
   if (initAttempted) return;
   initAttempted = true;
+
+  if (!isFirebaseCrashlyticsRuntimeEnabled()) return;
 
   const crashlytics = getFirebaseCrashlytics();
   if (!crashlytics) return;

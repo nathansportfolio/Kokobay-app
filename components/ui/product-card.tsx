@@ -1,5 +1,5 @@
-import { Link, type Href } from 'expo-router';
-import { memo, useMemo } from 'react';
+import { Link, useRouter, type Href } from 'expo-router';
+import { memo, useCallback, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -19,6 +19,8 @@ import {
   productCardPropsEqual,
 } from '@/hooks/use-product-card-render-trace';
 import { logPlpFirstImageLoad } from '@/lib/plp-perf-trace';
+import { trackSelectItem } from '@/lib/gtm';
+import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { Product } from '@/types/shopify';
 import { firstValidProductImage } from '@/utils/catalog-image';
 import { productCardTypoPreset } from '@/constants/product-card-typography';
@@ -56,6 +58,14 @@ export type ProductCardProps = {
   perfTraceIndex?: number;
   perfTraceScreen?: string;
   disableImageTransition?: boolean;
+  /** When set, fires GA4 `select_item` immediately before navigating to PDP. */
+  selectItemContext?: {
+    source_screen: SelectItemSourceScreen;
+    item_list_id: string;
+    item_list_name: string;
+    index?: number;
+    search_term?: string;
+  };
 };
 
 function ProductCardInner({
@@ -70,6 +80,7 @@ function ProductCardInner({
   perfTraceIndex,
   perfTraceScreen = 'plp',
   disableImageTransition = true,
+  selectItemContext,
 }: ProductCardProps) {
   useProductCardParentRerenderTrace('ProductCard', {
     productId: product.id,
@@ -83,6 +94,7 @@ function ProductCardInner({
     perfTraceIndex,
     perfTraceScreen,
     disableImageTransition,
+    selectItemContext,
   });
 
   const traceProps = {
@@ -97,7 +109,25 @@ function ProductCardInner({
     perfTraceIndex,
     perfTraceScreen,
     disableImageTransition,
+    selectItemContext,
   };
+  const router = useRouter();
+  const usesProgrammaticNav = Boolean(selectItemContext || onProductPress);
+
+  const handleProductPress = useCallback(() => {
+    if (selectItemContext) {
+      trackSelectItem({
+        product,
+        ...selectItemContext,
+      });
+    }
+    if (onProductPress) {
+      onProductPress();
+      return;
+    }
+    router.push(productLink);
+  }, [onProductPress, product, productLink, router, selectItemContext]);
+
   const sourceImage = firstValidProductImage(product);
   const imageUrl = useMemo(() => {
     if (!sourceImage) return undefined;
@@ -177,11 +207,11 @@ function ProductCardInner({
     </Animated.View>
   );
 
-  const imageLink = onProductPress ? (
+  const imageLink = usesProgrammaticNav ? (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
-      onPress={onProductPress}
+      onPress={handleProductPress}
       onPressIn={() => {
         imagePressed.value = withTiming(1, {
           duration: IMAGE_PRESS_MS.in,
@@ -226,11 +256,11 @@ function ProductCardInner({
     </Link>
   );
 
-  const titleLink = onProductPress ? (
+  const titleLink = usesProgrammaticNav ? (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={soldOut ? `${product.title}, title and price, no stock` : undefined}
-      onPress={onProductPress}
+      onPress={handleProductPress}
       onPressIn={() => {
         titlePressed.value = withTiming(1, {
           duration: TITLE_PRESS_MS.in,

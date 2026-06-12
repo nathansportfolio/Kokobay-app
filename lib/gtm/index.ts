@@ -4,6 +4,8 @@ export {
   trackAddToCart,
   trackAddToWishlist,
   trackBeginCheckout,
+  trackCartQuantityDecreased,
+  trackCartQuantityIncreased,
   trackFilterSelected,
   trackLogin,
   trackPageView,
@@ -13,12 +15,14 @@ export {
   trackRemoveFromCart,
   trackRemoveFromWishlist,
   trackSearch,
+  trackSelectItem,
   trackSignUp,
   trackViewCart,
   trackViewItem,
   trackViewItemList,
 } from './events';
 export type { PlpFilterAnalyticsType } from './events';
+export type { SelectItemSourceScreen } from './types';
 export {
   gtmCartCurrency,
   gtmCartValue,

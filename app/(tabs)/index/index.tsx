@@ -8,6 +8,7 @@ import { HomeNewInHero, homeNewInHeroHeight } from '@/components/home/home-new-i
 import { HomeNewInSection } from '@/components/home/home-new-in-section';
 import { HomeScreenEntrance } from '@/components/home/home-screen-entrance';
 import { HomeShopByCategory } from '@/components/home/home-shop-by-category';
+import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,6 +50,14 @@ function homeCollectionFallbackItems(collections: Collection[]): CmsCollectionDi
 }
 
 export default function HomeScreen() {
+  return (
+    <TabScreenTouchRoot>
+      <HomeScreenContent />
+    </TabScreenTouchRoot>
+  );
+}
+
+function HomeScreenContent() {
   useLifecycleRenderCount('home');
   useRenderTrace('Home');
   const insets = useSafeAreaInsets();

@@ -10,6 +10,10 @@ import { palette } from '@/constants/theme';
 import { useProductHref } from '@/hooks/use-product-href';
 import { cartEngine } from '@/src/core/cart';
 import { showToast } from '@/store';
+import {
+  trackCartQuantityDecreased,
+  trackCartQuantityIncreased,
+} from '@/lib/gtm';
 import type { CartLine } from '@/types/cart';
 import { isLikelyRemoteImageUrl } from '@/utils/catalog-image';
 import { cartLineStockLabel } from '@/utils/cart-line-stock';
@@ -83,7 +87,13 @@ function CartLineRowInner({
         cartEngine.removeItem(line.variantId);
         showToast({ variant: 'success', title: 'Removed from Bag' });
       } else {
+        const quantityBefore = line.qty;
         cartEngine.nudgeQty(line.variantId, -1);
+        trackCartQuantityDecreased({
+          line,
+          quantityBefore,
+          quantityAfter: quantityBefore - 1,
+        });
       }
       return;
     }
@@ -91,7 +101,13 @@ function CartLineRowInner({
       if (line.maxQty != null) showToast(inventoryLimitToast(line.maxQty, { kind: 'max' }));
       return;
     }
+    const quantityBefore = line.qty;
     cartEngine.nudgeQty(line.variantId, 1);
+    trackCartQuantityIncreased({
+      line,
+      quantityBefore,
+      quantityAfter: quantityBefore + 1,
+    });
   };
 
   return (

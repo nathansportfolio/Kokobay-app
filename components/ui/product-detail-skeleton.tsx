@@ -1,16 +1,12 @@
 import { useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { pdpGalleryHeight } from '@/constants/pdp-layout';
-import { luxuryHeaderTotalHeight } from '@/constants/luxury-nav';
-import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
+import { useTabChromeTop } from '@/hooks/use-luxury-chrome-top-padding';
 
 export function ProductDetailSkeleton() {
-  const insets = useSafeAreaInsets();
   const { width, height: winH } = useWindowDimensions();
-  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const chromeTop = luxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
+  const chromeTop = useTabChromeTop();
   const galleryH = pdpGalleryHeight(width, winH);
 
   return (
@@ -32,14 +28,10 @@ export function ProductDetailSkeleton() {
           <Skeleton className="h-11 w-14 rounded-full" />
           <Skeleton className="h-11 w-14 rounded-full" />
         </View>
-        <Skeleton className="mb-10 h-12 w-36 rounded-full" />
-        <Skeleton className="mb-8 h-4 w-40" />
-        <Skeleton className="mb-5 h-3 w-full" />
-        <Skeleton className="mb-5 h-3 w-[92%]" />
-        <Skeleton className="mb-8 h-3 w-[70%]" />
-        <Skeleton className="mb-5 h-3 w-32" />
-        <Skeleton className="mb-5 h-3 w-full" />
-        <Skeleton className="h-3 w-[85%]" />
+        <Skeleton className="mb-4 h-4 w-full" />
+        <Skeleton className="mb-4 h-4 w-[92%]" />
+        <Skeleton className="mb-4 h-4 w-[78%]" />
+        <Skeleton className="h-4 w-[65%]" />
       </View>
     </View>
   );

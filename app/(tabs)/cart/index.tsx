@@ -1,14 +1,15 @@
 import { FlashList } from '@shopify/flash-list';
 import { Link, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CartCheckoutBar } from '@/components/cart/cart-checkout-bar';
 import { CartFreeDeliveryProgress } from '@/components/cart/cart-free-delivery-progress';
 import { CartLineRow } from '@/components/cart/cart-line-row';
 import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { LUXURY_TAB_SCREEN_EYEBROW_CLASS } from '@/components/navigation/luxury-tab-screen-header';
+import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { Button } from '@/components/ui/button';
 import { CartLineSkeleton } from '@/components/ui/cart-line-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -18,7 +19,7 @@ import { useCartPricingAuditScreen } from '@/hooks/use-cart-pricing-audit';
 import { useCartScreenState } from '@/hooks/use-cart-screen-state';
 import { useAppCartDeliveryTextLabel } from '@/hooks/use-app-cart-delivery-text-query';
 import { useDeliveryThreshold } from '@/hooks/use-delivery-threshold';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useLuxuryTabContentBottomPadding } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
@@ -43,15 +44,21 @@ const CART_SCROLL_CONTENT = {
 } as const;
 
 export default function CartScreen() {
+  return (
+    <TabScreenTouchRoot>
+      <CartScreenContent />
+    </TabScreenTouchRoot>
+  );
+}
+
+function CartScreenContent() {
   useLifecycleRenderCount('cart');
   useRenderTrace('Cart');
-  const insets = useSafeAreaInsets();
-  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const checkoutBottomInset = useLuxuryTabContentBottomPadding();
   const {
     lines,
     hasHydrated,
     bagUnitCount,
-    viewCartLineKey,
     quantitySyncPendingByVariantId,
     cartPricingForDisplay,
     overServerSubtotalVariantId,
@@ -100,15 +107,33 @@ export default function CartScreen() {
     bagUnitCount,
   });
 
-  const viewCartTrackedRef = useRef<string | null>(null);
+  const viewCartVisitTrackedRef = useRef(false);
+
   useFocusEffect(
     useCallback(() => {
-      if (!hasHydrated || !viewCartLineKey) return;
-      if (viewCartTrackedRef.current === viewCartLineKey) return;
-      viewCartTrackedRef.current = viewCartLineKey;
-      trackViewCart(useCartStore.getState().lines);
-    }, [hasHydrated, viewCartLineKey]),
+      viewCartVisitTrackedRef.current = false;
+
+      const tryTrackViewCart = () => {
+        if (viewCartVisitTrackedRef.current) return;
+        const state = useCartStore.getState();
+        if (!state.hasHydrated || state.lines.length === 0) return;
+        viewCartVisitTrackedRef.current = true;
+        trackViewCart(state.lines);
+      };
+
+      tryTrackViewCart();
+
+      return () => {
+        viewCartVisitTrackedRef.current = false;
+      };
+    }, []),
   );
+
+  useEffect(() => {
+    if (!hasHydrated || lines.length === 0 || viewCartVisitTrackedRef.current) return;
+    viewCartVisitTrackedRef.current = true;
+    trackViewCart(lines);
+  }, [hasHydrated]);
 
   const renderItem = useCallback(
     ({ item }: { item: CartLine }) => {
@@ -137,9 +162,6 @@ export default function CartScreen() {
     [bagUnitCount, costBreakdown.subtotal, freeDeliveryThresholdGbp],
   );
 
-  /** Tab scenes already sit above the tab bar — do not add tabBarHeight again (matches PDP add-to-bag). */
-  const checkoutBottomInset =
-    tabBarHeight > 0 ? 10 : tabBarHeight + Math.max(insets.bottom, 8) + 10;
   const listBottomPad = FLOATING_CHECKOUT_CLEARANCE + checkoutBottomInset;
 
   let renderBranch = 'content';

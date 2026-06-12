@@ -17,6 +17,7 @@ export type PdpRelatedProductsProps = {
 type RelatedProductCardProps = {
   product: Product;
   tileWidth: number;
+  tileIndex: number;
   returnTo?: string;
   onPrefetchProduct: ReturnType<typeof usePrefetchProduct>;
 };
@@ -24,6 +25,7 @@ type RelatedProductCardProps = {
 const RelatedProductCard = memo(function RelatedProductCard({
   product,
   tileWidth,
+  tileIndex,
   returnTo,
   onPrefetchProduct,
 }: RelatedProductCardProps) {
@@ -45,6 +47,12 @@ const RelatedProductCard = memo(function RelatedProductCard({
       productLink={link}
       onProductPress={onProductPress}
       onPrefetchProduct={onPrefetchProduct}
+      selectItemContext={{
+        source_screen: 'related_products',
+        item_list_id: 'related_products',
+        item_list_name: 'You may also like',
+        index: tileIndex,
+      }}
     />
   );
 });
@@ -76,11 +84,12 @@ export function PdpRelatedProducts({ products, returnTo }: PdpRelatedProductsPro
         showsHorizontalScrollIndicator={false}
         decelerationRate="fast"
         contentContainerStyle={contentStyle}>
-        {products.map((product) => (
+        {products.map((product, index) => (
           <View key={`${product.handle}:${product.id}`} style={{ width: itemW }} className="mr-4">
             <RelatedProductCard
               product={product}
               tileWidth={itemW}
+              tileIndex={index}
               returnTo={returnTo}
               onPrefetchProduct={prefetchProduct}
             />

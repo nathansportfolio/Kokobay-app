@@ -16,12 +16,6 @@ function isHomePagePath(pagePath?: string): boolean {
   );
 }
 
-function collectionHandleFromPath(pagePath?: string): string | undefined {
-  if (!pagePath) return undefined;
-  const match = pagePath.match(/\/(?:collection|collections)\/([^/?#]+)/i);
-  return match?.[1];
-}
-
 function toFirebaseItem(item: GtmEcommerceItem): FirebaseAnalyticsItem {
   return {
     item_id: item.item_id,
@@ -93,19 +87,6 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
         });
       }
 
-      const collectionHandle = collectionHandleFromPath(pagePath);
-      if (collectionHandle) {
-        dispatches.push({
-          type: 'custom',
-          name: 'view_collection',
-          params: {
-            item_list_id: collectionHandle,
-            page_path: pagePath,
-            page_title: pageTitle,
-          },
-        });
-      }
-
       dispatches.push({
         type: 'screen_view',
         screenName: pageTitle ?? pagePath ?? 'unknown',
@@ -123,10 +104,29 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
           params: {
             item_list_id: ecommerce.item_list_id,
             item_list_name: ecommerce.item_list_name,
-            page_path: pagePath,
           },
         },
         { type: 'recommended', method: 'logViewItemList', params: ecommerce },
+      ];
+
+    case 'select_item':
+      return [
+        {
+          type: 'custom',
+          name: 'select_item',
+          params: {
+            item_list_id: event.item_list_id,
+            item_list_name: event.item_list_name,
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.product_handle,
+            variant_id: event.variant_id,
+            index: event.index,
+            source_screen: event.source_screen,
+            search_term: event.search_term,
+            items: ecommerce.items,
+          },
+        },
       ];
 
     case 'view_item':
@@ -176,6 +176,49 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
 
     case 'add_to_wishlist':
       return [{ type: 'recommended', method: 'logAddToWishlist', params: ecommerce }];
+
+    case 'remove_from_wishlist':
+      return [
+        {
+          type: 'custom',
+          name: 'remove_from_wishlist',
+          params: {
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.item_id,
+          },
+        },
+      ];
+
+    case 'cart_quantity_increased':
+      return [
+        {
+          type: 'custom',
+          name: 'cart_quantity_increased',
+          params: {
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.product_handle,
+            quantity_before: event.quantity_before,
+            quantity_after: event.quantity_after,
+          },
+        },
+      ];
+
+    case 'cart_quantity_decreased':
+      return [
+        {
+          type: 'custom',
+          name: 'cart_quantity_decreased',
+          params: {
+            item_id: event.item_id,
+            item_name: event.item_name,
+            product_handle: event.product_handle,
+            quantity_before: event.quantity_before,
+            quantity_after: event.quantity_after,
+          },
+        },
+      ];
 
     case 'app_update_required_shown':
       return [

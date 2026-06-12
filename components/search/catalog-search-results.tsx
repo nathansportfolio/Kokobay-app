@@ -12,6 +12,7 @@ import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { catalogImageCache } from '@/constants/expo-image';
 import { luxuryChrome } from '@/constants/luxury-nav';
+import { trackSelectItem } from '@/lib/gtm';
 import { searchCatalog, type CatalogSearchResult } from '@/services/search';
 import { useSearchHistoryStore } from '@/store';
 import type { Collection, Product } from '@/types/shopify';
@@ -197,9 +198,16 @@ export function CatalogSearchResultsList({
           const price = formatMoney(p.priceRange.minVariantPrice);
           return (
             <Pressable
-              onPress={() =>
-                recordSearchAndNavigate(productHref(p.handle, pathname) as string, historySnapshot)
-              }
+              onPress={() => {
+                trackSelectItem({
+                  product: p,
+                  source_screen: 'search',
+                  item_list_id: `search:${query}`,
+                  item_list_name: `Search: ${query}`,
+                  search_term: query,
+                });
+                recordSearchAndNavigate(productHref(p.handle, pathname) as string, historySnapshot);
+              }}
               className="mb-3 flex-row items-center border-b border-line/35 py-3.5 active:opacity-78">
               {img ? (
                 <Image
@@ -251,7 +259,7 @@ export function CatalogSearchResultsList({
           return null;
       }
     },
-    [historySnapshot, pathname, recordSearchAndNavigate],
+    [historySnapshot, pathname, query, recordSearchAndNavigate],
   );
 
   const searchKeyExtractor = useCallback((item: SearchResultRow) => item.key, []);

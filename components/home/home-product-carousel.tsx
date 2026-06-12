@@ -3,7 +3,7 @@ import { ScrollView, type StyleProp, type ViewStyle } from 'react-native';
 
 import type { Product } from '@/types/shopify';
 
-import { HomeProductTile } from './home-product-tile';
+import { HomeProductTile, type HomeProductTileSelectItemContext } from './home-product-tile';
 
 type Props = {
   products: Product[];
@@ -12,9 +12,16 @@ type Props = {
   contentPaddingEnd?: number;
   /** Passed through to each tile (e.g. search overlay dismiss + navigate). */
   onProductPress?: (handle: string) => void;
+  selectItemContext?: HomeProductTileSelectItemContext;
 };
 
-function HomeProductCarouselInner({ products, tileWidth, contentPaddingEnd = 0, onProductPress }: Props) {
+function HomeProductCarouselInner({
+  products,
+  tileWidth,
+  contentPaddingEnd = 0,
+  onProductPress,
+  selectItemContext,
+}: Props) {
   const contentStyle = useMemo<StyleProp<ViewStyle>>(
     () => ({
       paddingLeft: 0,
@@ -38,12 +45,14 @@ function HomeProductCarouselInner({ products, tileWidth, contentPaddingEnd = 0, 
       keyboardShouldPersistTaps="handled"
       style={{ flex: 1 }}
       contentContainerStyle={contentStyle}>
-      {products.map((item) => (
+      {products.map((item, index) => (
         <HomeProductTile
           key={`${item.handle}:${item.id}`}
           product={item}
           width={tileWidth}
+          index={index}
           onProductPress={onProductPress}
+          selectItemContext={selectItemContext}
         />
       ))}
     </ScrollView>

@@ -7,5 +7,5 @@ export function useCollectionHref(handle: string): Href {
   const pathname = usePathname();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const existing = typeof returnTo === 'string' ? returnTo : undefined;
-  return collectionHref(handle, collectionReturnToParam(pathname, existing));
+  return collectionHref(handle, collectionReturnToParam(pathname, existing), pathname);
 }

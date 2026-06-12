@@ -11,6 +11,8 @@ type UsePlpScrollToTopOptions = {
   scopeKey: string;
   /** `dataUpdatedAt` from the active catalog query; scroll again once new rows land. */
   dataEpoch: number;
+  /** Dev audit — called before each `scrollToOffset`. */
+  onScrollToOffset?: (reason: string) => void;
 };
 
 /**
@@ -19,7 +21,7 @@ type UsePlpScrollToTopOptions = {
  */
 export function usePlpScrollToTop(
   listRef: RefObject<FlashListRef<Product> | null>,
-  { sort, filters, scopeKey, dataEpoch }: UsePlpScrollToTopOptions,
+  { sort, filters, scopeKey, dataEpoch, onScrollToOffset }: UsePlpScrollToTopOptions,
 ): void {
   const didMountRef = useRef(false);
   const scrollAfterDataRef = useRef(false);
@@ -30,12 +32,14 @@ export function usePlpScrollToTop(
       return;
     }
     scrollAfterDataRef.current = true;
+    onScrollToOffset?.('usePlpScrollToTop:sort-filters-scope');
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
-  }, [sort, filters, scopeKey, listRef]);
+  }, [sort, filters, scopeKey, listRef, onScrollToOffset]);
 
   useLayoutEffect(() => {
     if (!scrollAfterDataRef.current) return;
+    onScrollToOffset?.('usePlpScrollToTop:dataEpoch');
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
     scrollAfterDataRef.current = false;
-  }, [dataEpoch, sort, listRef]);
+  }, [dataEpoch, sort, listRef, onScrollToOffset]);
 }

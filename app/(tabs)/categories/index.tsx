@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
+import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { ShopCollectionsList } from '@/components/shop/shop-collections-list';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
+import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { markShopTabViewportExpected, resetShopTabPerfTrace } from '@/lib/shop-tab-perf-trace';
 import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
@@ -20,9 +22,7 @@ import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
 import { prefetchShopCollectionCoverImages } from '@/utils/shop-collection-cover-prefetch';
 
-const LIST_CONTENT = {
-  paddingBottom: 48,
-} as const;
+const LIST_BOTTOM_PAD = 48;
 
 const HEADER_WRAP = {
   paddingTop: 8,
@@ -47,8 +47,18 @@ function CollectionsHeader({ isError = false }: { isError?: boolean }) {
 }
 
 export default function CategoriesScreen() {
+  return (
+    <TabScreenTouchRoot>
+      <CategoriesScreenContent />
+    </TabScreenTouchRoot>
+  );
+}
+
+function CategoriesScreenContent() {
   const listRef = useRef<FlashListRef<CmsCollectionDisplayItem>>(null);
   const { width: screenWidth } = useWindowDimensions();
+  const tabBarHeight = useOptionalBottomTabBarHeight();
+  const listBottomPad = tabBarHeight + LIST_BOTTOM_PAD;
 
   useEffect(() => {
     resetShopTabPerfTrace({ routeKey: 'categories-tab' });
@@ -193,7 +203,7 @@ export default function CategoriesScreen() {
   if (!showCollectionsSkeleton && displayItems.length === 0) {
     return (
       <View style={CATEGORIES_SHELL}>
-        <View style={HEADER_WRAP}>
+        <View style={[HEADER_WRAP, { paddingBottom: listBottomPad }]}>
           <CollectionsHeader isError={showCatalogError} />
           <Text variant="caption" className="font-sans text-[13px] leading-5 text-mist/90">
             Collections will appear here once the catalog has loaded.
@@ -210,7 +220,7 @@ export default function CategoriesScreen() {
         loading={showCollectionsSkeleton}
         items={displayItems}
         ListHeaderComponent={listHeader}
-        contentContainerStyle={LIST_CONTENT}
+        contentContainerStyle={{ paddingBottom: listBottomPad }}
         onScroll={onScroll}
       />
     </View>

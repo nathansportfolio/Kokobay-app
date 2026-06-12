@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { type ErrorBoundaryProps, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PdpAccordion } from '@/components/pdp/pdp-accordion';
 import { PdpBackInStockSheet } from '@/components/pdp/pdp-back-in-stock-sheet';
@@ -12,9 +11,7 @@ import { PdpImageCarousel } from '@/components/pdp/pdp-image-carousel';
 import { PdpQtyStepper } from '@/components/pdp/pdp-qty-stepper';
 import { PdpRelatedProducts } from '@/components/pdp/pdp-related-products';
 import { PdpRelatedProductsSkeleton } from '@/components/pdp/pdp-related-products-skeleton';
-import { PdpSizeGuideModal } from '@/components/pdp/pdp-size-guide-modal';
 import { PdpSizeSelector } from '@/components/pdp/pdp-size-selector';
-import { ProductFitWidget } from '@/components/product/product-fit-widget';
 import { Button } from '@/components/ui/button';
 import { AppErrorBoundary } from '@/components/ui/error-boundary';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -23,20 +20,18 @@ import { ProductDetailSkeleton } from '@/components/ui/product-detail-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
 import { PdpProductInfoSections } from '@/components/pdp/pdp-product-info-sections';
-import { useLuxuryHeaderTotalHeight } from '@/hooks/use-luxury-chrome-top-padding';
+import { useTabChromeTop } from '@/hooks/use-luxury-chrome-top-padding';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useBagActions } from '@/contexts/bag-context';
 import { useIsWishlistedHandle, useWishlistToggle } from '@/contexts/wishlist-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
-import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
-import { useOptionalBottomTabBarHeight } from '@/hooks/use-optional-bottom-tab-bar-height';
+import { useLuxuryTabContentBottomPadding } from '@/hooks/use-optional-bottom-tab-bar-height';
 import { usePdpGoBack } from '@/hooks/use-pdp-go-back';
 import { useProductQueryCleanup } from '@/hooks/use-product-query-cleanup';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useRenderTrace } from '@/hooks/use-render-trace';
-import { useSizeGuideQuery } from '@/hooks/use-size-guide-query';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewItem } from '@/lib/gtm';
 import { getProductRecommendations } from '@/services/product-recommendations';
@@ -87,11 +82,11 @@ export default function ProductScreen() {
   }>();
   const navigation = useNavigation();
   const goBack = usePdpGoBack();
-  const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
-  const tabBarOverlay = useOptionalBottomTabBarHeight();
-  const appErrorBannerHeight = useAppErrorBannerChromeHeight();
-  const chromeTop = useLuxuryHeaderTotalHeight(insets.top, appErrorBannerHeight);
+  const tabBarBottomPad = useLuxuryTabContentBottomPadding();
+  const chromeTop = useTabChromeTop();
+  const pdpTopSpacer = chromeTop;
+  const pdpBackTop = chromeTop + 8;
   const { addToBag } = useBagActions();
   const safeHandle = typeof handle === 'string' ? handle : '';
   const toggleWishlist = useWishlistToggle();
@@ -117,7 +112,6 @@ export default function ProductScreen() {
   /** Never render PDP content until cache data matches the route handle (avoids previous-product flicker). */
   const displayProduct = product?.handle === safeHandle ? product : undefined;
   const productReady = Boolean(displayProduct);
-  useSizeGuideQuery(productReady);
   const showProductSkeleton = Boolean(safeHandle) && !displayProduct && !isError;
 
   const sizeOptions = useMemo(
@@ -136,7 +130,6 @@ export default function ProductScreen() {
   const [addingToBag, setAddingToBag] = useState(false);
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [backInStockOpen, setBackInStockOpen] = useState(false);
-  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const { user } = useAuth();
   const customerEmail = user?.email;
   const customerId = user?.id;
@@ -152,7 +145,6 @@ export default function ProductScreen() {
     setQty(1);
     setLightbox({ open: false, index: 0 });
     setBackInStockOpen(false);
-    setSizeGuideOpen(false);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [safeHandle]);
 
@@ -413,8 +405,8 @@ export default function ProductScreen() {
   );
 
   const stickyCtaStripHeight = 6 + 50 + 8;
-  const stickyBottomPad = stickyCtaStripHeight + 12 + (tabBarOverlay > 0 ? 0 : Math.max(insets.bottom, 12));
-  const ctaBottomPad = tabBarOverlay > 0 ? 8 : 8 + Math.max(insets.bottom, 12);
+  const stickyBottomPad = stickyCtaStripHeight + tabBarBottomPad;
+  const ctaBottomPad = tabBarBottomPad;
   const backInStockCtaLabel = backInStockSubscribed ? 'We will email you when back in stock' : 'Email me when back in stock';
 
   return (
@@ -430,7 +422,7 @@ export default function ProductScreen() {
         onScroll={onPdpScroll}
         scrollEventThrottle={16}>
         <View className="relative">
-          <View style={{ height: chromeTop }} pointerEvents="none" />
+          <View style={{ height: pdpTopSpacer }} pointerEvents="none" />
           <AppErrorBoundary
             name="Product gallery"
             fallback={({ retry }) => (
@@ -447,7 +439,7 @@ export default function ProductScreen() {
             accessibilityRole="button"
             accessibilityLabel="Go back"
             className="absolute z-10 rounded-full bg-white/78 p-2.5 active:opacity-88"
-            style={{ top: chromeTop + 8, left: 14 }}>
+            style={{ top: pdpBackTop, left: 14 }}>
             <IconSymbol name="chevron.left" size={22} color={palette.ink} />
           </Pressable>
         </View>
@@ -498,13 +490,10 @@ export default function ProductScreen() {
             value={selectedSize ?? sizeOptions[0] ?? ''}
             onChange={setSelectedSize}
             sizeAvailable={sizeAvailability}
-            onOpenSizeGuide={() => setSizeGuideOpen(true)}
           />
           <View className="mt-2">
             <PdpQtyStepper value={qty} onChange={setQty} disabled={!canAdd} />
           </View>
-
-          <ProductFitWidget fitData={displayProduct.fitData} />
 
           <View className="mt-10">
             <PdpAccordion title="Description" defaultOpen={false}>
@@ -556,8 +545,6 @@ export default function ProductScreen() {
           onSubscribed={markBackInStockSubscribed}
         />
       ) : null}
-
-      <PdpSizeGuideModal visible={sizeGuideOpen} onClose={() => setSizeGuideOpen(false)} />
 
       <View className="absolute bottom-0 left-0 right-0 bg-transparent">
         <View className="px-5 pt-1" style={{ paddingBottom: ctaBottomPad }}>

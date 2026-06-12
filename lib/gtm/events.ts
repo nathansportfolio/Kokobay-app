@@ -3,6 +3,7 @@ import type { CartLine } from '@/types/cart';
 import type { Product, ProductVariant } from '@/types/shopify';
 
 import { pushToDataLayer } from './data-layer';
+import type { SelectItemSourceScreen } from './types';
 import {
   gtmCartCurrency,
   gtmCartValue,
@@ -43,6 +44,39 @@ export function trackViewItem(input: {
         currency: item.currency,
         value: item.price,
         items: [item],
+      },
+    }),
+  );
+}
+
+export function trackSelectItem(input: {
+  product: Product;
+  source_screen: SelectItemSourceScreen;
+  item_list_id: string;
+  item_list_name: string;
+  index?: number;
+  search_term?: string;
+  variant_id?: string;
+}) {
+  const item = gtmItemFromProduct(input.product, { index: input.index });
+  const variantId = input.variant_id ?? item.item_id;
+
+  pushToDataLayer(
+    withEcommerceClear({
+      event: 'select_item',
+      item_list_id: input.item_list_id,
+      item_list_name: input.item_list_name,
+      item_id: item.item_id,
+      item_name: item.item_name,
+      product_handle: input.product.handle,
+      variant_id: variantId,
+      index: input.index,
+      source_screen: input.source_screen,
+      ...(input.search_term ? { search_term: input.search_term } : {}),
+      ecommerce: {
+        item_list_id: input.item_list_id,
+        item_list_name: input.item_list_name,
+        items: [{ ...item, index: input.index }],
       },
     }),
   );
@@ -102,6 +136,36 @@ export function trackRemoveFromCart(line: CartLine) {
       },
     }),
   );
+}
+
+export function trackCartQuantityIncreased(input: {
+  line: CartLine;
+  quantityBefore: number;
+  quantityAfter: number;
+}) {
+  pushToDataLayer({
+    event: 'cart_quantity_increased',
+    item_id: input.line.variantId,
+    item_name: input.line.title?.trim() || input.line.handle,
+    product_handle: input.line.handle,
+    quantity_before: input.quantityBefore,
+    quantity_after: input.quantityAfter,
+  });
+}
+
+export function trackCartQuantityDecreased(input: {
+  line: CartLine;
+  quantityBefore: number;
+  quantityAfter: number;
+}) {
+  pushToDataLayer({
+    event: 'cart_quantity_decreased',
+    item_id: input.line.variantId,
+    item_name: input.line.title?.trim() || input.line.handle,
+    product_handle: input.line.handle,
+    quantity_before: input.quantityBefore,
+    quantity_after: input.quantityAfter,
+  });
 }
 
 export function trackViewCart(lines: CartLine[]) {

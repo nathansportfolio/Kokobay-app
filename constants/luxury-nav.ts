@@ -43,13 +43,13 @@ export const luxuryHeaderRowHeight = tabHeaderRowHeight();
  */
 export const LUXURY_TAB_HEADER_CONTENT_GAP = 12;
 
+/** Extra air above floating bottom chrome (checkout card, PDP add-to-bag). */
+export const LUXURY_TAB_CONTENT_EXTRA_BOTTOM = 10;
+
 /**
- * `ListHeader` / scroll `paddingTop` under the fixed `LuxuryTabHeader` on **tab** screens
- * (add `insets.top` in JS for the status bar). Matches `LuxuryTabBodySpacer` total.
+ * PLP list-header spacer below fixed tab chrome (status bar + header row + banners + gap).
+ * Prefer `usePlpListHeaderTopSpacerHeight()` in screens — it reads live banner height.
  */
 export function luxuryTabPlpListHeaderPaddingTop(bannerStripHeight = 0): number {
   return tabHeaderRowHeight() + bannerStripHeight + LUXURY_TAB_HEADER_CONTENT_GAP;
 }
-
-/** @deprecated Use {@link luxuryTabPlpListHeaderPaddingTop} when the incident banner may show. */
-export const LUXURY_TAB_PLP_LIST_HEADER_PADDING_TOP = luxuryTabPlpListHeaderPaddingTop();

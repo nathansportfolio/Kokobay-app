@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 
 import {
   isFirebaseAnalyticsDebugFromEnv,
-  isFirebaseAnalyticsEnabledFromEnv,
+  isFirebaseAnalyticsRuntimeEnabled,
   readFirebaseEnv,
 } from '@/lib/firebase-env';
 import { isFirebaseNativeModuleAvailable } from '@/lib/firebase-native-safe';
@@ -11,8 +11,8 @@ import type { FirebaseAnalyticsConfig } from '@/src/types/analytics';
 /** Runtime Firebase / Analytics flags (from `EXPO_PUBLIC_*` env vars). */
 export function getFirebaseAnalyticsConfig(): FirebaseAnalyticsConfig {
   return {
-    enabled: isFirebaseAnalyticsEnabledFromEnv(),
-    debug: isFirebaseAnalyticsDebugFromEnv() || __DEV__,
+    enabled: isFirebaseAnalyticsRuntimeEnabled(),
+    debug: !__DEV__ && isFirebaseAnalyticsDebugFromEnv(),
     iosGoogleServicesFile:
       readFirebaseEnv('EXPO_PUBLIC_FIREBASE_IOS_GOOGLE_SERVICES_FILE') ??
       './GoogleService-Info.plist',
@@ -73,6 +73,8 @@ export function getFirebaseAnalytics() {
 export async function initializeFirebaseAnalytics(): Promise<void> {
   if (initAttempted) return;
   initAttempted = true;
+
+  if (!isFirebaseAnalyticsRuntimeEnabled()) return;
 
   const config = getFirebaseAnalyticsConfig();
   const analytics = getFirebaseAnalytics();

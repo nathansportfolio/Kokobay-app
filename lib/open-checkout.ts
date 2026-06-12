@@ -70,7 +70,7 @@ export async function openCheckoutFromBag(): Promise<OpenCheckoutFromBagResult> 
   trackBeginCheckout(lines);
 
   try {
-    router.push('/checkout');
+    router.push('/cart/checkout');
     return 'opened_in_app';
   } catch (error) {
     logCheckoutHealth('open_failed', {

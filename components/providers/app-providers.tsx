@@ -5,6 +5,7 @@ import { CheckoutUnavailableModal } from '@/components/checkout/checkout-unavail
 import { AppUpdateGate } from '@/components/update/app-update-gate';
 import { AppGlobalShell } from '@/components/providers/app-global-shell';
 import { AppErrorBannerSync } from '@/components/providers/app-error-banner-sync';
+import { AppHomeHeroSync } from '@/components/providers/app-home-hero-sync';
 import { AppPromotionBannerSync } from '@/components/providers/app-promotion-banner-sync';
 import { DeliveryThresholdSync } from '@/components/providers/delivery-threshold-sync';
 import { ForegroundAuditSync } from '@/components/providers/foreground-audit-sync';
@@ -47,6 +48,7 @@ export function AppProviders({ children }: PropsWithChildren) {
       <DeliveryThresholdSync />
       <RenderTraceSync />
       <AppPromotionBannerSync />
+      <AppHomeHeroSync />
       <AppErrorBannerSync />
       <GtmRouteTracker />
       <WishlistProvider>

@@ -7,7 +7,7 @@ import { getCollectionProducts, getCollections } from '@/services/shopify';
 import type { Collection, Product } from '@/types/shopify';
 import { LIVE_NEW_IN_COLLECTION_HANDLE } from '@/utils/collection-handles';
 
-/** Same cap as the home “New in” horizontal carousel (`app/(tabs)/index.tsx`). */
+/** Same cap as the home “New in” horizontal carousel (`app/(tabs)/index/index.tsx`). */
 export const HOME_NEW_IN_CAROUSEL_LIMIT = 10;
 
 /** Home collections editorial tiles — full list on the Collections tab. */

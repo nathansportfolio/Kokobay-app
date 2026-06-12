@@ -1,5 +1,6 @@
 import { FlashList, type FlashListProps, type FlashListRef } from '@shopify/flash-list';
 import { forwardRef } from 'react';
+import { Platform } from 'react-native';
 
 import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
 import type { Product } from '@/types/shopify';
@@ -38,6 +39,7 @@ function CollectionPlpProductGridInner(
       extraData={extraData}
       renderItem={renderItem}
       numColumns={numColumns}
+      {...(Platform.OS === 'ios' ? { contentInsetAdjustmentBehavior: 'never' as const } : {})}
       {...rest}
     />
   );
