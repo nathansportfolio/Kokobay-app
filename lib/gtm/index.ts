@@ -4,6 +4,7 @@ export {
   trackAddToCart,
   trackAddToWishlist,
   trackBeginCheckout,
+  trackCheckoutButtonPressed,
   trackCartQuantityDecreased,
   trackCartQuantityIncreased,
   trackFilterSelected,

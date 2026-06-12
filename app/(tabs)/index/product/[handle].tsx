@@ -312,6 +312,10 @@ export default function ProductScreen() {
     setBackInStockOpen(true);
   }, [displayProduct, selectedVariant]);
 
+  const [pdpScrollEnabled, setPdpScrollEnabled] = useState(true);
+  const onGalleryScrollStart = useCallback(() => setPdpScrollEnabled(false), []);
+  const onGalleryScrollEnd = useCallback(() => setPdpScrollEnabled(true), []);
+
   const scrollToTopPdp = useCallback(() => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
@@ -415,6 +419,7 @@ export default function ProductScreen() {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
         directionalLockEnabled
+        scrollEnabled={pdpScrollEnabled}
         removeClippedSubviews={false}
         contentContainerStyle={{ paddingBottom: stickyBottomPad }}
         bounces
@@ -431,7 +436,13 @@ export default function ProductScreen() {
                 </EmptyState>
               </View>
             )}>
-            <PdpImageCarousel key={safeHandle} images={displayProduct.images} onImagePress={openImageLightbox} />
+            <PdpImageCarousel
+              key={safeHandle}
+              images={displayProduct.images}
+              onImagePress={openImageLightbox}
+              onScrollGestureStart={onGalleryScrollStart}
+              onScrollGestureEnd={onGalleryScrollEnd}
+            />
           </AppErrorBoundary>
           <Pressable
             onPress={goBack}

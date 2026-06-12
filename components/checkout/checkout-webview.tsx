@@ -7,6 +7,11 @@ import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
 import { finishCheckoutTiming, markCheckoutTiming } from '@/lib/checkout-timing';
 import { endCheckoutTrace, logCheckoutTrace } from '@/lib/checkout-trace';
+import {
+  logShopifyRedirectTraceNavigation,
+  logShopifyRedirectTraceSource,
+  resetShopifyRedirectTraceSession,
+} from '@/lib/shopify-redirect-trace';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import type { CartLine } from '@/types/cart';
 import {
@@ -124,6 +129,8 @@ function CheckoutWebViewNative({
     homeRedirectRef.current = false;
     loginRedirectRef.current = false;
     firstResponseMarkedRef.current = false;
+    resetShopifyRedirectTraceSession(url);
+    logShopifyRedirectTraceSource('webview_initial_load', { url });
     logCheckout('mount', { initialUrl: url });
   }, [url]);
 
@@ -212,6 +219,10 @@ function CheckoutWebViewNative({
       }
 
       currentUrlRef.current = nav.url;
+      logShopifyRedirectTraceNavigation(nav.url, {
+        loading: nav.loading,
+        event: 'webview_navigation',
+      });
       logUrl('navigationStateChange', nav.url, {
         loading: nav.loading,
         canGoBack: nav.canGoBack,

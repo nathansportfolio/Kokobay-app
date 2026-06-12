@@ -1,5 +1,6 @@
 import type { CartLine } from '@/types/cart';
 import { isCheckoutAvailable } from '@/utils/checkout-health';
+import { logShopifyRedirectTraceSource } from '@/lib/shopify-redirect-trace';
 
 /** Checkout/cart attribution — appended to every app-generated checkout URL. */
 export const APP_CHECKOUT_SOURCE = 'app';
@@ -297,12 +298,25 @@ export function resolveCheckoutWebViewUrl(
 
   const resume = normalizeStorefrontCheckoutUrl(options?.resumeUrl);
   if (resume) {
-    return finalizeAppCheckoutUrl(resume);
+    const resolved = finalizeAppCheckoutUrl(resume);
+    logShopifyRedirectTraceSource('webview_resolved', {
+      checkoutUrl,
+      outputUrl: resolved,
+      url: resolved,
+      usedResumeUrl: true,
+    });
+    return resolved;
   }
 
   if (normalizedCheckoutUrl) {
     console.log('[CHECKOUT] using Shopify checkoutUrl');
-    return finalizeAppCheckoutUrl(normalizedCheckoutUrl);
+    const resolved = finalizeAppCheckoutUrl(normalizedCheckoutUrl);
+    logShopifyRedirectTraceSource('webview_resolved', {
+      checkoutUrl,
+      outputUrl: resolved,
+      url: resolved,
+    });
+    return resolved;
   }
 
   if (options?.awaitingCheckoutUrl) {
@@ -315,7 +329,14 @@ export function resolveCheckoutWebViewUrl(
   });
   if (fallback) {
     console.log('[CHECKOUT] fallback cart permalink used');
-    return finalizeAppCheckoutUrl(fallback);
+    const resolved = finalizeAppCheckoutUrl(fallback);
+    logShopifyRedirectTraceSource('webview_resolved', {
+      checkoutUrl,
+      outputUrl: resolved,
+      url: resolved,
+      usedFallbackPermalink: true,
+    });
+    return resolved;
   }
 
   console.log('[CHECKOUT] missing checkoutUrl after sync');

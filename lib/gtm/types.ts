@@ -31,6 +31,7 @@ export type GtmEventName =
   | 'remove_from_cart'
   | 'view_cart'
   | 'begin_checkout'
+  | 'checkout_button_pressed'
   | 'purchase'
   | 'search'
   | 'add_to_wishlist'

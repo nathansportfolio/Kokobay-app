@@ -13,6 +13,7 @@ import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
 import { markCheckoutTiming } from '@/lib/checkout-timing';
 import { logCheckoutTrace } from '@/lib/checkout-trace';
+import { logShopifyRedirectTraceSource } from '@/lib/shopify-redirect-trace';
 import {
   checkoutBootstrapRequiredReason,
   checkoutPreSyncTokenAgeMs,
@@ -193,6 +194,12 @@ export default function CheckoutScreen() {
       return;
     }
     logCheckoutTrace('webview_url_set', { webViewUrl });
+    logShopifyRedirectTraceSource('webview_resolved', {
+      checkoutUrl: checkoutUrlFromStore,
+      storeCheckoutUrl: checkoutUrlFromStore,
+      url: webViewUrl,
+      outputUrl: webViewUrl,
+    });
     if (!assertCheckoutAvailable(webViewUrl, { source: 'checkout_screen' })) {
       setCheckoutUnavailable(true);
       showCheckoutUnavailableModal({ onTryAgain: retryCheckoutOpen });

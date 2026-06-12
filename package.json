@@ -1,7 +1,7 @@
 {
   "name": "Koko Bay",
   "main": "expo-router/entry",
-  "version": "1.0.105",
+  "version": "1.0.109",
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "start": "expo start --dev-client",

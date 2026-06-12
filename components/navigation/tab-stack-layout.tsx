@@ -15,7 +15,15 @@ export default function TabStackLayout() {
           backgroundColor: palette.canvas,
         },
         ...(Platform.OS === 'ios' ? { fullScreenGestureEnabled: true } : null),
-      }}
-    />
+      }}>
+      {/*
+        Full-screen back swipe steals horizontal pans on the PDP gallery.
+        Edge swipe-back still works with gestureEnabled (default).
+      */}
+      <Stack.Screen
+        name="product/[handle]"
+        options={Platform.OS === 'ios' ? { fullScreenGestureEnabled: false } : undefined}
+      />
+    </Stack>
   );
 }

@@ -144,6 +144,19 @@ export function mapGtmEventToFirebaseDispatches(event: GtmDataLayerEvent): Fireb
     case 'begin_checkout':
       return [{ type: 'recommended', method: 'logBeginCheckout', params: ecommerce }];
 
+    case 'checkout_button_pressed':
+      return [
+        {
+          type: 'custom',
+          name: 'checkout_button_pressed',
+          params: {
+            currency: ecommerce.currency,
+            value: ecommerce.value,
+            items: ecommerce.items,
+          },
+        },
+      ];
+
     case 'purchase':
       return [{ type: 'recommended', method: 'logPurchase', params: ecommerce }];
 

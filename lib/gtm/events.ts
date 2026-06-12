@@ -198,6 +198,22 @@ export function trackBeginCheckout(lines: CartLine[]) {
   );
 }
 
+/** Fires on every Checkout tap — before sync/navigation (unlike `begin_checkout`). */
+export function trackCheckoutButtonPressed(lines: CartLine[]) {
+  const items = lines.map((line, index) => gtmItemFromCartLine(line, index));
+
+  pushToDataLayer(
+    withEcommerceClear({
+      event: 'checkout_button_pressed',
+      ecommerce: {
+        currency: gtmCartCurrency(lines),
+        value: gtmCartValue(lines),
+        items,
+      },
+    }),
+  );
+}
+
 export function trackPurchase(input: {
   lines: CartLine[];
   transactionId?: string;

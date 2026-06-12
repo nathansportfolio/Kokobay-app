@@ -7,8 +7,10 @@ import { BlurView } from 'expo-blur';
 const BLUR_SUPPORTED = Platform.OS === 'ios';
 
 import { Button } from '@/components/ui/button';
+import { trackCheckoutButtonPressed } from '@/lib/gtm';
 import { openCheckoutFromBag } from '@/lib/open-checkout';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
+import { useCartStore } from '@/store';
 import { DEFAULT_FREE_DELIVERY_THRESHOLD_GBP } from '@/constants/delivery-threshold';
 import { DEFAULT_CART_DELIVERY_AT_CHECKOUT_LABEL } from '@/constants/app-cart-delivery-text-cms';
 import { formatCartMoney } from '@/utils/money';
@@ -133,6 +135,7 @@ export function CartCheckoutBar({
 
   const onCheckout = useCallback(async () => {
     if (!isRemoteCartConfigured()) return;
+    trackCheckoutButtonPressed(useCartStore.getState().lines);
     setCheckingOut(true);
     try {
       await openCheckoutFromBag();

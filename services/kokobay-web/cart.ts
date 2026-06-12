@@ -7,6 +7,7 @@ import { checkoutTraceRequestHeaders, getCheckoutTraceId } from '@/lib/checkout-
 import { logCartDeleteTrace } from '@/lib/cart-delete-trace';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
 import { cartFlowLog, cartPerfLog, logCartStateTransition } from '@/lib/cart-perf-log';
+import { logShopifyRedirectTraceSource } from '@/lib/shopify-redirect-trace';
 import { logAppFirstOrderOnNewCart } from '@/services/cart/app-first-order-new-cart-log';
 import { createGuestId } from '@/utils/create-guest-id';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
@@ -127,6 +128,21 @@ function logCartResponseInDev(
     path,
     status: status ?? null,
     response,
+  });
+}
+
+function logCartCheckoutUrlRedirectTrace(
+  method: string,
+  path: string,
+  response: KokobayCartResponse | null,
+): void {
+  if (!response?.cart) return;
+  logShopifyRedirectTraceSource('backend_api_response', {
+    checkoutUrl: response.cart.checkoutUrl,
+    storeCheckoutUrl: response.cart.storeCheckoutUrl,
+    cartId: response.cart.id,
+    method,
+    path,
   });
 }
 
@@ -258,6 +274,7 @@ async function kokobayCartRequestDetailed(
     }
 
     logCartResponseInDev(method, pathWithMarket, parsed, response.status);
+    logCartCheckoutUrlRedirectTrace(method, pathWithMarket, parsed);
     logCartTrace('api_request_complete', {
       method,
       path: pathWithMarket,

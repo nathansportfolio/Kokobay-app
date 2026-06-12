@@ -17,6 +17,9 @@ import { PdpZoomableSlide } from './pdp-zoomable-slide';
 export type PdpImageCarouselProps = {
   images: Image[];
   onImagePress?: (index: number) => void;
+  /** Parent vertical ScrollView — pause while the gallery is paging horizontally. */
+  onScrollGestureStart?: () => void;
+  onScrollGestureEnd?: () => void;
 };
 
 function PdpCarouselProgressBar({
@@ -62,7 +65,12 @@ function PdpCarouselProgressBar({
   );
 }
 
-function PdpImageCarouselInner({ images, onImagePress }: PdpImageCarouselProps) {
+function PdpImageCarouselInner({
+  images,
+  onImagePress,
+  onScrollGestureStart,
+  onScrollGestureEnd,
+}: PdpImageCarouselProps) {
   const { width, height: winH } = useWindowDimensions();
   const galleryH = pdpGalleryHeight(width, winH);
   const progress = useSharedValue(0);
@@ -104,9 +112,11 @@ function PdpImageCarouselInner({ images, onImagePress }: PdpImageCarouselProps) 
         overscrollEnabled={false}
         scrollAnimationDuration={PDP_CAROUSEL_SCROLL_MS}
         onConfigurePanGesture={(pan) => {
-          pan.activeOffsetX([-14, 14]);
-          pan.failOffsetY([-12, 12]);
+          pan.activeOffsetX([-8, 8]);
+          pan.failOffsetY([-22, 22]);
         }}
+        onScrollStart={onScrollGestureStart}
+        onScrollEnd={() => onScrollGestureEnd?.()}
         onProgressChange={progress}
         onSnapToItem={() => {
           if (skipFirstSnapHaptic.current) {

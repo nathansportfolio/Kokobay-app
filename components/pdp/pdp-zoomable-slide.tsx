@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
 import { palette } from '@/constants/theme';
@@ -18,7 +20,7 @@ export type PdpZoomableSlideProps = {
 };
 
 /**
- * PDP carousel slide — image + tap only so horizontal swipes are not blocked.
+ * PDP carousel slide — RNGH tap only so horizontal pans reach the carousel.
  * Pinch/double-tap zoom is available in `PdpImageLightbox` via `ZoomableImage`.
  */
 export function PdpZoomableSlide({
@@ -44,17 +46,22 @@ export function PdpZoomableSlide({
     [uri, sourceWidth, sourceHeight, width],
   );
 
+  const tapGesture = useMemo(() => {
+    if (!onImagePress) return null;
+    return Gesture.Tap()
+      .maxDuration(320)
+      .onEnd(() => {
+        'worklet';
+        runOnJS(onImagePress)(slideIndex);
+      });
+  }, [onImagePress, slideIndex]);
+
   if (!uri) {
     return <View style={[{ flex: 1, backgroundColor: palette.surface }, { width, height }]} />;
   }
 
-  return (
-    <Pressable
-      style={{ width, height }}
-      onPress={() => onImagePress?.(slideIndex)}
-      accessibilityRole="button"
-      accessibilityLabel="Open product images"
-      className="bg-surface">
+  const slide = (
+    <View style={{ width, height }} className="bg-surface" accessibilityRole="button" accessibilityLabel="Open product images">
       <CatalogCoverImage
         uri={displayUri}
         recyclingKey={recyclingKey ?? displayUri}
@@ -62,6 +69,12 @@ export function PdpZoomableSlide({
         priority="high"
         transition={null}
       />
-    </Pressable>
+    </View>
   );
+
+  if (!tapGesture) {
+    return slide;
+  }
+
+  return <GestureDetector gesture={tapGesture}>{slide}</GestureDetector>;
 }
