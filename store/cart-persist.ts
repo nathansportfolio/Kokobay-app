@@ -1,5 +1,8 @@
 import * as SecureStore from 'expo-secure-store';
 
+import { logCartGuestId } from '@/lib/cart-guest-id-log';
+import { logCartTrace } from '@/lib/cart-trace-log';
+
 import type { CartLine } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { resolveCartLineUnitPrice } from '@/utils/cart-line-pricing';
@@ -146,9 +149,11 @@ export async function persistShopifyCartId(cartId: string | null): Promise<void>
   try {
     if (!cartId) {
       await SecureStore.deleteItemAsync(SHOPIFY_CART_ID_KEY);
+      logCartTrace('persist_shopify_cart_id', { cartId: null, action: 'cleared' });
       return;
     }
     await SecureStore.setItemAsync(SHOPIFY_CART_ID_KEY, cartId);
+    logCartTrace('persist_shopify_cart_id', { cartId, action: 'saved' });
   } catch {
     /* persist best-effort */
   }
@@ -167,9 +172,13 @@ export async function persistCartGuestId(guestId: string | null): Promise<void> 
   try {
     if (!guestId) {
       await SecureStore.deleteItemAsync(CART_GUEST_ID_KEY);
+      logCartGuestId('persist_cart_guest_id:cleared', null);
+      logCartTrace('persist_guest_id', { guestId: null, action: 'cleared' });
       return;
     }
     await SecureStore.setItemAsync(CART_GUEST_ID_KEY, guestId);
+    logCartGuestId('persist_cart_guest_id:saved', guestId);
+    logCartTrace('persist_guest_id', { guestId, action: 'saved' });
   } catch {
     /* persist best-effort */
   }

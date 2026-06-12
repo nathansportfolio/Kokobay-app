@@ -11,6 +11,14 @@ import { Text } from '@/components/ui/text';
 import { LUXURY_SYMBOL } from '@/constants/luxury-icons';
 import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
+import { markCheckoutTiming } from '@/lib/checkout-timing';
+import { logCheckoutTrace } from '@/lib/checkout-trace';
+import {
+  checkoutBootstrapRequiredReason,
+  checkoutPreSyncTokenAgeMs,
+  clearCheckoutPreSyncToken,
+  shouldSkipCheckoutBootstrap,
+} from '@/lib/checkout-session';
 import { gtmCartValue, trackPurchase } from '@/lib/gtm';
 import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
 import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
@@ -18,6 +26,7 @@ import { openCheckoutExternallyOrShowUnavailable } from '@/lib/open-checkout';
 import { cartEngine } from '@/src/core/cart';
 import { useAuth } from '@/hooks/use-auth';
 import { showToast, useCartStore } from '@/store';
+import { getCartRevisionSnapshot } from '@/store/cart';
 import { showCheckoutUnavailableModal } from '@/store/checkout-unavailable-modal';
 import { shopifyVariantKey } from '@/utils/shopify-variant-key';
 import { accountAuthRoute } from '@/utils/account-navigation';
@@ -63,6 +72,11 @@ export default function CheckoutScreen() {
   const initialCartSyncDoneRef = useRef(false);
 
   useEffect(() => {
+    markCheckoutTiming('checkout_screen_mounted');
+    logCheckoutTrace('checkout_screen_mounted');
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!isRemoteCartConfigured()) {
@@ -75,7 +89,20 @@ export default function CheckoutScreen() {
       }
       initialCartSyncDoneRef.current = true;
       const hasLines = useCartStore.getState().lines.length > 0;
+      const { cartRevision } = getCartRevisionSnapshot();
+      if (hasLines && shouldSkipCheckoutBootstrap(cartRevision)) {
+        console.log('[CHECKOUT_BOOTSTRAP] skipped', {
+          cartRevision,
+          tokenAgeMs: checkoutPreSyncTokenAgeMs(),
+        });
+        clearCheckoutPreSyncToken();
+        if (!cancelled) setBootstrapping(false);
+        return;
+      }
       if (hasLines) {
+        console.log('[CHECKOUT_BOOTSTRAP] required', {
+          reason: checkoutBootstrapRequiredReason(cartRevision),
+        });
         const synced = await cartEngine.checkout(customerEmail ?? undefined);
         if (!cancelled && !synced) {
           setCheckoutSyncFailed(true);
@@ -165,6 +192,7 @@ export default function CheckoutScreen() {
       }
       return;
     }
+    logCheckoutTrace('webview_url_set', { webViewUrl });
     if (!assertCheckoutAvailable(webViewUrl, { source: 'checkout_screen' })) {
       setCheckoutUnavailable(true);
       showCheckoutUnavailableModal({ onTryAgain: retryCheckoutOpen });

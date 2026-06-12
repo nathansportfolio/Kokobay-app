@@ -5,6 +5,8 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { palette } from '@/constants/theme';
+import { finishCheckoutTiming, markCheckoutTiming } from '@/lib/checkout-timing';
+import { endCheckoutTrace, logCheckoutTrace } from '@/lib/checkout-trace';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import type { CartLine } from '@/types/cart';
 import {
@@ -110,12 +112,18 @@ function CheckoutWebViewNative({
   const homeRedirectRef = useRef(false);
   const loginRedirectRef = useRef(false);
   const currentUrlRef = useRef(url);
+  const firstResponseMarkedRef = useRef(false);
+
+  useEffect(() => {
+    markCheckoutTiming('checkout_webview_mounted');
+  }, []);
 
   useEffect(() => {
     currentUrlRef.current = url;
     cartRedirectRef.current = false;
     homeRedirectRef.current = false;
     loginRedirectRef.current = false;
+    firstResponseMarkedRef.current = false;
     logCheckout('mount', { initialUrl: url });
   }, [url]);
 
@@ -198,6 +206,11 @@ function CheckoutWebViewNative({
 
   const handleNavigation = useCallback(
     (nav: { url: string; loading?: boolean; canGoBack?: boolean }) => {
+      if (!firstResponseMarkedRef.current) {
+        firstResponseMarkedRef.current = true;
+        markCheckoutTiming('checkout_webview_first_response');
+      }
+
       currentUrlRef.current = nav.url;
       logUrl('navigationStateChange', nav.url, {
         loading: nav.loading,
@@ -218,10 +231,16 @@ function CheckoutWebViewNative({
       <WebViewComponent
         source={{ uri: url }}
         onLoadStart={() => {
+          markCheckoutTiming('checkout_webview_load_start');
+          logCheckoutTrace('webview_load_start', { url: currentUrlRef.current });
           logUrl('loadStart', currentUrlRef.current);
           setLoading(true);
         }}
         onLoadEnd={() => {
+          markCheckoutTiming('checkout_webview_load_end');
+          logCheckoutTrace('webview_load_end', { url: currentUrlRef.current });
+          finishCheckoutTiming();
+          endCheckoutTrace();
           logUrl('loadEnd', currentUrlRef.current);
           setLoading(false);
         }}

@@ -12,6 +12,7 @@ import {
   type CartPricingAuditRevision,
 } from '@/lib/cart-pricing-audit';
 import { cartSyncTrace, cartPerfLog, logCartStateTransition } from '@/lib/cart-perf-log';
+import { logCartTraceWithStore } from '@/lib/cart-trace-log';
 import { persistShopifyCartId, persistCartGuestId } from './cart-persist';
 import {
   buildSnapshotDiscountState,
@@ -112,6 +113,12 @@ export function createRemoteSnapshotCommit(
     }
     void persistShopifyCartId(snapshot.cartId);
     notifyFirstAppOrderDiscountRetryAllowed(get);
+    logCartTraceWithStore('apply_remote_snapshot', {
+      cartId: snapshot.cartId,
+      beforeLines,
+      remoteLineCount: snapshot.lines.length,
+      checkoutUrl: resolvedCheckoutUrl,
+    });
     logCartStateTransition('applyRemoteSnapshot:after', get().lines.length, getRevision(), {
       beforeLines,
       remoteLineCount: snapshot.lines.length,
@@ -128,9 +135,16 @@ function resolveClampedQty(
 }
 
 function logCartDebug(
-  _action: string,
-  _details: { lineItemId?: string; quantity?: number; handle?: string },
-): void {}
+  action: string,
+  details: { lineItemId?: string; quantity?: number; handle?: string },
+): void {
+  logCartTraceWithStore('local_mutation', {
+    action,
+    variantId: details.lineItemId ?? null,
+    quantity: details.quantity,
+    handle: details.handle ?? null,
+  });
+}
 
 function emptyLineClearState(lines: CartLine[]) {
   return {

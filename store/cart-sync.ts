@@ -16,6 +16,7 @@ import {
   logFastAddSuccess,
   noteUnexpectedFullSyncAfterFastAdd,
 } from '@/lib/cart-perf-log';
+import { logCartTrace, logCartTraceWithStore } from '@/lib/cart-trace-log';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { showToast } from '@/store/toast';
 import { fetchKokobayCartSnapshotReadOnly, clearRemoteKokobayCart, fetchRemoteCartCheckoutUrl } from '@/services/kokobay-web/cart';
@@ -639,6 +640,12 @@ function scheduleSync(source: string): void {
     lastSyncedRevision,
     debouncePending: cartSyncScheduler.isDebouncePending(),
   });
+  logCartTraceWithStore('schedule_sync', {
+    source,
+    isCartDirty: isCartDirty(),
+    cartRevision,
+    lastSyncedRevision,
+  });
   if (skipCartSyncUntilHydrated(`scheduleSync:${source}`)) return;
   if (!isRemoteCartConfigured() || !isCartDirty()) return;
   noteSyncScheduled();
@@ -1091,12 +1098,65 @@ async function waitForCheckoutSyncSettled(deadlineMs: number): Promise<boolean> 
   return isCartConfirmedSyncedForCheckout();
 }
 
+type CheckoutRemoteReconcileFastPath = {
+  skip: boolean;
+  cartRevision: number;
+  lastSyncedRevision: number;
+  checkoutUrlPresent: boolean;
+  shopifyCartIdPresent: boolean;
+};
+
+/** Skip GET /api/cart reconcile when checkout can trust the last successful sync. */
+function evaluateCheckoutRemoteReconcileFastPath(): CheckoutRemoteReconcileFastPath {
+  const { isSyncingShopify, pendingCartSync, shopifyCartId, storeCheckoutUrl, checkoutUrl } =
+    getCartStore().getState();
+  const { cartRevision: revision, lastSyncedRevision: syncedRevision, isCartDirty } =
+    getCartRevisionSnapshot();
+  const checkoutUrlPresent = Boolean((storeCheckoutUrl ?? checkoutUrl)?.trim());
+  const shopifyCartIdPresent = Boolean(shopifyCartId?.trim());
+
+  const skip =
+    !isCartDirty &&
+    revision === syncedRevision &&
+    !pendingCartSync &&
+    !isSyncingShopify &&
+    checkoutUrlPresent &&
+    shopifyCartIdPresent;
+
+  return {
+    skip,
+    cartRevision: revision,
+    lastSyncedRevision: syncedRevision,
+    checkoutUrlPresent,
+    shopifyCartIdPresent,
+  };
+}
+
 /**
  * Flush debounced cart mutations and wait until Shopify sync has caught up.
  * Use before navigating to checkout so we do not open a stale checkout URL.
  */
 export async function ensureCartSyncedForCheckout(customerEmail?: string): Promise<boolean> {
   if (!isRemoteCartConfigured()) return true;
+
+  logCartTraceWithStore('checkout_sync_start', { customerEmail: customerEmail ?? null });
+
+  const fastPath = evaluateCheckoutRemoteReconcileFastPath();
+  if (fastPath.skip) {
+    console.log('[CHECKOUT_FAST_PATH] skipped_remote_reconcile', {
+      cartRevision: fastPath.cartRevision,
+      lastSyncedRevision: fastPath.lastSyncedRevision,
+      checkoutUrlPresent: fastPath.checkoutUrlPresent,
+      shopifyCartIdPresent: fastPath.shopifyCartIdPresent,
+    });
+    logCartHealthStatus();
+    logCartTraceWithStore('checkout_sync_complete', {
+      ok: true,
+      customerEmail: customerEmail ?? null,
+      fastPath: true,
+    });
+    return true;
+  }
 
   await flushCartSync({ force: true, customerEmail, reconciliationMode: 'server_authoritative' });
 
@@ -1108,6 +1168,10 @@ export async function ensureCartSyncedForCheckout(customerEmail?: string): Promi
 
   await refreshStoreCheckoutUrl(customerEmail);
   logCartHealthStatus();
+  logCartTraceWithStore('checkout_sync_complete', {
+    ok: settled,
+    customerEmail: customerEmail ?? null,
+  });
   return settled;
 }
 
@@ -1168,6 +1232,11 @@ async function applyRemoteCartSyncResult(
   }
   if (result.guestId) {
     await persistCartGuestId(result.guestId);
+    logCartTrace('remote_sync_guest_id', {
+      guestId: result.guestId,
+      revisionAtStart,
+      syncGeneration,
+    });
   }
   const snapshot = result.snapshot;
   if (!snapshot) {
@@ -1240,6 +1309,15 @@ async function applyRemoteCartSyncResult(
     return;
   }
   await persistShopifyCartId(snapshot.cartId);
+  logCartTrace('remote_sync_applied', {
+    cartId: snapshot.cartId,
+    guestId: result.guestId ?? null,
+    revisionAtStart,
+    syncGeneration,
+    lineCount: snapshot.lines.length,
+    syncError: result.syncError?.code ?? null,
+    reconciliationMode,
+  });
 
   if (result.syncError) {
     cartSyncTrace('apply_remote_result_stays_dirty', {
@@ -1581,6 +1659,15 @@ export function createSyncWithShopify(
       shopifyCartId: shopifyCartId ?? null,
     });
     const guestId = await loadCartGuestId();
+    logCartTrace('sync_with_shopify_start', {
+      guestId,
+      shopifyCartId,
+      lineCount: lines.length,
+      revisionAtStart,
+      force,
+      customerEmail: customerEmail ?? null,
+      linesWithShopifyIds: lines.filter((l) => l.shopifyLineId).length,
+    });
     cartPerfLog(
       `syncWithShopify start lines=${lines.length} revision=${revisionAtStart} ` +
         `withLineIds=${lines.filter((l) => l.shopifyLineId).length}`,
@@ -1639,6 +1726,11 @@ export function createSyncWithShopify(
       }
       finalizePendingCartSync();
       logCartStateTransition('syncWithShopify:finished', get().lines.length, cartRevision, {
+        revisionAtStart,
+        durationMs: Math.round(performance.now() - syncStoreStart),
+      });
+      logCartTraceWithStore('sync_with_shopify_complete', {
+        guestId,
         revisionAtStart,
         durationMs: Math.round(performance.now() - syncStoreStart),
       });

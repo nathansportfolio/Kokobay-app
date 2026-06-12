@@ -1,9 +1,18 @@
 import { router } from 'expo-router';
 import { Linking } from 'react-native';
 
+import { markCheckoutTiming, startCheckoutTiming } from '@/lib/checkout-timing';
+import {
+  logCheckoutTrace,
+  startCheckoutTrace,
+} from '@/lib/checkout-trace';
+import { setCheckoutPreSyncToken } from '@/lib/checkout-session';
 import { trackBeginCheckout } from '@/lib/gtm';
 import { cartEngine } from '@/src/core/cart';
+import { isRemoteCartConfigured } from '@/services/cart/remote-cart';
+import { getCartRevisionSnapshot } from '@/store/cart';
 import { useAuthStore, useCartStore } from '@/store';
+import { loadCartGuestId } from '@/store/cart-persist';
 import { showCheckoutUnavailableModal } from '@/store/checkout-unavailable-modal';
 import { resolveCheckoutWebViewUrl } from '@/utils/checkout-url';
 import {
@@ -45,8 +54,42 @@ async function tryOpenCheckoutExternally(url: string): Promise<boolean> {
  * Sync cart, validate checkout URL health, then open in-app checkout or external browser.
  */
 export async function openCheckoutFromBag(): Promise<OpenCheckoutFromBagResult> {
+  startCheckoutTiming();
+  startCheckoutTrace();
+
+  const guestId = await loadCartGuestId();
+  const initialCart = useCartStore.getState();
+  const { cartRevision } = getCartRevisionSnapshot();
+
+  logCheckoutTrace('checkout_button_pressed', {
+    guestId,
+    shopifyCartId: initialCart.shopifyCartId,
+    cartRevision,
+    lineCount: initialCart.lines.length,
+    checkoutUrl: initialCart.storeCheckoutUrl ?? initialCart.checkoutUrl,
+  });
+
   const customerEmail = useAuthStore.getState().user?.email?.trim();
+  logCheckoutTrace('checkout_sync_start', {
+    guestId,
+    shopifyCartId: initialCart.shopifyCartId,
+    cartRevision,
+  });
+  markCheckoutTiming('checkout_sync_started');
   const synced = await cartEngine.checkout(customerEmail ?? undefined);
+  markCheckoutTiming('checkout_sync_finished');
+
+  const afterSync = useCartStore.getState();
+  const { cartRevision: cartRevisionAfterSync } = getCartRevisionSnapshot();
+  logCheckoutTrace('checkout_sync_complete', {
+    guestId,
+    ok: synced,
+    shopifyCartId: afterSync.shopifyCartId,
+    cartRevision: cartRevisionAfterSync,
+    lineCount: afterSync.lines.length,
+    checkoutUrl: afterSync.storeCheckoutUrl ?? afterSync.checkoutUrl,
+  });
+
   if (!synced && isRemoteCartConfigured()) {
     showCheckoutUnavailableModal({
       onTryAgain: () => {
@@ -57,6 +100,14 @@ export async function openCheckoutFromBag(): Promise<OpenCheckoutFromBagResult> 
   }
 
   const checkoutUrl = getCheckoutUrl();
+  markCheckoutTiming('checkout_url_ready');
+  logCheckoutTrace('checkout_url_ready', {
+    guestId,
+    shopifyCartId: afterSync.shopifyCartId,
+    cartRevision: cartRevisionAfterSync,
+    checkoutUrl,
+  });
+
   if (!assertCheckoutAvailable(checkoutUrl, { source: 'openCheckoutFromBag' })) {
     showCheckoutUnavailableModal({
       onTryAgain: () => {
@@ -66,10 +117,16 @@ export async function openCheckoutFromBag(): Promise<OpenCheckoutFromBagResult> 
     return 'unavailable';
   }
 
-  const lines = useCartStore.getState().lines;
-  trackBeginCheckout(lines);
+  trackBeginCheckout(afterSync.lines);
 
   try {
+    markCheckoutTiming('checkout_navigation_start');
+    logCheckoutTrace('checkout_navigate', {
+      guestId,
+      shopifyCartId: afterSync.shopifyCartId,
+      checkoutUrl,
+    });
+    setCheckoutPreSyncToken(cartRevisionAfterSync);
     router.push('/cart/checkout');
     return 'opened_in_app';
   } catch (error) {

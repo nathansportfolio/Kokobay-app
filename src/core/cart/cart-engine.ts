@@ -5,6 +5,7 @@
  *
  * Do not call `useCartStore.getState().addToCart` (etc.) from screens or providers.
  */
+import { logCartTrace, logCartTraceWithStore } from '@/lib/cart-trace-log';
 import { applyKokobayCartDiscountCode } from '@/services/kokobay-web/cart';
 import { getCartCustomerEmail } from '@/services/kokobay-web/cart-customer';
 import { maybeAutoApplyFirstAppOrderDiscountAsync } from '@/services/cart/auto-first-app-order-discount';
@@ -54,31 +55,44 @@ async function applyDiscountSnapshot(
 export const cartEngine = {
   /** Load persisted lines + schedule background sync. */
   hydrate(): Promise<void> {
-    return useCartStore.getState().hydrate();
+    logCartTrace('engine_hydrate_start');
+    return useCartStore.getState().hydrate().then(() => {
+      logCartTraceWithStore('engine_hydrate_complete');
+    });
   },
 
   addItem(input: AddToCartInput): void {
+    logCartTraceWithStore('engine_add_item', {
+      variantId: input.variantId,
+      quantity: input.qty,
+      handle: input.handle,
+    });
     useCartStore.getState().addToCart(input);
   },
 
   removeItem(variantId: string): void {
+    logCartTraceWithStore('engine_remove_item', { variantId });
     useCartStore.getState().removeItem(variantId);
   },
 
   updateQty(variantId: string, qty: number): void {
+    logCartTraceWithStore('engine_update_qty', { variantId, quantity: qty });
     useCartStore.getState().updateQuantity(variantId, qty);
   },
 
   nudgeQty(variantId: string, delta: number): void {
+    logCartTraceWithStore('engine_nudge_qty', { variantId, quantity: delta });
     useCartStore.getState().nudgeCartLineQuantity(variantId, delta);
   },
 
   clear(): void {
+    logCartTraceWithStore('engine_clear');
     useCartStore.getState().clear();
   },
 
   /** POST /api/cart/discount-code then apply server snapshot. */
   async applyDiscountCode(code: string, customerEmail?: string) {
+    logCartTraceWithStore('engine_apply_discount_start', { code });
     const guestId = await loadCartGuestId();
     const lines = useCartStore.getState().lines;
     const result = await applyKokobayCartDiscountCode(
@@ -87,49 +101,82 @@ export const cartEngine = {
       lines,
       customerEmail ?? getCartCustomerEmail(),
     );
-    return applyDiscountSnapshot(result);
+    const applied = await applyDiscountSnapshot(result);
+    logCartTraceWithStore('engine_apply_discount_complete', {
+      ok: applied.ok,
+      guestId,
+      code,
+    });
+    return applied;
   },
 
   /** First-app-order auto discount (logged-in). */
   async applyAutoDiscount(customerEmail?: string): Promise<void> {
+    logCartTraceWithStore('engine_apply_auto_discount_start', { customerEmail: customerEmail ?? null });
     await maybeAutoApplyFirstAppOrderDiscountAsync(customerEmail);
+    logCartTraceWithStore('engine_apply_auto_discount_complete');
   },
 
   /** Debounced background sync. */
   sync(customerEmail?: string): void {
+    logCartTraceWithStore('engine_sync', { customerEmail: customerEmail ?? null });
     void flushCartSync({ customerEmail, force: false });
   },
 
   /** Flush pending mutations — use at checkout. Returns true when cart matches Shopify. */
   async syncForCheckout(customerEmail?: string): Promise<boolean> {
-    return ensureCartSyncedForCheckout(customerEmail);
+    logCartTraceWithStore('engine_sync_for_checkout_start', { customerEmail: customerEmail ?? null });
+    const ok = await ensureCartSyncedForCheckout(customerEmail);
+    logCartTraceWithStore('engine_sync_for_checkout_complete', { ok, customerEmail: customerEmail ?? null });
+    return ok;
   },
 
   async checkout(customerEmail?: string): Promise<boolean> {
-    return ensureCartSyncedForCheckout(customerEmail);
+    logCartTraceWithStore('engine_checkout_start', { customerEmail: customerEmail ?? null });
+    const ok = await ensureCartSyncedForCheckout(customerEmail);
+    logCartTraceWithStore('engine_checkout_complete', { ok, customerEmail: customerEmail ?? null });
+    return ok;
   },
 
   deferMergeOnLogin(customerEmail: string): void {
+    logCartTrace('engine_defer_merge_on_login', { customerEmail });
     deferCartMergeUntilHydrate(customerEmail);
   },
 
   async mergeOnLogin(customerEmail: string): Promise<void> {
+    logCartTraceWithStore('engine_merge_on_login_start', { customerEmail });
     await mergeGuestCartOnLogin(customerEmail);
+    logCartTraceWithStore('engine_merge_on_login_complete', { customerEmail });
   },
 
   resetOnSignOut(): void {
+    logCartTrace('engine_reset_on_sign_out');
     resetCartForSignOut();
   },
 
   clearRemote(): Promise<void> {
-    return clearRemoteCartInBackground();
+    logCartTraceWithStore('engine_clear_remote_start');
+    return clearRemoteCartInBackground().then(() => {
+      logCartTraceWithStore('engine_clear_remote_complete');
+    });
   },
 
   refreshCheckoutUrl(customerEmail?: string): Promise<string | null> {
-    return refreshStoreCheckoutUrl(customerEmail);
+    logCartTraceWithStore('engine_refresh_checkout_url_start', { customerEmail: customerEmail ?? null });
+    return refreshStoreCheckoutUrl(customerEmail).then((url) => {
+      logCartTraceWithStore('engine_refresh_checkout_url_complete', {
+        customerEmail: customerEmail ?? null,
+        checkoutUrl: url,
+      });
+      return url;
+    });
   },
 
   applyServerSnapshot(snapshot: ShopifyCartSnapshot, reconciledLines?: CartLine[]): void {
+    logCartTrace('engine_apply_server_snapshot', {
+      cartId: snapshot.cartId,
+      lineCount: snapshot.lines.length,
+    });
     applyValidatedRemoteSnapshot(snapshot, {
       reconciledLines,
       source: 'cart_engine_apply_server_snapshot',
@@ -137,11 +184,22 @@ export const cartEngine = {
   },
 
   recoverClearLocal(): Promise<CartRecoveryResult> {
-    return recoverCartClearLocalStorage();
+    logCartTrace('engine_recover_clear_local_start');
+    return recoverCartClearLocalStorage().then((result) => {
+      logCartTrace('engine_recover_clear_local_complete', { ok: result.ok });
+      return result;
+    });
   },
 
   recoverApplySnapshot(customerEmail?: string): Promise<CartRecoveryResult> {
-    return recoverCartApplyServerSnapshot(customerEmail);
+    logCartTraceWithStore('engine_recover_apply_snapshot_start', { customerEmail: customerEmail ?? null });
+    return recoverCartApplyServerSnapshot(customerEmail).then((result) => {
+      logCartTraceWithStore('engine_recover_apply_snapshot_complete', {
+        ok: result.ok,
+        customerEmail: customerEmail ?? null,
+      });
+      return result;
+    });
   },
 } as const;
 

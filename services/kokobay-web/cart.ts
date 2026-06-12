@@ -2,6 +2,8 @@ import type { CartLine, CartDiscountCode } from '@/types/cart';
 import type { Money } from '@/types/shopify';
 import { reportOperationalFailure } from '@/lib/appErrorLog';
 import { api, isApiError } from '@/src/core/api';
+import { logCartTrace } from '@/lib/cart-trace-log';
+import { checkoutTraceRequestHeaders, getCheckoutTraceId } from '@/lib/checkout-trace';
 import { logCartDeleteTrace } from '@/lib/cart-delete-trace';
 import { cartFastPathLog } from '@/lib/cart-fast-path-log';
 import { cartFlowLog, cartPerfLog, logCartStateTransition } from '@/lib/cart-perf-log';
@@ -181,6 +183,26 @@ async function kokobayCartRequestDetailed(
   const requestUrl = `${root.replace(/\/+$/, '')}${safePath}`;
   const reqStart = performance.now();
 
+  logCartTrace('api_request_start', {
+    method,
+    path: pathWithMarket,
+    guestId,
+    traceId: getCheckoutTraceId(),
+    variantId:
+      typeof body?.variantId === 'string'
+        ? body.variantId
+        : typeof body?.variant_id === 'string'
+          ? body.variant_id
+          : null,
+    lineId:
+      typeof body?.lineId === 'string'
+        ? body.lineId
+        : typeof body?.line_id === 'string'
+          ? body.line_id
+          : null,
+    quantity: typeof body?.quantity === 'number' ? body.quantity : null,
+  });
+
   const requestOpts = {
     auth: 'guest-cart' as const,
     guestIdOverride: guestId,
@@ -188,6 +210,7 @@ async function kokobayCartRequestDetailed(
     skipAuthRefresh: true,
     coalesce: false,
     retries: 2,
+    headers: checkoutTraceRequestHeaders(),
   };
 
   try {
@@ -208,6 +231,17 @@ async function kokobayCartRequestDetailed(
 
     if (parsed.ok === false) {
       logCartResponseInDev(method, pathWithMarket, parsed, response.status);
+      logCartTrace('api_request_complete', {
+        method,
+        path: pathWithMarket,
+        guestId,
+        ok: false,
+        httpStatus: response.status,
+        cartId: parsed.cart?.id ?? null,
+        durationMs: Math.round(performance.now() - reqStart),
+        code: parsed.code ?? null,
+        error: parsed.error ?? null,
+      });
       reportOperationalFailure(parsed.error?.trim() || 'Koko Bay cart request failed', {
         source: 'kokobay_cart',
         method,
@@ -224,6 +258,19 @@ async function kokobayCartRequestDetailed(
     }
 
     logCartResponseInDev(method, pathWithMarket, parsed, response.status);
+    logCartTrace('api_request_complete', {
+      method,
+      path: pathWithMarket,
+      guestId,
+      ok: parsed.ok !== false,
+      httpStatus: response.status,
+      cartId: parsed.cart?.id ?? null,
+      lineCount: parsed.cart?.lines?.length ?? null,
+      checkoutUrl: parsed.cart?.checkoutUrl ?? null,
+      durationMs: Math.round(performance.now() - reqStart),
+      code: parsed.code ?? null,
+      error: parsed.error ?? null,
+    });
     return {
       parsed,
       httpStatus: response.status,
@@ -279,6 +326,15 @@ async function kokobayCartRequestDetailed(
         error: e instanceof Error ? e.message : String(e),
       });
     }
+    logCartTrace('api_request_failed', {
+      method,
+      path: pathWithMarket,
+      guestId,
+      ok: false,
+      httpStatus: isApiError(e) ? (e.status ?? null) : null,
+      durationMs: Math.round(performance.now() - reqStart),
+      error: e instanceof Error ? e.message : String(e),
+    });
 
     if (isApiError(e) && e.kind === 'parse') {
       reportOperationalFailure('Koko Bay cart JSON parse failed', {

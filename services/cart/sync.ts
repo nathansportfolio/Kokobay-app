@@ -1,4 +1,5 @@
 import { cartPerfLog } from '@/lib/cart-perf-log';
+import { logCartTrace } from '@/lib/cart-trace-log';
 import {
   addCartLineFast,
   syncLocalCartToKokobayWeb,
@@ -36,6 +37,14 @@ export async function syncLocalCartToRemote(
 ): Promise<RemoteCartSyncResult | null> {
   if (!isRemoteCartConfigured()) return null;
 
+  logCartTrace('sync_router_start', {
+    backend: usesKokobayCartProxy() ? 'kokobay_api' : 'shopify_graphql',
+    guestId,
+    shopifyCartId,
+    lineCount: localLines.length,
+    customerEmail: customerEmail ?? null,
+  });
+
   if (!localLines.length) {
     if (usesKokobayCartProxy()) {
       const cleared = await syncLocalCartToKokobayWeb(guestId, [], customerEmail);
@@ -58,20 +67,36 @@ export async function syncLocalCartToRemote(
     );
     cartPerfLog(`syncLocalCartToRemote (kokobay) took ${Math.round(performance.now() - remoteStart)}ms`);
     if (!result) return null;
-    return {
+    const kokobayResult = {
       snapshot: result.snapshot,
       shopifyCartId: result.snapshot?.cartId ?? shopifyCartId,
       guestId: result.guestId,
       syncError: result.syncError ?? null,
     };
+    logCartTrace('sync_router_complete', {
+      backend: 'kokobay_api',
+      guestId: kokobayResult.guestId,
+      shopifyCartId: kokobayResult.shopifyCartId,
+      lineCount: result.snapshot?.lines.length ?? 0,
+      syncError: result.syncError?.code ?? null,
+    });
+    return kokobayResult;
   }
 
   const snapshot = await syncLocalCartToShopify(shopifyCartId, localLines);
-  return {
+  const shopifyResult = {
     snapshot,
     shopifyCartId: snapshot?.cartId ?? shopifyCartId,
     guestId: null,
   };
+  logCartTrace('sync_router_complete', {
+    backend: 'shopify_graphql',
+    guestId: null,
+    shopifyCartId: shopifyResult.shopifyCartId,
+    lineCount: snapshot?.lines.length ?? 0,
+    syncError: null,
+  });
+  return shopifyResult;
 }
 
 /**
@@ -88,6 +113,7 @@ export async function postCartAddLineFast(
 ): Promise<RemoteCartSyncResult | null> {
   if (!isRemoteCartConfigured() || !usesKokobayCartProxy()) return null;
 
+  logCartTrace('fast_add_start', { guestId, variantId, quantity, lineCount: localLines.length });
   const result = await addCartLineFast(
     guestId,
     variantId,
@@ -97,12 +123,20 @@ export async function postCartAddLineFast(
     fallbackCheckoutUrl,
   );
   if (!result) return null;
-  return {
+  const fastAddResult = {
     snapshot: result.snapshot,
     shopifyCartId: result.snapshot?.cartId ?? null,
     guestId: result.guestId,
     syncError: result.syncError ?? null,
   };
+  logCartTrace('fast_add_complete', {
+    guestId: fastAddResult.guestId,
+    shopifyCartId: fastAddResult.shopifyCartId,
+    variantId,
+    quantity,
+    syncError: result.syncError?.code ?? null,
+  });
+  return fastAddResult;
 }
 
 export async function patchCartQuantityFast(
@@ -115,6 +149,7 @@ export async function patchCartQuantityFast(
 ): Promise<RemoteCartSyncResult | null> {
   if (!isRemoteCartConfigured() || !usesKokobayCartProxy()) return null;
 
+  logCartTrace('fast_qty_start', { guestId, lineId, quantity, lineCount: localLines.length });
   const result = await updateCartQuantityFast(
     guestId,
     lineId,
@@ -124,10 +159,18 @@ export async function patchCartQuantityFast(
     fallbackCheckoutUrl,
   );
   if (!result) return null;
-  return {
+  const fastQtyResult = {
     snapshot: result.snapshot,
     shopifyCartId: result.snapshot?.cartId ?? null,
     guestId: result.guestId,
     syncError: result.syncError ?? null,
   };
+  logCartTrace('fast_qty_complete', {
+    guestId: fastQtyResult.guestId,
+    shopifyCartId: fastQtyResult.shopifyCartId,
+    lineId,
+    quantity,
+    syncError: result.syncError?.code ?? null,
+  });
+  return fastQtyResult;
 }
