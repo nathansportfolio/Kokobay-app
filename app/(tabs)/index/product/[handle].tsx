@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
-import { type ErrorBoundaryProps, useLocalSearchParams } from 'expo-router';
+import { Redirect, type ErrorBoundaryProps, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 
@@ -50,6 +50,7 @@ import {
   PRODUCT_QUERY_STALE_TIME_MS,
 } from '@/constants/product-query';
 import { productQueryKey } from '@/utils/product-query-key';
+import { HOME_TAB_HREF } from '@/utils/collection-navigation';
 import { yieldForUiPaint } from '@/utils/yield-for-ui-paint';
 import { getProductSizeOptions, getVariantForSize, findVariantById, isSizeAvailable } from '@/utils/pdp-variants';
 import { stripSimpleHtml } from '@/utils/strip-html';
@@ -360,13 +361,7 @@ export default function ProductScreen() {
   });
 
   if (!safeHandle) {
-    return (
-      <ScrollView key="missing-handle" className="flex-1 bg-canvas" contentContainerStyle={{ flexGrow: 1, paddingTop: 16, paddingBottom: 48 }}>
-        <View className="px-5">
-          <EmptyState title="Missing product" message="No handle was provided." />
-        </View>
-      </ScrollView>
-    );
+    return <Redirect href={HOME_TAB_HREF} />;
   }
 
   if (showProductSkeleton) {

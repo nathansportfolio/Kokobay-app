@@ -46,6 +46,7 @@ function HomeProductTileInner({ product, width, index, onProductPress, selectIte
     });
   }, [product.handle, sourceImage, width]);
   const price = formatMoney(product.priceRange.minVariantPrice);
+  const compact = width < 180;
   const usesProgrammaticNav = Boolean(selectItemContext || onProductPress);
 
   const handlePress = useCallback(() => {
@@ -72,16 +73,27 @@ function HomeProductTileInner({ product, width, index, onProductPress, selectIte
       onPress={usesProgrammaticNav ? handlePress : undefined}
       style={{ width }}
       className={cn(
-        'mr-4 overflow-hidden rounded-2xl border border-line/50 bg-warmSurface/80 active:opacity-88',
+        'overflow-hidden border border-line/50 bg-warmSurface/80 active:opacity-88',
+        compact ? 'mr-2 rounded-xl' : 'mr-4 rounded-2xl',
       )}>
       <View className="relative w-full overflow-hidden bg-elevated" style={{ aspectRatio: 3 / 4 }}>
         {uri ? <CatalogCoverImage uri={uri} recyclingKey={product.id} /> : null}
       </View>
-      <View className="gap-1 px-3.5 py-3">
-        <Text className="font-sans-md text-[15px] leading-5 tracking-[-0.15px] text-ink" numberOfLines={2}>
+      <View className={cn(compact ? 'gap-0.5 px-2 py-2' : 'gap-1 px-3.5 py-3')}>
+        <Text
+          className={cn(
+            'font-sans-md text-ink',
+            compact ? 'text-[12px] leading-4 tracking-[-0.1px]' : 'text-[15px] leading-5 tracking-[-0.15px]',
+          )}
+          numberOfLines={2}>
           {product.title}
         </Text>
-        <Text variant="caption" className="font-sans-md text-[12px] uppercase tracking-[0.12em] text-mist">
+        <Text
+          variant="caption"
+          className={cn(
+            'font-sans-md uppercase text-mist',
+            compact ? 'text-[10px] tracking-[0.1em]' : 'text-[12px] tracking-[0.12em]',
+          )}>
           {price}
         </Text>
       </View>

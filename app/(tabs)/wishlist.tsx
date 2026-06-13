@@ -1,4 +1,5 @@
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, usePathname } from 'expo-router';
 import { useCallback, useMemo, useRef } from 'react';
 import { View, useWindowDimensions } from 'react-native';
@@ -22,6 +23,8 @@ import {
   useWishlistProductsQuery,
   type WishlistProductsMap,
 } from '@/hooks/use-wishlist-products-query';
+import { usePlpGridViewability } from '@/hooks/use-plp-grid-viewability';
+import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useScrollBottomPadding } from '@/contexts/chrome-context';
 import { newInCollectionHref } from '@/utils/collection-handles';
 import { collectionProductCellHeight } from '@/utils/plp-layout';
@@ -82,6 +85,28 @@ function WishlistScreenContent() {
     isError: productsError,
     refetch: refetchProducts,
   } = useWishlistProductsQuery(wishlistHandles, listEnabled);
+
+  const productsByHandleRef = useRef(productsByHandle);
+  productsByHandleRef.current = productsByHandle;
+
+  const queryClient = useQueryClient();
+  const marketKey = useMarketQueryKey();
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
+  const marketKeyRef = useRef(marketKey);
+  marketKeyRef.current = marketKey;
+
+  const wishlistViewability = usePlpGridViewability<string>({
+    enabled: listEnabled,
+    resolveProductId: (handle) => productsByHandleRef.current[handle]?.id,
+    resolveGalleryPrefetch: (handle) => {
+      const product = productsByHandleRef.current[handle];
+      if (!product?.id) return undefined;
+      return { productId: product.id, handle };
+    },
+    queryClientRef,
+    marketKeyRef,
+  });
 
   const listHeader = useMemo(
     () => (
@@ -193,6 +218,8 @@ function WishlistScreenContent() {
           overrideItemLayout={overrideItemLayout}
           extraData={listExtra}
           removeClippedSubviews={false}
+          onViewableItemsChanged={wishlistViewability.onViewableItemsChanged}
+          viewabilityConfig={wishlistViewability.viewabilityConfig}
           contentContainerStyle={{
             paddingBottom: listBottomPad,
           }}

@@ -9,7 +9,10 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { LuxuryCardActionSurface } from '@/components/ui/luxury-card-action-surface';
+import {
+  LuxuryCardActionSurface,
+  type LuxuryCardActionSize,
+} from '@/components/ui/luxury-card-action-surface';
 import { useIsWishlistedHandle, useWishlistToggle } from '@/contexts/wishlist-context';
 import { palette } from '@/constants/theme';
 import { hapticLight } from '@/utils/haptics';
@@ -18,10 +21,12 @@ const easeOutCubic = Easing.out(Easing.cubic);
 
 type Props = {
   handle: string;
-  actionSize: 'sm' | 'md';
+  actionSize: LuxuryCardActionSize;
+  iconSize: number;
+  inset: number;
 };
 
-function ProductCardWishlistHeartInner({ handle, actionSize }: Props) {
+function ProductCardWishlistHeartInner({ handle, actionSize, iconSize, inset }: Props) {
   const wishlisted = useIsWishlistedHandle(handle);
   const toggleWishlist = useWishlistToggle();
   const heartPressed = useSharedValue(0);
@@ -48,12 +53,12 @@ function ProductCardWishlistHeartInner({ handle, actionSize }: Props) {
       accessibilityRole="button"
       accessibilityLabel={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
       accessibilityState={{ selected: wishlisted }}
-      className="absolute right-4 top-4 z-10">
+      style={{ position: 'absolute', right: inset, top: inset, zIndex: 10 }}>
       <Animated.View style={heartPressStyle}>
         <LuxuryCardActionSurface size={actionSize}>
           <IconSymbol
             name={wishlisted ? 'heart.fill' : 'heart'}
-            size={18}
+            size={iconSize}
             color={wishlisted ? palette.accent : palette.ink}
             weight="regular"
           />
@@ -65,7 +70,11 @@ function ProductCardWishlistHeartInner({ handle, actionSize }: Props) {
 
 export const ProductCardWishlistHeart = memo(
   ProductCardWishlistHeartInner,
-  (prev, next) => prev.handle === next.handle && prev.actionSize === next.actionSize,
+  (prev, next) =>
+    prev.handle === next.handle &&
+    prev.actionSize === next.actionSize &&
+    prev.iconSize === next.iconSize &&
+    prev.inset === next.inset,
 );
 
 ProductCardWishlistHeart.displayName = 'ProductCardWishlistHeart';

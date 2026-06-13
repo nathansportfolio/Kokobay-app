@@ -37,6 +37,7 @@ import { formatMoney } from '@/utils/money';
 import { isCatalogPreviewProduct, isProductFullySoldOut } from '@/utils/product-availability';
 import { getProductSizeOptions, getVariantForSize, isSizeAvailable } from '@/utils/pdp-variants';
 import { PRODUCT_CARD_FOOTER_CTA_BLOCK } from '@/constants/product-card-typography';
+import type { ProductCardActionScale } from '@/utils/product-card-action-scale';
 import {
   PRODUCT_QUERY_GC_TIME_MS,
   PRODUCT_QUERY_STALE_TIME_MS,
@@ -46,7 +47,6 @@ import { yieldForUiPaint } from '@/utils/yield-for-ui-paint';
 
 const BLUR_OVERLAY = Platform.OS === 'ios';
 const PLUS_ICON = { strokeWidth: 1.75 as const };
-const PLUS_SIZE = 18;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 /** Space between size row and primary CTA — calm editorial rhythm */
@@ -57,6 +57,8 @@ export type QuickAddTrigger = 'overlay_plus' | 'footer_button';
 export type QuickAddToBagProps = {
   product: Product;
   relaxed?: boolean;
+  /** When set, sizes the overlay plus from tile width (preferred over `relaxed`). */
+  actionScale?: ProductCardActionScale;
   triggerClassName?: string;
   /** @default 'overlay_plus' */
   trigger?: QuickAddTrigger;
@@ -320,6 +322,7 @@ function useQuickAddToBagSheet(product: Product) {
 function QuickAddToBagInner({
   product,
   relaxed,
+  actionScale,
   triggerClassName,
   trigger = 'overlay_plus',
   buttonClassName,
@@ -332,7 +335,11 @@ function QuickAddToBagInner({
   }));
 
   const soldOut = isProductFullySoldOut(product);
-  const actionSize = relaxed ? 'md' : 'sm';
+  const overlayAction = actionScale ?? {
+    surfaceSize: relaxed ? 'md' : 'sm',
+    iconSize: relaxed ? 18 : 16,
+    inset: relaxed ? 16 : 12,
+  } as ProductCardActionScale;
 
   if (soldOut && trigger !== 'footer_button') {
     return null;
@@ -381,10 +388,22 @@ function QuickAddToBagInner({
           triggerPressed.value = withTiming(0, { duration: 200 });
         }}
         onPress={openSheet}
-        className={cn('absolute bottom-4 left-4 z-10', triggerClassName)}
-        style={triggerPressStyle}>
-        <LuxuryCardActionSurface size={actionSize}>
-          <Plus size={PLUS_SIZE} color={LUXURY_CARD_ACTION_ICON_COLOR} {...PLUS_ICON} />
+        className={triggerClassName}
+        style={[
+          {
+            position: 'absolute',
+            bottom: overlayAction.inset,
+            left: overlayAction.inset,
+            zIndex: 10,
+          },
+          triggerPressStyle,
+        ]}>
+        <LuxuryCardActionSurface size={overlayAction.surfaceSize}>
+          <Plus
+            size={overlayAction.iconSize}
+            color={LUXURY_CARD_ACTION_ICON_COLOR}
+            {...PLUS_ICON}
+          />
         </LuxuryCardActionSurface>
       </AnimatedPressable>
 

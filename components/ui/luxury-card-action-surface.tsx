@@ -5,9 +5,10 @@ import { Platform, StyleSheet, View } from 'react-native';
 /** Matches editorial card overlays — iOS blur + lift, warm white on Android */
 const USE_BLUR = Platform.OS === 'ios';
 
-export type LuxuryCardActionSize = 'sm' | 'md';
+export type LuxuryCardActionSize = 'xs' | 'sm' | 'md';
 
 const DIMENSION: Record<LuxuryCardActionSize, number> = {
+  xs: 30,
   sm: 36,
   md: 40,
 };

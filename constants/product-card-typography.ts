@@ -45,7 +45,7 @@ export function productCardTypoPreset(numColumns: 1 | 2): ProductCardTypoPreset 
 /** Extra block below title/price when `ProductCard` uses `actionVariant="add_to_bag"`. */
 export const PRODUCT_CARD_FOOTER_CTA_BLOCK = {
   paddingTop: 4,
-  paddingBottom: 8,
+  paddingBottom: 16,
   paddingHorizontal: 8,
   buttonHeight: 32,
 } as const;

@@ -45,6 +45,7 @@ const RelatedProductCard = memo(function RelatedProductCard({
       tileWidth={tileWidth}
       perfTraceScreen="pdp-related"
       productLink={link}
+      isVisible
       onProductPress={onProductPress}
       onPrefetchProduct={onPrefetchProduct}
       selectItemContext={{

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ALL_PRODUCTS_COLLECTION_HANDLE } from '@/constants/catalog';
+import { productCardTextBlockHeight } from '@/constants/product-card-typography';
 import { isAndroidDevClient } from '@/lib/dev-android-network';
 import { useChrome, useScrollBottomPadding } from '@/contexts/chrome-context';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
@@ -23,6 +24,11 @@ import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { HOME_NEW_IN_CAROUSEL_LIMIT, HOME_SHOP_BY_CATEGORY_LIMIT } from '@/services/home-catalog';
 import { collectionHref } from '@/utils/collection-navigation';
+import { collectionProductImageHeight } from '@/utils/plp-layout';
+import {
+  PRODUCT_CARD_CAROUSEL_TILE_GAP,
+  productCarouselTileWidth,
+} from '@/utils/product-carousel-layout';
 import { resolveHomeNewInCollectionHandle } from '@/utils/home-new-in-collection-handle';
 import type { Collection } from '@/types/shopify';
 import { cmsCollectionTilesToDisplayItems, type CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
@@ -72,8 +78,8 @@ function HomeScreenContent() {
   }, []);
   const headerStack = topChromeHeight;
   const homeListBottomPad = Platform.OS === 'ios' ? scrollBottomPad : 40;
-  const tileWidth = Math.min(280, Math.round(width * 0.78));
-  const carouselHeight = tileWidth * (4 / 3) + 100;
+  const tileWidth = productCarouselTileWidth(width, PRODUCT_CARD_CAROUSEL_TILE_GAP);
+  const carouselHeight = collectionProductImageHeight(tileWidth) + productCardTextBlockHeight(2) + 8;
   const heroQuery = useAppHomeHeroQuery();
   const newInHandle = useMemo(
     () => resolveHomeNewInCollectionHandle(heroQuery.data?.buttonLink),
@@ -203,7 +209,7 @@ function HomeScreenContent() {
             items={shopByCategoryItems}
             staggerRowEntrance={false}
             showViewAllCollections
-            cardLayout="strip"
+            cardLayout="carousel"
             screenWidth={width}
           />
         </View>

@@ -7,12 +7,15 @@ import { Keyboard, Pressable, ScrollView, TextInput, useWindowDimensions, View }
 import Animated, { Easing, FadeIn, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HomeProductCarousel } from '@/components/home/home-product-carousel';
 import {
   SearchCarouselSkeleton,
   SearchSuggestionsSkeleton,
 } from '@/components/search/search-carousel-skeleton';
+import { ProductCardCarousel } from '@/components/ui/product-card-carousel';
 import { Text } from '@/components/ui/text';
+import { productCardTextBlockHeight } from '@/constants/product-card-typography';
+import { productCarouselTileWidth } from '@/utils/product-carousel-layout';
+import { TRENDING_SEARCHES } from '@/constants/search-trending';
 import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
 import { useHomeCatalogQuery } from '@/hooks/use-home-catalog-query';
@@ -24,6 +27,7 @@ import { searchProducts } from '@/services/shopify';
 import type { Product } from '@/types/shopify';
 import { closeSearchOverlay, leaveSearchOverlayFor } from '@/lib/search-overlay-navigation';
 import { hapticLight } from '@/utils/haptics';
+import { collectionProductImageHeight } from '@/utils/plp-layout';
 import { productHref } from '@/utils/product-navigation';
 
 function normalizeSeed(value: string | string[] | undefined): string {
@@ -35,11 +39,11 @@ const CAROUSEL_DEBOUNCE_MS = 500;
 const CAROUSEL_FETCH_FIRST = 12;
 /** Matches `ScrollView` `contentContainerStyle.paddingHorizontal`. */
 const SCROLL_H_PAD = 16;
-/** `HomeProductTile` uses `mr-4` between cards. */
-const CAROUSEL_TILE_GAP = 16;
+/** Gap between PLP-style product cards in the horizontal rail. */
+const CAROUSEL_TILE_GAP = 4;
 const CAROUSEL_END_INSET = 12;
-/** First N products from the same list as home “New in” (home shows more in a longer carousel). */
-const SEARCH_LATEST_COUNT = 5;
+/** First N products from the same list as home “New in” (compact search rail). */
+const SUGGESTED_PRODUCTS_COUNT = 5;
 const FADE_MS = 300;
 const STAGGER_MS = 40;
 const easeOutCubic = Easing.out(Easing.cubic);
@@ -79,8 +83,8 @@ export default function SearchOverlayScreen() {
   const { data: homeCatalog, isPending: homeCatalogPending } = useHomeCatalogQuery();
 
   /** Same source as home “New in” — first five for the compact search rail. */
-  const latestProducts = useMemo(
-    () => homeCatalog?.newIn?.slice(0, SEARCH_LATEST_COUNT) ?? [],
+  const suggestedProducts = useMemo(
+    () => homeCatalog?.newIn?.slice(0, SUGGESTED_PRODUCTS_COUNT) ?? [],
     [homeCatalog],
   );
 
@@ -94,14 +98,14 @@ export default function SearchOverlayScreen() {
   });
 
   const carouselProducts: Product[] = useMemo(() => {
-    if (!trimmed) return latestProducts;
-    if (!debounceSettled) return latestProducts;
-    if (searchResultsError) return latestProducts;
-    if (searchResultsPending && foundProducts === undefined) return latestProducts;
+    if (!trimmed) return suggestedProducts;
+    if (!debounceSettled) return suggestedProducts;
+    if (searchResultsError) return suggestedProducts;
+    if (searchResultsPending && foundProducts === undefined) return suggestedProducts;
     return foundProducts ?? [];
-  }, [trimmed, debounceSettled, searchResultsError, searchResultsPending, foundProducts, latestProducts]);
+  }, [trimmed, debounceSettled, searchResultsError, searchResultsPending, foundProducts, suggestedProducts]);
 
-  const showLatestSkeleton = !hasQuery && homeCatalogPending && latestProducts.length === 0;
+  const showSuggestedSkeleton = !hasQuery && homeCatalogPending && suggestedProducts.length === 0;
 
   const showSearchCarouselSkeleton =
     trimmed.length > 0 &&
@@ -129,12 +133,17 @@ export default function SearchOverlayScreen() {
 
   const tileWidth = useMemo(() => {
     const viewport = Math.max(0, width - SCROLL_H_PAD * 2);
-    return Math.min(300, Math.max(148, Math.floor((viewport - CAROUSEL_TILE_GAP) / 1.5)));
+    return productCarouselTileWidth(viewport, CAROUSEL_TILE_GAP);
   }, [width]);
 
   const carouselHeight = useMemo(
-    () => Math.ceil(tileWidth * (4 / 3)) + 100,
+    () => collectionProductImageHeight(tileWidth) + productCardTextBlockHeight(2) + 8,
     [tileWidth],
+  );
+
+  const productLinkFor = useCallback(
+    (handle: string) => productHref(handle, '/search'),
+    [],
   );
 
   const openSearchPlp = useCallback(
@@ -182,9 +191,9 @@ export default function SearchOverlayScreen() {
             search_term: trimmed,
           }
         : {
-            source_screen: 'home' as const,
-            item_list_id: 'home',
-            item_list_name: 'Home',
+            source_screen: 'search' as const,
+            item_list_id: 'search-suggested',
+            item_list_name: 'Suggested products',
           },
     [hasQuery, trimmed],
   );
@@ -308,7 +317,31 @@ export default function SearchOverlayScreen() {
           </Animated.View>
         ) : !hasQuery ? (
           <Animated.View entering={FadeIn.duration(FADE_MS).easing(easeOutCubic)}>
-            <Text style={eyebrowStyle}>Latest</Text>
+            <Text style={eyebrowStyle}>Trending searches</Text>
+            <ScrollView
+              horizontal
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="always"
+              style={{ marginHorizontal: -SCROLL_H_PAD, marginTop: 12 }}
+              contentContainerStyle={{ paddingHorizontal: SCROLL_H_PAD, gap: 8 }}>
+              {TRENDING_SEARCHES.map((label, index) => (
+                <Animated.View
+                  key={label}
+                  entering={FadeIn.duration(FADE_MS)
+                    .delay(Math.min(index * STAGGER_MS, 160))
+                    .easing(easeOutCubic)}>
+                  <Pressable
+                    onPress={() => onSuggestionPress(label)}
+                    className="rounded-full border border-line/55 bg-warmSurface px-4 py-2.5 active:opacity-75"
+                    accessibilityRole="button"
+                    accessibilityLabel={`Search ${label}`}>
+                    <Text className="font-sans text-[15px] text-ink">{label}</Text>
+                  </Pressable>
+                </Animated.View>
+              ))}
+            </ScrollView>
+            <Text style={[eyebrowStyle, { marginTop: 32 }]}>Suggested products</Text>
           </Animated.View>
         ) : null}
 
@@ -316,40 +349,44 @@ export default function SearchOverlayScreen() {
           key={carouselVisualKey}
           entering={FadeIn.duration(FADE_MS).easing(easeOutCubic)}
           pointerEvents="box-none"
-          className={showSuggestionsSection || !hasQuery ? 'mt-8 -mx-1' : 'mt-3 -mx-1'}
+          className={showSuggestionsSection ? 'mt-8 -mx-1' : 'mt-3 -mx-1'}
           style={{ height: carouselHeight, overflow: 'hidden' }}
           accessibilityLabel={
             !hasQuery
-              ? 'Latest products'
+              ? 'Suggested products'
               : showSearchCarouselSkeleton
                 ? 'Loading products'
                 : 'Product suggestions'
           }>
           {!hasQuery ? (
-            showLatestSkeleton ? (
-              <SearchCarouselSkeleton tileWidth={tileWidth} />
-            ) : latestProducts.length > 0 ? (
-              <HomeProductCarousel
-                products={latestProducts}
+            showSuggestedSkeleton ? (
+              <SearchCarouselSkeleton tileWidth={tileWidth} tileGap={CAROUSEL_TILE_GAP} />
+            ) : suggestedProducts.length > 0 ? (
+              <ProductCardCarousel
+                products={suggestedProducts}
                 tileWidth={tileWidth}
+                tileGap={CAROUSEL_TILE_GAP}
                 contentPaddingEnd={CAROUSEL_END_INSET}
+                productLinkFor={productLinkFor}
                 onProductPress={onProductFromSearchOverlay}
                 selectItemContext={carouselSelectItemContext}
               />
             ) : (
               <View className="flex-1 justify-center py-6" style={{ minHeight: carouselHeight * 0.45 }}>
                 <Text variant="caption" className="text-center text-mist">
-                  New in will appear here once the catalog has loaded.
+                  Suggested products will appear here once the catalog has loaded.
                 </Text>
               </View>
             )
           ) : showSearchCarouselSkeleton ? (
-            <SearchCarouselSkeleton tileWidth={tileWidth} />
+            <SearchCarouselSkeleton tileWidth={tileWidth} tileGap={CAROUSEL_TILE_GAP} />
           ) : carouselProducts.length > 0 ? (
-            <HomeProductCarousel
+            <ProductCardCarousel
               products={carouselProducts}
               tileWidth={tileWidth}
+              tileGap={CAROUSEL_TILE_GAP}
               contentPaddingEnd={CAROUSEL_END_INSET}
+              productLinkFor={productLinkFor}
               onProductPress={onProductFromSearchOverlay}
               selectItemContext={carouselSelectItemContext}
             />

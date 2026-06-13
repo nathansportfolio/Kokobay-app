@@ -1,5 +1,5 @@
 import { Link, useRouter, type Href } from 'expo-router';
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { Pressable, View } from 'react-native';
 import Animated, {
   Easing,
@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { QuickAddToBag } from '@/components/cart/quick-add-to-bag';
+import { ProductCardImageCarousel } from '@/components/ui/product-card-image-carousel';
 import { ProductCardWishlistHeart } from '@/components/ui/product-card-wishlist-heart';
 import { palette } from '@/constants/theme';
 import type { ProductPrefetchImageHint } from '@/hooks/use-prefetch-product';
@@ -18,7 +19,7 @@ import {
   ProductCardRenderTrace,
   productCardPropsEqual,
 } from '@/hooks/use-product-card-render-trace';
-import { logPlpFirstImageLoad } from '@/lib/plp-perf-trace';
+import { useProductCardVisible } from '@/lib/product-card-visibility';
 import { trackSelectItem } from '@/lib/gtm';
 import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { Product } from '@/types/shopify';
@@ -27,9 +28,8 @@ import { productCardTypoPreset, productCardTextBlockHeight } from '@/constants/p
 import { cn } from '@/utils/cn';
 import { isProductFullySoldOut } from '@/utils/product-availability';
 import { formatMoney } from '@/utils/money';
-import { productTileImageUri } from '@/utils/product-tile-image-uri';
+import { resolveProductCardActionScale } from '@/utils/product-card-action-scale';
 
-import { CatalogCoverImage } from './catalog-cover-image';
 import { Text } from './text';
 
 const easeOutCubic = Easing.out(Easing.cubic);
@@ -67,6 +67,8 @@ export type ProductCardProps = {
    * @default 'quick_add'
    */
   actionVariant?: ProductCardActionVariant;
+  /** When set, overrides grid viewport visibility (e.g. always-on carousels). */
+  isVisible?: boolean;
   /** When set, fires GA4 `select_item` immediately before navigating to PDP. */
   selectItemContext?: {
     source_screen: SelectItemSourceScreen;
@@ -91,6 +93,7 @@ function ProductCardInner({
   disableImageTransition = true,
   actionVariant = 'quick_add',
   selectItemContext,
+  isVisible: isVisibleOverride,
 }: ProductCardProps) {
   useProductCardParentRerenderTrace('ProductCard', {
     productId: product.id,
@@ -125,8 +128,11 @@ function ProductCardInner({
   };
   const router = useRouter();
   const usesProgrammaticNav = Boolean(selectItemContext || onProductPress);
+  const isVisibleFromGrid = useProductCardVisible(product.id);
+  const isCardVisible = isVisibleOverride ?? isVisibleFromGrid;
 
   const handleProductPress = useCallback(() => {
+    if (!product.handle.trim()) return;
     if (selectItemContext) {
       trackSelectItem({
         product,
@@ -140,19 +146,9 @@ function ProductCardInner({
     router.push(productLink);
   }, [onProductPress, product, productLink, router, selectItemContext]);
 
-  const sourceImage = firstValidProductImage(product);
-  const imageUrl = useMemo(() => {
-    if (!sourceImage) return undefined;
-    return productTileImageUri({
-      url: sourceImage.url,
-      width: sourceImage.width,
-      height: sourceImage.height,
-      tileWidth,
-      handle: product.handle,
-    });
-  }, [product.handle, sourceImage, tileWidth]);
   const priceLabel = formatMoney(product.priceRange.minVariantPrice);
   const soldOut = isProductFullySoldOut(product);
+  const sourceImage = firstValidProductImage(product);
   const imagePressed = useSharedValue(0);
   const imagePressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(imagePressed.value, [0, 1], [1, 1.018]) }],
@@ -163,31 +159,26 @@ function ProductCardInner({
     opacity: interpolate(titlePressed.value, [0, 1], [1, 0.92]),
   }));
 
-  const imageInner = imageUrl ? (
-    <CatalogCoverImage
-      uri={imageUrl}
-      recyclingKey={product.id}
-      priority={imagePriority}
-      transition={disableImageTransition ? null : undefined}
-      onLoad={
-        perfTraceIndex === 0
-          ? () => {
-              logPlpFirstImageLoad(perfTraceScreen, {
-                handle: product.handle,
-                productId: product.id,
-                imageUrl,
-              });
-            }
-          : undefined
-      }
-    />
-  ) : null;
+  const handleImagePressIn = useCallback(() => {
+    imagePressed.value = withTiming(1, {
+      duration: IMAGE_PRESS_MS.in,
+      easing: easeOutCubic,
+    });
+  }, [imagePressed]);
 
-  const comfort = gridColumns === 1;
-  const actionSize = comfort ? 'md' : 'sm';
-  const typo = productCardTypoPreset(gridColumns);
+  const handleImagePressOut = useCallback(() => {
+    imagePressed.value = withTiming(0, {
+      duration: IMAGE_PRESS_MS.out,
+      easing: easeOutCubic,
+    });
+  }, [imagePressed]);
+
   const showQuickAddPlus = actionVariant === 'quick_add';
   const showFooterAddToBag = actionVariant === 'add_to_bag';
+
+  const comfort = gridColumns === 1;
+  const actionScale = resolveProductCardActionScale(tileWidth, gridColumns);
+  const typo = productCardTypoPreset(gridColumns);
 
   const titleBlock = (
     <Animated.View style={titlePressStyle}>
@@ -223,53 +214,24 @@ function ProductCardInner({
     </Animated.View>
   );
 
-  const imageLink = usesProgrammaticNav ? (
-    <Pressable
-      accessibilityRole="link"
-      accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
+  const imageCarousel = (
+    <ProductCardImageCarousel
+      product={product}
+      productLink={productLink}
+      tileWidth={tileWidth}
+      imagePriority={imagePriority}
+      disableImageTransition={disableImageTransition}
+      perfTraceIndex={perfTraceIndex}
+      perfTraceScreen={perfTraceScreen}
+      soldOut={soldOut}
+      usesProgrammaticNav={usesProgrammaticNav}
+      isVisible={isCardVisible}
+      imagePressStyle={imagePressStyle}
       onPress={handleProductPress}
-      onPressIn={() => {
-        imagePressed.value = withTiming(1, {
-          duration: IMAGE_PRESS_MS.in,
-          easing: easeOutCubic,
-        });
-        onPrefetchProduct?.(product.handle, sourceImage);
-      }}
-      onPressOut={() => {
-        imagePressed.value = withTiming(0, {
-          duration: IMAGE_PRESS_MS.out,
-          easing: easeOutCubic,
-        });
-      }}
-      className="absolute inset-0">
-      <Animated.View className="absolute inset-0" style={imagePressStyle}>
-        {imageInner}
-      </Animated.View>
-    </Pressable>
-  ) : (
-    <Link href={productLink} asChild>
-      <Pressable
-        accessibilityRole="link"
-        accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}
-        onPressIn={() => {
-          imagePressed.value = withTiming(1, {
-            duration: IMAGE_PRESS_MS.in,
-            easing: easeOutCubic,
-          });
-          onPrefetchProduct?.(product.handle, sourceImage);
-        }}
-        onPressOut={() => {
-          imagePressed.value = withTiming(0, {
-            duration: IMAGE_PRESS_MS.out,
-            easing: easeOutCubic,
-          });
-        }}
-        className="absolute inset-0">
-        <Animated.View className="absolute inset-0" style={imagePressStyle}>
-          {imageInner}
-        </Animated.View>
-      </Pressable>
-    </Link>
+      onPressIn={handleImagePressIn}
+      onPressOut={handleImagePressOut}
+      onPrefetchProduct={onPrefetchProduct}
+    />
   );
 
   const titleLink = usesProgrammaticNav ? (
@@ -320,7 +282,7 @@ function ProductCardInner({
       className={cn('bg-transparent', showFooterAddToBag ? 'h-full flex-1' : undefined, className)}>
       {__DEV__ ? <ProductCardRenderTrace {...traceProps} /> : null}
       <View className="relative aspect-[3/4] w-full overflow-hidden bg-elevated">
-        {imageLink}
+        {imageCarousel}
         {soldOut ? (
           <View
             pointerEvents="none"
@@ -344,9 +306,18 @@ function ProductCardInner({
             </Text>
           </View>
         ) : null}
-        <ProductCardWishlistHeart handle={product.handle} actionSize={actionSize} />
+        <ProductCardWishlistHeart
+          handle={product.handle}
+          actionSize={actionScale.surfaceSize}
+          iconSize={actionScale.iconSize}
+          inset={actionScale.inset}
+        />
         {showQuickAddPlus && !soldOut ? (
-          <QuickAddToBag product={product} relaxed={comfort} trigger="overlay_plus" />
+          <QuickAddToBag
+            product={product}
+            actionScale={actionScale}
+            trigger="overlay_plus"
+          />
         ) : null}
       </View>
       {showFooterAddToBag ? (

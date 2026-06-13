@@ -1,12 +1,13 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { FlashListRef } from '@shopify/flash-list';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useWindowDimensions, View } from 'react-native';
+import { View } from 'react-native';
 
 import { LuxuryTabScreenHeader } from '@/components/navigation/luxury-tab-screen-header';
 import { TabScreenTouchRoot } from '@/components/navigation/tab-screen-touch-root';
 import { ShopCollectionsList } from '@/components/shop/shop-collections-list';
 import { Text } from '@/components/ui/text';
+import type { CollectionsTabListItem } from '@/constants/collections-tab';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useScrollBottomPadding } from '@/contexts/chrome-context';
@@ -55,8 +56,7 @@ export default function CategoriesScreen() {
 }
 
 function CategoriesScreenContent() {
-  const listRef = useRef<FlashListRef<CmsCollectionDisplayItem>>(null);
-  const { width: screenWidth } = useWindowDimensions();
+  const listRef = useRef<FlashListRef<CollectionsTabListItem>>(null);
   const listBottomPad = useScrollBottomPadding(LIST_BOTTOM_PAD);
 
   useEffect(() => {
@@ -71,15 +71,6 @@ function CategoriesScreenContent() {
     queryFn: async () => (await getKokobayWebCollections(500)) ?? [],
     staleTime: 4 * 60_000,
   });
-
-  const catalogByCanonical = useMemo(() => {
-    if (!catalogCollections?.length) return null;
-    const map = new Map<string, (typeof catalogCollections)[number]>();
-    for (const c of catalogCollections) {
-      map.set(canonicalCollectionHandle(c.handle), c);
-    }
-    return map;
-  }, [catalogCollections]);
 
   const {
     data: cmsTiles,
@@ -104,6 +95,15 @@ function CategoriesScreenContent() {
     enabled: cmsError,
     queryFn: () => getCollections(48),
   });
+
+  const catalogByCanonical = useMemo(() => {
+    if (!catalogCollections?.length) return undefined;
+    const map = new Map<string, (typeof catalogCollections)[number]>();
+    for (const collection of catalogCollections) {
+      map.set(canonicalCollectionHandle(collection.handle), collection);
+    }
+    return map;
+  }, [catalogCollections]);
 
   const cmsDisplayItems = useMemo(() => {
     if (!cmsTiles?.length) return [];
@@ -130,32 +130,34 @@ function CategoriesScreenContent() {
           ...item.collection,
           description: hit.description ?? item.collection.description,
           descriptionHtml: hit.descriptionHtml ?? item.collection.descriptionHtml,
+          image: item.collection.image?.url ? item.collection.image : hit.image,
         },
       };
     });
   }, [catalogByCanonical, cmsDisplayItems, fallbackDisplayItems]);
 
   const showCollectionsSkeleton =
-    (cmsPending && cmsTiles === undefined) || (cmsError && fallbackPending && fallbackCollections === undefined);
+    (cmsPending && cmsTiles === undefined) ||
+    (cmsError && fallbackPending && fallbackCollections === undefined);
 
   const showCatalogError = cmsError && !fallbackPending && fallbackCollections !== undefined;
 
   useEffect(() => {
     if (showCollectionsSkeleton || displayItems.length === 0) return;
-    const prefetched = prefetchShopCollectionCoverImages(displayItems, { screenWidth });
+    const prefetched = prefetchShopCollectionCoverImages(displayItems);
     markShopTabViewportExpected(prefetched);
-  }, [displayItems, screenWidth, showCollectionsSkeleton]);
+  }, [displayItems, showCollectionsSkeleton]);
 
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   }, []);
 
-  const listEnabled = showCollectionsSkeleton || displayItems.length > 0;
+  const listEnabled = showCollectionsSkeleton || displayItems.length > 0 || !cmsPending;
   const { onScroll } = useBindScrollToTop(scrollToTop, listEnabled);
 
   const renderBranch = showCollectionsSkeleton
     ? 'skeleton'
-    : displayItems.length > 0
+    : displayItems.length > 0 || !cmsError
       ? 'content'
       : 'empty-caption';
 
@@ -170,7 +172,7 @@ function CategoriesScreenContent() {
       cmsError,
       cmsTileCount: cmsTiles?.length ?? 0,
       displayCount: displayItems.length,
-      usingFallback: cmsError && fallbackDisplayItems.length > 0,
+      layout: 'category-discovery',
     },
     queries: [
       {
@@ -205,7 +207,9 @@ function CategoriesScreenContent() {
         <View style={[HEADER_WRAP, { paddingBottom: listBottomPad }]}>
           <CollectionsHeader isError={showCatalogError} />
           <Text variant="caption" className="font-sans text-[13px] leading-5 text-mist/90">
-            Collections will appear here once the catalog has loaded.
+            {showCatalogError
+              ? 'Collections will appear here once the catalog has loaded.'
+              : 'No collections are available right now.'}
           </Text>
         </View>
       </View>
@@ -217,7 +221,8 @@ function CategoriesScreenContent() {
       <ShopCollectionsList
         ref={listRef}
         loading={showCollectionsSkeleton}
-        items={displayItems}
+        cmsItems={displayItems}
+        catalogCollections={catalogCollections}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{ paddingBottom: listBottomPad }}
         onScroll={onScroll}

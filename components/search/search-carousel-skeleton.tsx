@@ -2,24 +2,28 @@ import { memo } from 'react';
 import { View } from 'react-native';
 
 import { Skeleton } from '@/components/ui/skeleton';
+import { productCardTextBlockHeight } from '@/constants/product-card-typography';
+import { collectionProductImageHeight } from '@/utils/plp-layout';
 
 type Props = {
   tileWidth: number;
   /** Number of cards to paint (row may clip for peek effect). */
   count?: number;
+  tileGap?: number;
 };
 
-function SearchCarouselSkeletonInner({ tileWidth, count = 5 }: Props) {
-  const imageH = Math.ceil(tileWidth * (4 / 3));
+function SearchCarouselSkeletonInner({ tileWidth, count = 5, tileGap = 16 }: Props) {
+  const imageH = collectionProductImageHeight(tileWidth);
+  const textH = productCardTextBlockHeight(2);
 
   return (
     <View className="flex-row">
       {Array.from({ length: count }, (_, i) => (
-        <View key={i} style={{ width: tileWidth }} className="mr-4">
-          <Skeleton className="rounded-2xl" style={{ width: '100%', height: imageH }} />
-          <View className="mt-3 gap-2 px-1">
-            <Skeleton className="h-3.5 w-[88%] rounded-md" />
-            <Skeleton className="h-3 w-[45%] rounded-md" />
+        <View key={i} style={{ width: tileWidth, marginRight: i === count - 1 ? 0 : tileGap }}>
+          <Skeleton className="rounded-none" style={{ width: '100%', height: imageH }} />
+          <View style={{ height: textH }} className="gap-2 px-2 pt-2">
+            <Skeleton className="h-3 rounded-sm" style={{ width: Math.round(tileWidth * 0.72) }} />
+            <Skeleton className="h-3 rounded-sm" style={{ width: Math.round(tileWidth * 0.45) }} />
           </View>
         </View>
       ))}

@@ -6,6 +6,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { HomeSectionTitle } from '@/components/home/home-section-title';
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
 import { ShopCollectionEditorialCard } from '@/components/shop/shop-collection-editorial-card';
+import { ShopCollectionFeaturedCarousel } from '@/components/shop/shop-collection-featured-carousel';
 import {
   SHOP_COLLECTION_STRIP_GAP,
   SHOP_COLLECTION_STRIP_HORIZONTAL_PADDING,
@@ -13,11 +14,11 @@ import {
 import { Text } from '@/components/ui/text';
 import type { Collection } from '@/types/shopify';
 import type { CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
-import { collectionBlurb, collectionsWithCoverImage } from '@/utils/collection-text';
+import { collectionBlurb, collectionHasCoverImage, collectionsWithCoverImage } from '@/utils/collection-text';
 import { collectionHref } from '@/utils/collection-navigation';
 import { cn } from '@/utils/cn';
 
-export type ShopCollectionCardLayout = 'compact' | 'editorial' | 'strip';
+export type ShopCollectionCardLayout = 'compact' | 'editorial' | 'strip' | 'carousel';
 
 export {
   SHOP_CATEGORY_EDITORIAL_ASPECT,
@@ -38,12 +39,13 @@ type Props = {
   /** Omit outer horizontal padding when the parent screen already applies `px-5`. */
   omitContentPadding?: boolean;
   /**
-   * `strip` = short cover strip with overlaid title (Shop tab + Home).
+   * `strip` = short cover strip with overlaid title (legacy vertical list).
+   * `carousel` = horizontal featured tiles (Collections tab).
    * `editorial` = image-led full-bleed tiles.
    * `compact` = legacy row + border (unused unless opted in).
    */
   cardLayout?: ShopCollectionCardLayout;
-  /** Required for `strip` layout — CDN cover sizing. */
+  /** Required for `strip` / `carousel` layout — CDN cover sizing. */
   screenWidth?: number;
 };
 
@@ -156,7 +158,18 @@ function HomeShopByCategoryInner({
     [omitContentPadding, screenWidth, staggerRowEntrance],
   );
 
+  const featuredCarouselItems = useMemo(
+    () => displayItems.filter((item) => collectionHasCoverImage(item.collection)),
+    [displayItems],
+  );
+
   const list = useMemo(() => {
+    if (cardLayout === 'carousel') {
+      if (!screenWidth) return null;
+      return (
+        <ShopCollectionFeaturedCarousel items={featuredCarouselItems} screenWidth={screenWidth} />
+      );
+    }
     if (cardLayout === 'strip') {
       return (
         <View style={{ gap: SHOP_COLLECTION_STRIP_GAP }}>
@@ -172,32 +185,45 @@ function HomeShopByCategoryInner({
         {displayItems.map((item) => renderCompactRow(item.collection))}
       </View>
     );
-  }, [cardLayout, displayItems, renderCompactRow, renderEditorialRow, renderStripRow]);
+  }, [cardLayout, displayItems, featuredCarouselItems, renderCompactRow, renderEditorialRow, renderStripRow, screenWidth]);
+
+  const contentPad = omitContentPadding ? undefined : 'px-5';
+  const showCarousel =
+    cardLayout === 'carousel' && displayItems.length > 0 && featuredCarouselItems.length > 0;
 
   return (
-    <View className={cn(!omitContentPadding && 'px-5')}>
-      {showSectionHeader ? (
-        <HomeSectionTitle title="Collections" />
-      ) : null}
-      {!displayItems.length ? (
-        <Text variant="caption" className="text-mist">
-          No collections available right now.
-        </Text>
-      ) : (
-        list
-      )}
-      {showViewAllCollections && displayItems.length > 0 ? (
-        <Link href="/categories" asChild>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="View all collections"
-            className="mt-2 self-start py-2 active:opacity-70">
-            <Text variant="label" className="text-accent">
-              View all collections
-            </Text>
-          </Pressable>
-        </Link>
-      ) : null}
+    <View>
+      <View className={cn(contentPad)}>
+        {showSectionHeader ? (
+          <HomeSectionTitle title="Collections" />
+        ) : null}
+        {!displayItems.length ? (
+          <Text variant="caption" className="text-mist">
+            No collections available right now.
+          </Text>
+        ) : cardLayout === 'carousel' && featuredCarouselItems.length === 0 ? (
+          <Text variant="caption" className="text-mist">
+            Collections will appear here when cover images are available.
+          </Text>
+        ) : cardLayout !== 'carousel' ? (
+          list
+        ) : null}
+      </View>
+      {showCarousel ? list : null}
+      <View className={cn(contentPad)}>
+        {showViewAllCollections && displayItems.length > 0 && (cardLayout !== 'carousel' || featuredCarouselItems.length > 0) ? (
+          <Link href="/categories" asChild>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View all collections"
+              className="mt-2 self-start py-2 active:opacity-70">
+              <Text variant="label" className="text-accent">
+                View all collections
+              </Text>
+            </Pressable>
+          </Link>
+        ) : null}
+      </View>
     </View>
   );
 }
