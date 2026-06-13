@@ -23,7 +23,7 @@ import { trackSelectItem } from '@/lib/gtm';
 import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { Product } from '@/types/shopify';
 import { firstValidProductImage } from '@/utils/catalog-image';
-import { productCardTypoPreset } from '@/constants/product-card-typography';
+import { productCardTypoPreset, productCardTextBlockHeight } from '@/constants/product-card-typography';
 import { cn } from '@/utils/cn';
 import { isProductFullySoldOut } from '@/utils/product-availability';
 import { formatMoney } from '@/utils/money';
@@ -35,6 +35,9 @@ import { Text } from './text';
 const easeOutCubic = Easing.out(Easing.cubic);
 const IMAGE_PRESS_MS = { in: 160, out: 220 } as const;
 const TITLE_PRESS_MS = { in: 120, out: 200 } as const;
+
+/** Controls quick-add overlay vs footer CTA on product tiles. */
+export type ProductCardActionVariant = 'quick_add' | 'add_to_bag';
 
 export type ProductCardProps = {
   product: Product;
@@ -58,6 +61,12 @@ export type ProductCardProps = {
   perfTraceIndex?: number;
   perfTraceScreen?: string;
   disableImageTransition?: boolean;
+  /**
+   * `quick_add` — floating plus on the image (PLP default).
+   * `add_to_bag` — footer button below title/price, no overlay plus.
+   * @default 'quick_add'
+   */
+  actionVariant?: ProductCardActionVariant;
   /** When set, fires GA4 `select_item` immediately before navigating to PDP. */
   selectItemContext?: {
     source_screen: SelectItemSourceScreen;
@@ -80,6 +89,7 @@ function ProductCardInner({
   perfTraceIndex,
   perfTraceScreen = 'plp',
   disableImageTransition = true,
+  actionVariant = 'quick_add',
   selectItemContext,
 }: ProductCardProps) {
   useProductCardParentRerenderTrace('ProductCard', {
@@ -94,6 +104,7 @@ function ProductCardInner({
     perfTraceIndex,
     perfTraceScreen,
     disableImageTransition,
+    actionVariant,
     selectItemContext,
   });
 
@@ -109,6 +120,7 @@ function ProductCardInner({
     perfTraceIndex,
     perfTraceScreen,
     disableImageTransition,
+    actionVariant,
     selectItemContext,
   };
   const router = useRouter();
@@ -174,6 +186,8 @@ function ProductCardInner({
   const comfort = gridColumns === 1;
   const actionSize = comfort ? 'md' : 'sm';
   const typo = productCardTypoPreset(gridColumns);
+  const showQuickAddPlus = actionVariant === 'quick_add';
+  const showFooterAddToBag = actionVariant === 'add_to_bag';
 
   const titleBlock = (
     <Animated.View style={titlePressStyle}>
@@ -185,15 +199,17 @@ function ProductCardInner({
           paddingBottom: typo.paddingBottom,
           paddingHorizontal: typo.paddingHorizontal,
         }}>
-        <Text
-          numberOfLines={2}
-          className="font-sans-md text-ink"
-          style={{
-            fontSize: typo.titleFontSize,
-            lineHeight: typo.titleLineHeight,
-          }}>
-          {product.title}
-        </Text>
+        <View style={{ height: typo.titleLineHeight * 2 }}>
+          <Text
+            numberOfLines={2}
+            className="font-sans-md text-ink"
+            style={{
+              fontSize: typo.titleFontSize,
+              lineHeight: typo.titleLineHeight,
+            }}>
+            {product.title}
+          </Text>
+        </View>
         <Text
           numberOfLines={1}
           className="font-sans-md text-ink"
@@ -300,7 +316,8 @@ function ProductCardInner({
   );
 
   return (
-    <View className={cn('bg-transparent', className)}>
+    <View
+      className={cn('bg-transparent', showFooterAddToBag ? 'h-full flex-1' : undefined, className)}>
       {__DEV__ ? <ProductCardRenderTrace {...traceProps} /> : null}
       <View className="relative aspect-[3/4] w-full overflow-hidden bg-elevated">
         {imageLink}
@@ -328,9 +345,18 @@ function ProductCardInner({
           </View>
         ) : null}
         <ProductCardWishlistHeart handle={product.handle} actionSize={actionSize} />
-        {!soldOut ? <QuickAddToBag product={product} relaxed={comfort} /> : null}
+        {showQuickAddPlus && !soldOut ? (
+          <QuickAddToBag product={product} relaxed={comfort} trigger="overlay_plus" />
+        ) : null}
       </View>
-      {titleLink}
+      {showFooterAddToBag ? (
+        <View className="flex-1 justify-between">
+          <View style={{ height: productCardTextBlockHeight(gridColumns) }}>{titleLink}</View>
+          <QuickAddToBag product={product} relaxed={comfort} trigger="footer_button" />
+        </View>
+      ) : (
+        titleLink
+      )}
     </View>
   );
 }

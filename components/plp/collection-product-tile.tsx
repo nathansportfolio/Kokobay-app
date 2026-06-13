@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { View } from 'react-native';
 import type { Href } from 'expo-router';
 
-import { ProductCard } from '@/components/ui/product-card';
+import { ProductCard, type ProductCardActionVariant } from '@/components/ui/product-card';
 import { useProductCardParentRerenderTrace } from '@/hooks/use-product-card-parent-rerender-trace';
 import type { SelectItemSourceScreen } from '@/lib/gtm/types';
 import type { ProductPrefetchImageHint } from '@/hooks/use-prefetch-product';
@@ -20,6 +20,8 @@ export type CollectionProductTileProps = {
   tileIndex?: number;
   /** Horizontal gap between left and right columns (two-up only). */
   columnGap?: number;
+  /** @default 'quick_add' */
+  actionVariant?: ProductCardActionVariant;
   perfTraceIndex?: number;
   perfTraceScreen?: string;
   onPrefetchProduct?: (handle: string, imageHint?: ProductPrefetchImageHint) => void;
@@ -40,6 +42,7 @@ function CollectionProductTileInner({
   numColumns,
   tileIndex,
   columnGap = 0,
+  actionVariant = 'quick_add',
   perfTraceIndex,
   perfTraceScreen,
   onPrefetchProduct,
@@ -61,17 +64,20 @@ function CollectionProductTileInner({
 
   return (
     <View style={{ width: itemWidth, height: cellHeight, marginRight: columnGapAfter }}>
-      <ProductCard
-        product={product}
-        productLink={productLink}
-        imagePriority="low"
-        gridColumns={numColumns}
-        tileWidth={itemWidth}
-        perfTraceIndex={perfTraceIndex}
-        perfTraceScreen={perfTraceScreen}
-        onPrefetchProduct={onPrefetchProduct}
-        selectItemContext={selectItemContext}
-      />
+      <View style={{ height: cellHeight, width: itemWidth, flex: 1 }}>
+        <ProductCard
+          product={product}
+          productLink={productLink}
+          imagePriority="low"
+          gridColumns={numColumns}
+          tileWidth={itemWidth}
+          perfTraceIndex={perfTraceIndex}
+          perfTraceScreen={perfTraceScreen}
+          onPrefetchProduct={onPrefetchProduct}
+          selectItemContext={selectItemContext}
+          actionVariant={actionVariant}
+        />
+      </View>
     </View>
   );
 }
@@ -86,6 +92,7 @@ export const CollectionProductTile = memo(
     prev.numColumns === next.numColumns &&
     prev.tileIndex === next.tileIndex &&
     prev.columnGap === next.columnGap &&
+    prev.actionVariant === next.actionVariant &&
     prev.onPrefetchProduct === next.onPrefetchProduct &&
     prev.selectItemContext?.source_screen === next.selectItemContext?.source_screen &&
     prev.selectItemContext?.item_list_id === next.selectItemContext?.item_list_id &&

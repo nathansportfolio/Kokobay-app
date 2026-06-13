@@ -10,6 +10,12 @@ import { WishlistGridItem } from '@/components/wishlist/wishlist-grid-item';
 import { WishlistGridSkeleton } from '@/components/wishlist/wishlist-grid-skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import {
+  PLP_COLUMN_GAP,
+  PLP_HORIZONTAL_PAD,
+  PLP_LIST_BOTTOM_PAD,
+  plpScreenShell,
+} from '@/constants/plp-scroll';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useWishlist } from '@/contexts/wishlist-context';
 import {
@@ -18,30 +24,20 @@ import {
 } from '@/hooks/use-wishlist-products-query';
 import { useScrollBottomPadding } from '@/contexts/chrome-context';
 import { newInCollectionHref } from '@/utils/collection-handles';
+import { collectionProductCellHeight } from '@/utils/plp-layout';
+import { productHref, productReturnToParam } from '@/utils/product-navigation';
 
-/** Horizontal inset — `px-5` luxury breathing room */
-const H_PAD = 20;
-/** Gap between columns and rows — `gap-5` */
-const COL_GAP = 20;
-const ROW_GAP = 20;
+/** Empty/error states keep luxury side inset; product grid matches PLP (flush, minimal gap). */
+const EMPTY_H_PAD = 20;
+const LIST_BOTTOM_PAD = PLP_LIST_BOTTOM_PAD;
 
-const LIST_BOTTOM_PAD = 48;
-
-/** Inline shell — NativeWind flex-1 on SafeAreaView / FlashList fails on Android. */
-const WISHLIST_SHELL = { flex: 1, backgroundColor: '#FAF8F5' } as const;
-
-function useWishlistGridMetrics() {
-  const { width: winW } = useWindowDimensions();
+function useWishlistGridMetrics(screenWidth: number) {
   return useMemo(() => {
-    const inner = Math.max(0, winW - H_PAD * 2);
-    const tileW = (inner - COL_GAP) / 2;
-    /** 3:4 portrait — dominant fashion crop */
-    const imageH = Math.round((tileW * 4) / 3);
-    const textStack = 58;
-    const itemHeight = imageH + textStack;
-    const cellHeight = itemHeight + ROW_GAP;
-    return { inner, tileW, imageH, itemHeight, cellHeight };
-  }, [winW]);
+    const contentWidth = screenWidth - PLP_HORIZONTAL_PAD * 2;
+    const tileW = Math.floor((contentWidth - PLP_COLUMN_GAP) / 2);
+    const cellHeight = collectionProductCellHeight(tileW, 2, { withFooterCta: true });
+    return { tileW, cellHeight };
+  }, [screenWidth]);
 }
 
 function WishlistHeader() {
@@ -58,10 +54,16 @@ export default function WishlistScreen() {
 
 function WishlistScreenContent() {
   const pathname = usePathname();
+  const { width: screenWidth } = useWindowDimensions();
   const listBottomPad = useScrollBottomPadding(LIST_BOTTOM_PAD);
-  const { tileW, imageH, cellHeight } = useWishlistGridMetrics();
+  const { tileW, cellHeight } = useWishlistGridMetrics(screenWidth);
   const { wishlistHandles, wishlistHydrated } = useWishlist();
   const listRef = useRef<FlashListRef<string>>(null);
+
+  const productLinkFor = useCallback(
+    (handle: string) => productHref(handle, productReturnToParam(pathname)),
+    [pathname],
+  );
 
   const scrollToTop = useCallback(() => {
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -83,9 +85,9 @@ function WishlistScreenContent() {
 
   const listHeader = useMemo(
     () => (
-      <>
+      <View style={{ paddingHorizontal: EMPTY_H_PAD }}>
         <WishlistHeader />
-      </>
+      </View>
     ),
     [],
   );
@@ -107,29 +109,35 @@ function WishlistScreenContent() {
           product={product}
           isPending={isPending}
           index={index}
+          productLink={productLinkFor(handle)}
           tileWidth={tileW}
-          imageHeight={imageH}
           cellHeight={cellHeight}
-          columnGap={COL_GAP}
+          columnGap={PLP_COLUMN_GAP}
         />
       );
     },
-    [productsByHandle, productsPending, productsFetching, tileW, imageH, cellHeight],
+    [productsByHandle, productsPending, productsFetching, tileW, cellHeight, productLinkFor],
   );
 
   const keyExtractor = useCallback((handle: string) => handle, []);
 
   const listExtra = useMemo(
-    () => `${tileW}:${imageH}:${cellHeight}:${Object.keys(productsByHandle).length}`,
-    [tileW, imageH, cellHeight, productsByHandle],
+    () => `${tileW}:${cellHeight}:${Object.keys(productsByHandle).length}`,
+    [tileW, cellHeight, productsByHandle],
   );
 
   if (!wishlistHydrated) {
     return (
-      <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
-        <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD, paddingBottom: listBottomPad }]}>
-          <WishlistHeader />
-          <WishlistGridSkeleton imageHeight={imageH} />
+      <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
+        <View style={[plpScreenShell, { paddingBottom: listBottomPad }]}>
+          <View style={{ paddingHorizontal: EMPTY_H_PAD }}>
+            <WishlistHeader />
+          </View>
+          <WishlistGridSkeleton
+            itemWidth={tileW}
+            cellHeight={cellHeight}
+            columnGap={PLP_COLUMN_GAP}
+          />
         </View>
       </SafeAreaView>
     );
@@ -137,8 +145,8 @@ function WishlistScreenContent() {
 
   if (wishlistHandles.length === 0) {
     return (
-      <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
-        <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD, paddingBottom: listBottomPad }]}>
+      <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
+        <View style={[plpScreenShell, { paddingHorizontal: EMPTY_H_PAD, paddingBottom: listBottomPad }]}>
           <WishlistHeader />
           <EmptyState
             title="Your Wishlist is empty"
@@ -154,8 +162,8 @@ function WishlistScreenContent() {
 
   if (productsError && Object.keys(productsByHandle).length === 0) {
     return (
-      <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
-        <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD, paddingBottom: listBottomPad }]}>
+      <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
+        <View style={[plpScreenShell, { paddingHorizontal: EMPTY_H_PAD, paddingBottom: listBottomPad }]}>
           <WishlistHeader />
           <EmptyState title="Something went wrong" message="We could not load your wishlist. Try again.">
             <Button title="Try again" variant="primary" onPress={() => void refetchProducts()} />
@@ -166,8 +174,8 @@ function WishlistScreenContent() {
   }
 
   return (
-    <SafeAreaView style={WISHLIST_SHELL} edges={['left', 'right']}>
-      <View style={[WISHLIST_SHELL, { paddingHorizontal: H_PAD }]}>
+    <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
+      <View style={plpScreenShell}>
         <FlashList
           ref={listRef}
           style={{ flex: 1 }}

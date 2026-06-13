@@ -146,6 +146,7 @@ export function productCardPropsEqual(prev: ProductCardProps, next: ProductCardP
     prev.perfTraceIndex === next.perfTraceIndex &&
     prev.perfTraceScreen === next.perfTraceScreen &&
     prev.disableImageTransition === next.disableImageTransition &&
+    prev.actionVariant === next.actionVariant &&
     prev.selectItemContext?.source_screen === next.selectItemContext?.source_screen &&
     prev.selectItemContext?.item_list_id === next.selectItemContext?.item_list_id &&
     prev.selectItemContext?.item_list_name === next.selectItemContext?.item_list_name &&

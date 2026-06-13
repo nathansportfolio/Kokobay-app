@@ -36,6 +36,7 @@ import { hapticLight, hapticSuccess } from '@/utils/haptics';
 import { formatMoney } from '@/utils/money';
 import { isCatalogPreviewProduct, isProductFullySoldOut } from '@/utils/product-availability';
 import { getProductSizeOptions, getVariantForSize, isSizeAvailable } from '@/utils/pdp-variants';
+import { PRODUCT_CARD_FOOTER_CTA_BLOCK } from '@/constants/product-card-typography';
 import {
   PRODUCT_QUERY_GC_TIME_MS,
   PRODUCT_QUERY_STALE_TIME_MS,
@@ -51,10 +52,15 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 /** Space between size row and primary CTA — calm editorial rhythm */
 const CTA_SECTION_MARGIN_TOP = 48;
 
+export type QuickAddTrigger = 'overlay_plus' | 'footer_button';
+
 export type QuickAddToBagProps = {
   product: Product;
   relaxed?: boolean;
   triggerClassName?: string;
+  /** @default 'overlay_plus' */
+  trigger?: QuickAddTrigger;
+  buttonClassName?: string;
 };
 
 type QuickAddToBagSheetProps = {
@@ -293,9 +299,32 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   );
 }
 
-function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBagProps) {
+function useQuickAddToBagSheet(product: Product) {
   const prefetchProduct = usePrefetchProduct();
   const [open, setOpen] = useState(false);
+
+  const openSheet = useCallback(() => {
+    hapticLight();
+    trackQuickAddToBagClicked({ product });
+    prefetchProduct(product.handle);
+    setOpen(true);
+  }, [prefetchProduct, product]);
+
+  const closeSheet = useCallback(() => setOpen(false), []);
+
+  const sheet = open ? <QuickAddToBagSheet product={product} onClose={closeSheet} /> : null;
+
+  return { openSheet, sheet };
+}
+
+function QuickAddToBagInner({
+  product,
+  relaxed,
+  triggerClassName,
+  trigger = 'overlay_plus',
+  buttonClassName,
+}: QuickAddToBagProps) {
+  const { openSheet, sheet } = useQuickAddToBagSheet(product);
   const triggerPressed = useSharedValue(0);
   const triggerPressStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(triggerPressed.value, [0, 1], [1, 0.94]) }],
@@ -304,10 +333,39 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
 
   const soldOut = isProductFullySoldOut(product);
   const actionSize = relaxed ? 'md' : 'sm';
-  const close = useCallback(() => setOpen(false), []);
 
-  if (soldOut) {
+  if (soldOut && trigger !== 'footer_button') {
     return null;
+  }
+
+  if (trigger === 'footer_button') {
+    const cta = PRODUCT_CARD_FOOTER_CTA_BLOCK;
+    const footerTitle = soldOut ? 'Notify me' : 'Add to bag';
+    return (
+      <>
+        <View
+          className="w-full"
+          style={{
+            paddingTop: cta.paddingTop,
+            paddingBottom: cta.paddingBottom,
+            paddingHorizontal: cta.paddingHorizontal,
+          }}>
+          <Button
+            title={footerTitle}
+            variant="primary"
+            accessibilityLabel={
+              soldOut
+                ? `Get back in stock alerts for ${product.title}`
+                : `Choose size and add ${product.title} to bag`
+            }
+            className={cn('min-h-[32px] w-full rounded-none px-3 py-1', buttonClassName)}
+            textClassName="text-[11px] tracking-wide"
+            onPress={openSheet}
+          />
+        </View>
+        {sheet}
+      </>
+    );
   }
 
   return (
@@ -322,12 +380,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
         onPressOut={() => {
           triggerPressed.value = withTiming(0, { duration: 200 });
         }}
-        onPress={() => {
-          hapticLight();
-          trackQuickAddToBagClicked({ product });
-          prefetchProduct(product.handle);
-          setOpen(true);
-        }}
+        onPress={openSheet}
         className={cn('absolute bottom-4 left-4 z-10', triggerClassName)}
         style={triggerPressStyle}>
         <LuxuryCardActionSurface size={actionSize}>
@@ -335,7 +388,7 @@ function QuickAddToBagInner({ product, relaxed, triggerClassName }: QuickAddToBa
         </LuxuryCardActionSurface>
       </AnimatedPressable>
 
-      {open ? <QuickAddToBagSheet product={product} relaxed={relaxed} onClose={close} /> : null}
+      {sheet}
     </>
   );
 }
