@@ -4,3 +4,4 @@ import { Stack } from 'expo-router';
 export default function CategoriesTabStackLayout() {
   return <Stack screenOptions={{ headerShown: false, freezeOnBlur: false }} />;
 }
+
