@@ -8,6 +8,7 @@ import { hapticLight } from '@/utils/haptics';
 
 import {
   HOW_TO_RETURN_URL,
+  ORDER_TRACKING_URL,
   PRIVACY_POLICY_URL,
   TERMS_AND_CONDITIONS_URL,
 } from '@/constants/legal-urls';
@@ -34,6 +35,13 @@ export function AccountLegalLinks() {
         onPress={() => openLegalUrl(HOW_TO_RETURN_URL)}
         showDivider
         accessibilityLabel="Returns, opens in browser"
+        trailing={chevron}
+      />
+      <AccountSettingsRow
+        label="Order tracking"
+        onPress={() => openLegalUrl(ORDER_TRACKING_URL)}
+        showDivider
+        accessibilityLabel="Order tracking, opens in browser"
         trailing={chevron}
       />
       <AccountSettingsRow

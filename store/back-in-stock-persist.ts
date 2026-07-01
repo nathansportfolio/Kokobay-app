@@ -76,3 +76,33 @@ export async function hasLocalBackInStockSubscription(input: {
     return false;
   });
 }
+
+/** Email saved locally for a variant — used to prefill guest alerts and restore CTA state. */
+export async function getLocalBackInStockEmailForVariant(variantId: string): Promise<string | null> {
+  const variantKey = shopifyVariantKey(variantId);
+  const records = await loadRecords();
+  const match = records.find((r) => r.variantKey === variantKey);
+  return match?.email?.trim() ? match.email.trim() : null;
+}
+
+/** Most recently used guest alert email on this device. */
+export async function getMostRecentLocalBackInStockEmail(): Promise<string | null> {
+  const records = await loadRecords();
+  const last = records[records.length - 1];
+  return last?.email?.trim() ? last.email.trim() : null;
+}
+
+export async function clearLocalBackInStockSubscription(input: {
+  variantId: string;
+  email?: string;
+}): Promise<void> {
+  const variantKey = shopifyVariantKey(input.variantId);
+  const email = input.email?.trim() ? normEmail(input.email) : '';
+  const records = await loadRecords();
+  const next = records.filter((r) => {
+    if (r.variantKey !== variantKey) return true;
+    if (!email) return false;
+    return normEmail(r.email) !== email;
+  });
+  await saveRecords(next);
+}

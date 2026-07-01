@@ -3,7 +3,9 @@ import { usePathname } from 'expo-router';
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   type PropsWithChildren,
 } from 'react';
 import { Platform } from 'react-native';
@@ -16,6 +18,7 @@ import {
 } from '@/constants/luxury-nav';
 import { useAppErrorBannerChromeHeight } from '@/hooks/use-app-error-banner-content';
 import { useStableBottomInset, useStableTopInset } from '@/hooks/use-stable-top-inset';
+import { logPlpChromeSnap } from '@/lib/plp-chrome-snap-trace';
 import { isTabRoutePathname } from '@/lib/tab-route-pathname';
 
 /** UITabBar chrome above the home indicator — iOS NativeTabs does not expose measured height. */
@@ -85,6 +88,32 @@ export function ChromeProvider({ children }: PropsWithChildren) {
     showsTabChrome,
     topInset,
   ]);
+
+  const prevChromeRef = useRef<ChromeContextValue | null>(null);
+  useEffect(() => {
+    const prev = prevChromeRef.current;
+    if (
+      prev &&
+      prev.topChromeHeight === value.topChromeHeight &&
+      prev.showsTabChrome === value.showsTabChrome &&
+      prev.tabHeaderBottom === value.tabHeaderBottom
+    ) {
+      return;
+    }
+    logPlpChromeSnap('chrome_provider_update', {
+      pathname,
+      showsTabChrome: value.showsTabChrome,
+      topInset: value.topInset,
+      bannerStripHeight,
+      tabHeaderBottom: value.tabHeaderBottom,
+      topChromeHeight: value.topChromeHeight,
+      scrollTopPadding: value.topChromeHeight + LUXURY_TAB_HEADER_CONTENT_GAP,
+      prevTopChromeHeight: prev?.topChromeHeight ?? null,
+      deltaTopChromeHeight: prev ? value.topChromeHeight - prev.topChromeHeight : 0,
+      measuredTabBar: measuredTabBar ?? null,
+    });
+    prevChromeRef.current = value;
+  }, [bannerStripHeight, measuredTabBar, pathname, value]);
 
   return <ChromeContext.Provider value={value}>{children}</ChromeContext.Provider>;
 }

@@ -1,5 +1,6 @@
 import { APP_HOME_HERO_CONTENT_SLUG } from '@/constants/app-home-hero-cms';
 import { getShopifyCountryCode } from '@/services/shopify/market-context';
+import { normalizeHomeHeroButtonStyle, type HomeHeroButtonStyle } from '@/utils/home-hero-button-style';
 
 import { legacyApiGetOptional } from '@/src/core/api';
 
@@ -14,6 +15,7 @@ export type AppHomeHeroPayload = {
   textColor: string;
   buttonBackgroundColor: string;
   buttonTextColor: string;
+  buttonStyle: HomeHeroButtonStyle;
 };
 
 function normalizePayload(json: Record<string, unknown>): AppHomeHeroPayload | null {
@@ -31,6 +33,9 @@ function normalizePayload(json: Record<string, unknown>): AppHomeHeroPayload | n
       typeof json.buttonBackgroundColor === 'string' ? json.buttonBackgroundColor.trim() : '',
     buttonTextColor:
       typeof json.buttonTextColor === 'string' ? json.buttonTextColor.trim() : '',
+    buttonStyle: normalizeHomeHeroButtonStyle(
+      typeof json.buttonStyle === 'string' ? json.buttonStyle : undefined,
+    ),
   };
 }
 

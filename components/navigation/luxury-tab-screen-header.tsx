@@ -1,5 +1,9 @@
+import { useEffect } from 'react';
+import { usePathname } from 'expo-router';
+
 import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { Text } from '@/components/ui/text';
+import { logPlpChromeSnap } from '@/lib/plp-chrome-snap-trace';
 import { cn } from '@/utils/cn';
 
 /** Editorial tab title — matches wishlist / bag / account. */
@@ -12,6 +16,15 @@ type LuxuryTabScreenHeaderProps = {
 };
 
 export function LuxuryTabScreenHeader({ title, className }: LuxuryTabScreenHeaderProps) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    logPlpChromeSnap('luxury_tab_screen_header_mount', { pathname, title });
+    return () => {
+      logPlpChromeSnap('luxury_tab_screen_header_unmount', { pathname, title });
+    };
+  }, [pathname, title]);
+
   return (
     <>
       <LuxuryTabBodySpacer />

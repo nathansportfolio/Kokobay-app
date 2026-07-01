@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 
 import { APP_ERROR_BANNER_STRIP_HEIGHT } from '@/constants/app-error-banner';
 import { useAppPromotionBannerChromeHeight } from '@/hooks/use-app-promotion-banner-content';
+import { logPlpChromeSnap } from '@/lib/plp-chrome-snap-trace';
 import { fetchAppErrorBanner, type AppErrorBannerPayload } from '@/services/kokobay-web/app-error';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 
@@ -44,8 +46,23 @@ export function useAppErrorBannerContent() {
 
 /** Extra chrome height to reserve below the fixed tab/stack header row (promotion + error). */
 export function useAppErrorBannerChromeHeight(): number {
-  const { visible } = useAppErrorBannerContent();
+  const { visible, loading: incidentPending } = useAppErrorBannerContent();
   const promotionChrome = useAppPromotionBannerChromeHeight();
   const errorChrome = visible ? APP_ERROR_BANNER_STRIP_HEIGHT : 0;
-  return promotionChrome + errorChrome;
+  const total = promotionChrome + errorChrome;
+
+  const prevTraceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (prevTraceRef.current === total) return;
+    prevTraceRef.current = total;
+    logPlpChromeSnap('banner_strip_height', {
+      promotionChrome,
+      errorChrome,
+      total,
+      incidentVisible: visible,
+      incidentPending,
+    });
+  }, [errorChrome, incidentPending, promotionChrome, total, visible]);
+
+  return total;
 }

@@ -35,7 +35,9 @@ import { productTileImageUri } from '@/utils/product-tile-image-uri';
 
 const SNAP_MS = 220;
 const easeOut = Easing.out(Easing.cubic);
-const TAP_SLOP_PX = 8;
+/** Max finger movement still treated as a product tap (not a carousel swipe). */
+const TAP_MAX_DISTANCE_PX = 12;
+const PAN_ACTIVATE_OFFSET_PX = 14;
 
 type ProductCardImageCarouselProps = {
   product: Product;
@@ -184,6 +186,8 @@ function ProductCardImageCarouselInner({
 
   const sourceImage = firstValidProductImage(product);
   const pageCount = previewImages.length;
+  const renderCount = lazyImagesEnabled ? pageCount : Math.min(pageCount, 1);
+  const carouselEnabled = pageCount > 1 && renderCount > 1;
 
   const imageUrls = useMemo(
     () =>
@@ -199,18 +203,42 @@ function ProductCardImageCarouselInner({
     [previewImages, product.handle, tileWidth],
   );
 
-  const enableLazyImages = useCallback(() => {
-    setLazyImagesEnabled(true);
-  }, []);
-
   const slideWidth = useSharedValue(0);
   const translateX = useSharedValue(0);
   const dragStartX = useSharedValue(0);
-  const pageCountShared = useSharedValue(pageCount);
+  const pageCountShared = useSharedValue(renderCount);
 
   useEffect(() => {
-    pageCountShared.value = pageCount;
-  }, [pageCount, pageCountShared]);
+    pageCountShared.value = renderCount;
+    if (renderCount <= 1) {
+      translateX.value = 0;
+    } else {
+      const w = slideWidth.value;
+      if (w > 0) {
+        const maxPage = renderCount - 1;
+        const page = clamp(Math.round(-translateX.value / w), 0, maxPage);
+        translateX.value = -page * w;
+      }
+    }
+  }, [pageCountShared, renderCount, slideWidth, translateX]);
+
+  useEffect(() => {
+    translateX.value = 0;
+    setLazyImagesEnabled(false);
+  }, [product.id, translateX]);
+
+  useEffect(() => {
+    if (!isVisible || pageCount <= 1 || lazyImagesEnabled) return;
+    const frame = requestAnimationFrame(() => {
+      setLazyImagesEnabled(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isVisible, lazyImagesEnabled, pageCount]);
+
+  useEffect(() => {
+    if (isVisible) return;
+    translateX.value = 0;
+  }, [isVisible, translateX]);
 
   const handleTap = useCallback(() => {
     onPress();
@@ -232,10 +260,6 @@ function ProductCardImageCarouselInner({
     onPrefetchProduct?.(product.handle, sourceImage);
   }, [onPrefetchProduct, product.handle, sourceImage]);
 
-  const engageInteraction = useCallback(() => {
-    enableLazyImages();
-  }, [enableLazyImages]);
-
   const handlePressIn = useCallback(() => {
     onPressIn();
     handlePrefetch();
@@ -244,12 +268,9 @@ function ProductCardImageCarouselInner({
   const pan = useMemo(
     () =>
       Gesture.Pan()
-        .activeOffsetX([-10, 10])
+        .enabled(carouselEnabled)
+        .activeOffsetX([-PAN_ACTIVATE_OFFSET_PX, PAN_ACTIVATE_OFFSET_PX])
         .failOffsetY([-24, 24])
-        .onTouchesDown(() => {
-          runOnJS(handlePressIn)();
-          runOnJS(engageInteraction)();
-        })
         .onBegin(() => {
           'worklet';
           dragStartX.value = translateX.value;
@@ -266,14 +287,6 @@ function ProductCardImageCarouselInner({
           'worklet';
           const count = pageCountShared.value;
           const w = slideWidth.value;
-
-          if (
-            Math.abs(e.translationX) < TAP_SLOP_PX &&
-            Math.abs(e.translationY) < TAP_SLOP_PX
-          ) {
-            runOnJS(handleTap)();
-            return;
-          }
 
           if (count <= 1 || w <= 0) {
             runOnJS(onPressOut)();
@@ -292,23 +305,35 @@ function ProductCardImageCarouselInner({
             runOnJS(onPressOut)();
           }
         }),
-    [
-      dragStartX,
-      engageInteraction,
-      handlePressIn,
-      handleTap,
-      onPressOut,
-      pageCountShared,
-      slideWidth,
-      translateX,
-    ],
+    [carouselEnabled, dragStartX, onPressOut, pageCountShared, slideWidth, translateX],
+  );
+
+  const tap = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDistance(TAP_MAX_DISTANCE_PX)
+        .onBegin(() => {
+          runOnJS(handlePressIn)();
+        })
+        .onEnd(() => {
+          runOnJS(handleTap)();
+        })
+        .onFinalize(() => {
+          runOnJS(onPressOut)();
+        }),
+    [handlePressIn, handleTap, onPressOut],
+  );
+
+  const carouselGesture = useMemo(
+    () => (carouselEnabled ? Gesture.Exclusive(pan, tap) : tap),
+    [carouselEnabled, pan, tap],
   );
 
   const stripStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
 
-  const renderCount = lazyImagesEnabled ? pageCount : 1;
+  const slidesToRender = previewImages.slice(0, renderCount);
 
   const firstImage = imageUrls[0] ? (
     <CatalogCoverImage
@@ -336,50 +361,59 @@ function ProductCardImageCarouselInner({
 
   return (
     <View className="absolute inset-0 overflow-hidden" onLayout={onLayout} collapsable={false}>
-      <GestureDetector gesture={pan}>
+      <GestureDetector gesture={carouselGesture}>
         <Animated.View className="absolute inset-0" style={imagePressStyle} collapsable={false}>
           <Animated.View
             style={[
               {
                 flexDirection: 'row',
                 height: '100%',
-                width: layoutWidth > 0 ? layoutWidth * renderCount : undefined,
+                width: layoutWidth > 0 ? layoutWidth * slidesToRender.length : undefined,
               },
               stripStyle,
             ]}
             accessibilityRole="button"
             accessibilityLabel={soldOut ? `${product.title}, no stock` : product.title}>
-            {previewImages.slice(0, renderCount).map((img, index) => (
-              <View
-                key={img.key}
-                style={{
-                  width: layoutWidth > 0 ? layoutWidth : undefined,
-                  flex: layoutWidth > 0 ? undefined : 1,
-                  height: '100%',
-                }}>
-                <CatalogCoverImage
-                  uri={imageUrls[index]!}
-                  recyclingKey={`${product.id}-${index}`}
-                  priority={index === 0 ? imagePriority : 'low'}
-                  transition={disableImageTransition ? null : undefined}
-                  onLoad={
-                    index === 0 && perfTraceIndex === 0
-                      ? () => {
-                          logPlpFirstImageLoad(perfTraceScreen, {
-                            handle: product.handle,
-                            productId: product.id,
-                            imageUrl: imageUrls[0]!,
-                          });
-                        }
-                      : undefined
-                  }
-                />
-              </View>
-            ))}
+            {slidesToRender.map((img, index) => {
+              const uri = imageUrls[index];
+              if (!uri) return null;
+
+              return (
+                <View
+                  key={img.key}
+                  style={{
+                    width: layoutWidth > 0 ? layoutWidth : undefined,
+                    flex: layoutWidth > 0 ? undefined : 1,
+                    height: '100%',
+                  }}>
+                  <CatalogCoverImage
+                    uri={uri}
+                    recyclingKey={`${product.id}-${index}`}
+                    priority={index === 0 ? imagePriority : 'low'}
+                    transition={disableImageTransition ? null : undefined}
+                    onLoad={
+                      index === 0 && perfTraceIndex === 0
+                        ? () => {
+                            logPlpFirstImageLoad(perfTraceScreen, {
+                              handle: product.handle,
+                              productId: product.id,
+                              imageUrl: uri,
+                            });
+                          }
+                        : undefined
+                    }
+                  />
+                </View>
+              );
+            })}
           </Animated.View>
         </Animated.View>
       </GestureDetector>
-      <ProductCardImageDots count={pageCount} translateX={translateX} slideWidth={slideWidth} />
+      <ProductCardImageDots
+        count={carouselEnabled ? renderCount : 0}
+        translateX={translateX}
+        slideWidth={slideWidth}
+      />
     </View>
   );
 }

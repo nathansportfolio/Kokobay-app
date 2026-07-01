@@ -89,6 +89,11 @@ export const SHOPIFY_CMS_METAOBJECT_DEFS = {
       { key: 'text colour', type: 'single_line_text_field', label: 'Text colour' },
       { key: 'button background', type: 'single_line_text_field', label: 'Button background' },
       { key: 'button text colour', type: 'single_line_text_field', label: 'Button text colour' },
+      {
+        key: 'button style',
+        type: 'single_line_text_field',
+        label: 'Button style (pill | underline)',
+      },
       { key: 'country', type: 'single_line_text_field', label: 'Country' },
     ],
     exampleHandles: ['gb', 'us', 'eu'],

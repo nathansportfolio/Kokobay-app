@@ -13,6 +13,8 @@ import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { homeHeroDisplayImageUri } from '@/utils/home-hero-image';
 import type { HomeHeroCtaTarget } from '@/utils/home-hero-link';
 import { resolveHomeHeroCtaTarget } from '@/utils/home-hero-link';
+import type { HomeHeroButtonStyle } from '@/utils/home-hero-button-style';
+import { resolveHomeHeroButtonStyle } from '@/utils/home-hero-button-style';
 
 export type AppHomeHeroContent = {
   imageUri: string;
@@ -21,6 +23,7 @@ export type AppHomeHeroContent = {
   textColor: string;
   buttonBackgroundColor: string;
   buttonTextColor: string;
+  buttonStyle: HomeHeroButtonStyle;
   ctaTarget: HomeHeroCtaTarget;
   /** True when `app_home_hero` metaobject matched; false = built-in default hero. */
   fromCms: boolean;
@@ -38,11 +41,12 @@ export function useAppHomeHeroContent(screenWidth: number, pathname: string): Ap
     if (fromCms && cms) {
       return {
         imageUri: homeHeroDisplayImageUri(cms.imageUrl, screenWidth),
-        kicker: cms.text || DEFAULT_HOME_HERO_KICKER,
-        ctaLabel: cms.buttonText || DEFAULT_HOME_HERO_CTA_LABEL,
+        kicker: cms.text,
+        ctaLabel: cms.buttonText,
         textColor: cms.textColor || DEFAULT_HOME_HERO_TEXT_COLOR,
         buttonBackgroundColor: cms.buttonBackgroundColor || DEFAULT_HOME_HERO_BUTTON_BG,
         buttonTextColor: cms.buttonTextColor || DEFAULT_HOME_HERO_BUTTON_TEXT_COLOR,
+        buttonStyle: resolveHomeHeroButtonStyle(cms.buttonStyle),
         ctaTarget: resolveHomeHeroCtaTarget(cms.buttonLink, pathname),
         fromCms: true,
       };
@@ -55,6 +59,7 @@ export function useAppHomeHeroContent(screenWidth: number, pathname: string): Ap
       textColor: DEFAULT_HOME_HERO_TEXT_COLOR,
       buttonBackgroundColor: DEFAULT_HOME_HERO_BUTTON_BG,
       buttonTextColor: DEFAULT_HOME_HERO_BUTTON_TEXT_COLOR,
+      buttonStyle: resolveHomeHeroButtonStyle('pill'),
       ctaTarget: resolveHomeHeroCtaTarget(undefined, pathname),
       fromCms: false,
     };

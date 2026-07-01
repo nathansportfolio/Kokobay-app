@@ -13,6 +13,7 @@ export const LUXURY_SPACE = {
 } as const;
 
 export const LUXURY_RADIUS = {
+  none: 0,
   md: 16,
   lg: 24,
   xl: 28,

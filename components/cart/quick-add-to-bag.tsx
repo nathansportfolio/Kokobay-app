@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BlurView } from 'expo-blur';
 import { Plus } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -13,7 +13,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { PdpBackInStockSheet } from '@/components/pdp/pdp-back-in-stock-sheet';
 import { PdpSizeSelector } from '@/components/pdp/pdp-size-selector';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,16 +22,24 @@ import {
 import { Text } from '@/components/ui/text';
 import { useBagActions } from '@/contexts/bag-context';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
+import { useBackInStockAlertEmail } from '@/hooks/use-back-in-stock-alert-email';
+import { useBackInStockPrefillEmail } from '@/hooks/use-back-in-stock-prefill-email';
 import { usePrefetchProduct } from '@/hooks/use-prefetch-product';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { trackQuickAddToBagClicked, trackQuickAddToBagModalShown } from '@/lib/gtm';
 import { getProduct } from '@/services/shopify';
+import {
+  subscribeBackInStock,
+  variantTitleForBackInStock,
+} from '@/services/kokobay-web/back-in-stock';
+import { getAuthAccessToken } from '@/src/core/auth/token';
 import { useAuth } from '@/hooks/use-auth';
 import type { Product } from '@/types/shopify';
 import { imageUrlForCartLine, variantLabelForCart } from '@/utils/cart-display';
 import { resolveVariantQuantityCap } from '@/utils/cart-inventory';
 import { cn } from '@/utils/cn';
 import { hapticLight, hapticSuccess } from '@/utils/haptics';
+import { showBackInStockResultToast, deferBackInStockToast } from '@/utils/back-in-stock-toast';
 import { formatMoney } from '@/utils/money';
 import { isCatalogPreviewProduct, isProductFullySoldOut } from '@/utils/product-availability';
 import { getProductSizeOptions, getVariantForSize, isSizeAvailable } from '@/utils/pdp-variants';
@@ -47,6 +54,8 @@ import { yieldForUiPaint } from '@/utils/yield-for-ui-paint';
 
 const BLUR_OVERLAY = Platform.OS === 'ios';
 const PLUS_ICON = { strokeWidth: 1.75 as const };
+const BACK_IN_STOCK_INPUT_CLASS =
+  'border border-line bg-surface px-4 py-3.5 font-sans text-[15px] text-ink rounded-sm';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 /** Space between size row and primary CTA — calm editorial rhythm */
@@ -76,11 +85,14 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   const marketKey = useMarketQueryKey();
   const { addToBag } = useBagActions();
   const [addingToBag, setAddingToBag] = useState(false);
-  const [backInStockOpen, setBackInStockOpen] = useState(false);
+  const [notifySubmitting, setNotifySubmitting] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState('');
+  const [notifyError, setNotifyError] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const { user } = useAuth();
   const customerEmail = user?.email;
   const customerId = user?.id;
+  const isLoggedIn = Boolean(customerEmail?.trim());
 
   const needsFullProduct = isCatalogPreviewProduct(product);
   const { data: loadedProduct, isPending: loadingProduct } = useQuery({
@@ -106,7 +118,7 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
 
   const close = useCallback(() => {
     onClose();
-    setBackInStockOpen(false);
+    setNotifyError(null);
   }, [onClose]);
 
   useEffect(() => {
@@ -147,17 +159,36 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   const canAdd = !variantsLoading && Boolean(selectedVariant?.availableForSale);
   const showBackInStockCta = !variantsLoading && Boolean(selectedVariant) && !canAdd;
 
+  const backInStockPrefillEmail = useBackInStockPrefillEmail({
+    variantId: selectedVariant?.id,
+    customerEmail,
+    enabled: showBackInStockCta,
+  });
+
+  const backInStockAlertEmail = useBackInStockAlertEmail({
+    variantId: selectedVariant?.id,
+    customerEmail,
+  });
+
   const { subscribed: backInStockSubscribed, markSubscribed: markBackInStockSubscribed } =
     useBackInStockSubscription({
       variantId: selectedVariant?.id,
-      email: customerEmail,
+      email: backInStockAlertEmail,
       customerId,
-      enabled: showBackInStockCta && Boolean(customerEmail?.trim() && selectedVariant?.id),
+      enabled: showBackInStockCta && Boolean(selectedVariant?.id) && Boolean(backInStockAlertEmail),
     });
+
+  useEffect(() => {
+    if (!showBackInStockCta) return;
+    setNotifyEmail(backInStockPrefillEmail);
+    setNotifyError(null);
+  }, [showBackInStockCta, backInStockPrefillEmail, selectedVariant?.id]);
 
   const backInStockCtaLabel = backInStockSubscribed
     ? 'We will email you when back in stock'
-    : 'Email me when back in stock';
+    : 'Notify me when back in stock';
+
+  const backInStockButtonTitle = backInStockSubscribed ? 'Done' : backInStockCtaLabel;
 
   const onAdd = useCallback(async () => {
     if (!selectedVariant || !canAdd || addingToBag) return;
@@ -181,11 +212,74 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
     }
   }, [activeProduct, addToBag, addingToBag, canAdd, onClose, selectedVariant]);
 
-  const onBackInStock = useCallback(() => {
-    if (!selectedVariant) return;
-    hapticLight();
-    setBackInStockOpen(true);
-  }, [selectedVariant]);
+  const onNotifyBackInStock = useCallback(async () => {
+    if (!selectedVariant || notifySubmitting) return;
+
+    if (backInStockSubscribed) {
+      onClose();
+      deferBackInStockToast(() =>
+        showBackInStockResultToast({ ok: true, alreadySubscribed: true }),
+      );
+      return;
+    }
+
+    const trimmedEmail = (isLoggedIn ? customerEmail : notifyEmail)?.trim() ?? '';
+    if (!trimmedEmail) {
+      setNotifyError('Enter your email address.');
+      return;
+    }
+
+    setNotifyError(null);
+    setNotifySubmitting(true);
+    if (__DEV__) {
+      console.log('[back-in-stock] quick-add submit', {
+        handle: activeProduct.handle,
+        variantId: selectedVariant.id,
+        isLoggedIn,
+        hasEmail: Boolean(trimmedEmail),
+      });
+    }
+    try {
+      const result = await subscribeBackInStock(
+        {
+          email: trimmedEmail,
+          productHandle: activeProduct.handle,
+          variantId: selectedVariant.id,
+          productTitle: activeProduct.title,
+          variantTitle: variantTitleForBackInStock(selectedVariant),
+        },
+        { sessionToken: getAuthAccessToken(), customerId },
+      );
+      if (__DEV__) {
+        console.log('[back-in-stock] quick-add result', {
+          ok: result.ok,
+          ...(result.ok ? {} : { error: result.error }),
+        });
+      }
+      if (!result.ok) {
+        setNotifyError(result.error);
+        return;
+      }
+      hapticSuccess();
+      markBackInStockSubscribed();
+      onClose();
+      deferBackInStockToast(() => showBackInStockResultToast(result));
+    } finally {
+      setNotifySubmitting(false);
+    }
+  }, [
+    activeProduct.handle,
+    activeProduct.title,
+    backInStockSubscribed,
+    customerEmail,
+    customerId,
+    isLoggedIn,
+    markBackInStockSubscribed,
+    notifyEmail,
+    notifySubmitting,
+    onClose,
+    selectedVariant,
+  ]);
 
   const sizeScrollTall = sizeOptions.length > 9;
   const sheetBottomPad = Math.max(insets.bottom, 28);
@@ -215,8 +309,10 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
   );
 
   return (
-    <>
-      <Modal visible animationType="fade" transparent statusBarTranslucent onRequestClose={close}>
+    <Modal visible animationType="fade" transparent statusBarTranslucent onRequestClose={close}>
+      <KeyboardAvoidingView
+        className="flex-1 justify-end"
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View className="flex-1 justify-end">
           <Pressable
             accessibilityRole="button"
@@ -269,35 +365,62 @@ function QuickAddToBagSheet({ product, onClose }: QuickAddToBagSheetProps) {
               <View className="mb-0">{sizeBlock}</View>
             )}
 
+            {showBackInStockCta && !backInStockSubscribed ? (
+              <View style={{ marginTop: 28 }}>
+                <Text variant="body" className="mb-4 text-[15px] leading-6 text-muted">
+                  {isLoggedIn
+                    ? `We will email ${customerEmail?.trim()} when this size is back in stock.`
+                    : 'Enter your email and we will let you know when this size is back.'}
+                </Text>
+                {!isLoggedIn ? (
+                  <>
+                    <Text variant="label" className="mb-2 text-mist">
+                      Email
+                    </Text>
+                    <TextInput
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      textContentType="emailAddress"
+                      autoComplete="email"
+                      value={notifyEmail}
+                      onChangeText={setNotifyEmail}
+                      editable={!notifySubmitting}
+                      placeholder="you@example.com"
+                      placeholderTextColor="#71717A"
+                      className={BACK_IN_STOCK_INPUT_CLASS}
+                    />
+                  </>
+                ) : null}
+                {notifyError ? (
+                  <Text variant="caption" className="mt-2 text-accentSoft">
+                    {notifyError}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+
+            {showBackInStockCta && backInStockSubscribed ? (
+              <Text variant="body" className="mt-6 text-[15px] leading-6 text-muted">
+                {backInStockAlertEmail
+                  ? `We will email ${backInStockAlertEmail} when this size is back in stock.`
+                  : 'We will email you when this size is back in stock.'}
+              </Text>
+            ) : null}
+
             <View style={{ marginTop: CTA_SECTION_MARGIN_TOP }}>
               <Button
-                title={showBackInStockCta ? backInStockCtaLabel : 'Add to bag'}
+                title={showBackInStockCta ? backInStockButtonTitle : 'Add to bag'}
                 variant="primary"
-                loading={addingToBag}
-                disabled={addingToBag || (!showBackInStockCta && !canAdd)}
-                onPress={showBackInStockCta ? onBackInStock : onAdd}
+                loading={addingToBag || notifySubmitting}
+                disabled={addingToBag || notifySubmitting || (!showBackInStockCta && !canAdd)}
+                onPress={showBackInStockCta ? () => void onNotifyBackInStock() : onAdd}
               />
             </View>
           </Animated.View>
         </View>
-      </Modal>
-
-      {selectedVariant ? (
-        <PdpBackInStockSheet
-          visible={backInStockOpen}
-          onClose={() => setBackInStockOpen(false)}
-          product={activeProduct}
-          variant={selectedVariant}
-          customerEmail={customerEmail ?? undefined}
-          customerId={customerId}
-          onSubscribed={() => {
-            markBackInStockSubscribed();
-            onClose();
-            setBackInStockOpen(false);
-          }}
-        />
-      ) : null}
-    </>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

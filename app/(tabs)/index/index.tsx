@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Href } from 'expo-router';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 
 import { HomeNewInHero, homeNewInHeroHeight } from '@/components/home/home-new-in-hero';
@@ -30,6 +30,7 @@ import {
   productCarouselTileWidth,
 } from '@/utils/product-carousel-layout';
 import { resolveHomeNewInCollectionHandle } from '@/utils/home-new-in-collection-handle';
+import { logPlpChromeSnapTransition } from '@/lib/plp-chrome-snap-trace';
 import type { Collection } from '@/types/shopify';
 import { cmsCollectionTilesToDisplayItems, type CmsCollectionDisplayItem } from '@/utils/cms-collection-tiles';
 import { collectionsWithCoverImage } from '@/utils/collection-text';
@@ -93,6 +94,16 @@ function HomeScreenContent() {
   const { data, isPending, isError, refetch, isRefetching, isFetching } = useHomeCatalogQuery();
   const showHomeSkeleton =
     data === undefined && (isPending || isFetching || isRefetching);
+
+  const prevHomeChromeRef = useRef(topChromeHeight);
+  useEffect(() => {
+    logPlpChromeSnapTransition('home', 'top_chrome_height', prevHomeChromeRef.current, topChromeHeight, {
+      showHomeSkeleton,
+      usesLuxuryTabBodySpacer: false,
+      usesPaddingTopOnScroll: !showHomeSkeleton,
+    });
+    prevHomeChromeRef.current = topChromeHeight;
+  }, [showHomeSkeleton, topChromeHeight]);
 
   const { data: cmsTiles } = useQuery({
     queryKey: ['collections-cms'],

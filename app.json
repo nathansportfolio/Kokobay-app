@@ -2,7 +2,7 @@
   "expo": {
     "name": "Koko Bay",
     "slug": "kokobay-app",
-    "version": "1.0.109",
+    "version": "1.0.114",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kokobay.kokobayapp",
-      "buildNumber": "109",
+      "buildNumber": "114",
       "infoPlist": {
         "CFBundleDisplayName": "Koko Bay",
         "CFBundleName": "Koko Bay",
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.kokobay.kokobayapp",
-      "versionCode": 109,
+      "versionCode": 114,
       "label": "Koko Bay",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",

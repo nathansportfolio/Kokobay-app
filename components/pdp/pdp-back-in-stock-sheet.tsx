@@ -17,14 +17,15 @@ import { Button } from '@/components/ui/button';
 import { CatalogCoverImage } from '@/components/ui/catalog-cover-image';
 import { Text } from '@/components/ui/text';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
+import { useBackInStockPrefillEmail } from '@/hooks/use-back-in-stock-prefill-email';
 import {
   subscribeBackInStock,
   variantTitleForBackInStock,
 } from '@/services/kokobay-web/back-in-stock';
 import { getAuthAccessToken } from '@/src/core/auth/token';
-import { showToast } from '@/store';
 import type { Product, ProductVariant } from '@/types/shopify';
 import { imageUrlForCartLine } from '@/utils/cart-display';
+import { showBackInStockResultToast, deferBackInStockToast } from '@/utils/back-in-stock-toast';
 import { hapticLight, hapticSuccess } from '@/utils/haptics';
 import { formatMoney } from '@/utils/money';
 
@@ -62,23 +63,35 @@ export function PdpBackInStockSheet({
   const variantTitle = useMemo(() => variantTitleForBackInStock(variant), [variant]);
   const imageUrl = useMemo(() => imageUrlForCartLine(product, variant), [product, variant]);
   const priceLabel = formatMoney(variant.price);
+  const prefillEmail = useBackInStockPrefillEmail({
+    variantId: variant.id,
+    customerEmail,
+    enabled: visible,
+  });
+
+  const subscriptionEmail = isLoggedIn
+    ? customerEmail?.trim()
+    : email.trim() || prefillEmail.trim() || undefined;
 
   const { subscribed, checking, refresh, markSubscribed } = useBackInStockSubscription({
     variantId: variant.id,
-    email: customerEmail,
+    email: subscriptionEmail,
     customerId,
-    enabled: visible && isLoggedIn,
+    enabled: visible && Boolean(subscriptionEmail),
   });
 
   useEffect(() => {
     if (!visible) return;
     setError(null);
     setLocalSubscribed(false);
-    setEmail(customerEmail?.trim() ?? '');
-    if (isLoggedIn) {
-      void refresh();
-    }
-  }, [visible, customerEmail, isLoggedIn, refresh]);
+    setEmail(prefillEmail);
+  }, [visible, prefillEmail]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const checkEmail = isLoggedIn ? customerEmail?.trim() : prefillEmail.trim();
+    if (checkEmail) void refresh();
+  }, [visible, isLoggedIn, customerEmail, prefillEmail, refresh]);
 
   const close = useCallback(() => {
     hapticLight();
@@ -86,12 +99,21 @@ export function PdpBackInStockSheet({
   }, [onClose]);
 
   const onSubmit = useCallback(async () => {
+    const trimmedEmail = (isLoggedIn ? customerEmail?.trim() : email.trim()) ?? '';
     setError(null);
     setSubmitting(true);
+    if (__DEV__) {
+      console.log('[back-in-stock] submit', {
+        handle: product.handle,
+        variantId: variant.id,
+        isLoggedIn,
+        hasEmail: Boolean(trimmedEmail),
+      });
+    }
     try {
       const result = await subscribeBackInStock(
         {
-          email,
+          email: trimmedEmail,
           productHandle: product.handle,
           variantId: variant.id,
           productTitle: product.title,
@@ -99,29 +121,29 @@ export function PdpBackInStockSheet({
         },
         { sessionToken: getAuthAccessToken(), customerId },
       );
+      if (__DEV__) {
+        console.log('[back-in-stock] result', { ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
+      }
       if (!result.ok) {
         setError(result.error);
+        showBackInStockResultToast(result);
         return;
       }
       hapticSuccess();
       markSubscribed();
       setLocalSubscribed(true);
       onSubscribed?.();
-      showToast(
-        result.alreadySubscribed
-          ? { variant: 'info', title: 'Already on the list', description: 'For this piece.' }
-          : {
-              variant: 'success',
-              title: 'You\u2019re on the list',
-              description: 'We\u2019ll email you when this piece is back.',
-            },
-      );
+      close();
+      deferBackInStockToast(() => showBackInStockResultToast(result));
     } finally {
       setSubmitting(false);
     }
   }, [
+    close,
+    customerEmail,
     customerId,
     email,
+    isLoggedIn,
     markSubscribed,
     onSubscribed,
     product.handle,
@@ -130,8 +152,8 @@ export function PdpBackInStockSheet({
     variantTitle,
   ]);
 
-  const confirmedSubscribed = localSubscribed || (isLoggedIn && subscribed);
-  const showChecking = isLoggedIn && checking && !confirmedSubscribed;
+  const confirmedSubscribed = localSubscribed || subscribed;
+  const showChecking = checking && !confirmedSubscribed && Boolean(subscriptionEmail);
 
   return (
     <Modal visible={visible} animationType="fade" transparent statusBarTranslucent onRequestClose={close}>
@@ -211,24 +233,30 @@ export function PdpBackInStockSheet({
             ) : (
               <View>
                 <Text variant="body" className="mb-5 text-[15px] leading-6 text-muted">
-                  Enter your email and we will let you know when this piece is available again.
+                  {isLoggedIn
+                    ? `We will email ${customerEmail?.trim() || 'you'} when this piece is available again.`
+                    : 'Enter your email and we will let you know when this piece is available again.'}
                 </Text>
-                <Text variant="label" className="mb-2 text-mist">
-                  Email
-                </Text>
-                <TextInput
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                  textContentType="emailAddress"
-                  autoComplete="email"
-                  value={email}
-                  onChangeText={setEmail}
-                  editable={!submitting}
-                  placeholder="you@example.com"
-                  placeholderTextColor="#71717A"
-                  className={INPUT_CLASS}
-                />
+                {!isLoggedIn ? (
+                  <>
+                    <Text variant="label" className="mb-2 text-mist">
+                      Email
+                    </Text>
+                    <TextInput
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      textContentType="emailAddress"
+                      autoComplete="email"
+                      value={email}
+                      onChangeText={setEmail}
+                      editable={!submitting}
+                      placeholder="you@example.com"
+                      placeholderTextColor="#71717A"
+                      className={INPUT_CLASS}
+                    />
+                  </>
+                ) : null}
                 {error ? (
                   <Text variant="caption" className="mt-2 text-accentSoft">
                     {error}
@@ -239,7 +267,7 @@ export function PdpBackInStockSheet({
                     title={submitting ? 'Saving…' : 'Notify me'}
                     variant="primary"
                     loading={submitting}
-                    disabled={submitting || !email.trim()}
+                    disabled={submitting || (!isLoggedIn && !email.trim())}
                     onPress={() => void onSubmit()}
                   />
                   <Button title="Cancel" variant="ghost" disabled={submitting} onPress={close} />

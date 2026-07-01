@@ -1,10 +1,13 @@
 import type { ReactNode } from 'react';
+import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import { usePathname } from 'expo-router';
 
 import { LuxuryTabBodySpacer } from '@/components/navigation/luxury-tab-body-spacer';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { luxuryChrome } from '@/constants/luxury-nav';
 import { palette } from '@/constants/theme';
+import { logPlpChromeSnap } from '@/lib/plp-chrome-snap-trace';
 
 const CHROME_BAR = {
   paddingBottom: 14,
@@ -18,6 +21,8 @@ type PlpScrollListHeaderProps = {
   backAccessibilityLabel: string;
   title: ReactNode;
   toolbar: ReactNode;
+  /** Which PLP shell mounts this header — helps trace skeleton → grid remounts. */
+  traceListKind?: 'skeleton-scroll' | 'flash-list';
 };
 
 /** PLP list header — same top clearance as wishlist / account (`LuxuryTabBodySpacer`). */
@@ -26,7 +31,17 @@ export function PlpScrollListHeader({
   backAccessibilityLabel,
   title,
   toolbar,
+  traceListKind,
 }: PlpScrollListHeaderProps) {
+  const pathname = usePathname();
+
+  useEffect(() => {
+    logPlpChromeSnap('plp_scroll_list_header_mount', { pathname, traceListKind });
+    return () => {
+      logPlpChromeSnap('plp_scroll_list_header_unmount', { pathname, traceListKind });
+    };
+  }, [pathname, traceListKind]);
+
   return (
     <>
       <LuxuryTabBodySpacer />

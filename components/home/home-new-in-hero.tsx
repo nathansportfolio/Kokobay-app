@@ -4,6 +4,7 @@ import { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { catalogImageCache } from '@/constants/expo-image';
+import { LUXURY_RADIUS } from '@/constants/luxury-design-system';
 import { useAppHomeHeroContent } from '@/hooks/use-app-home-hero-content';
 import { hapticLight } from '@/utils/haptics';
 import { openExternalHomeHeroLink } from '@/utils/home-hero-link';
@@ -23,20 +24,33 @@ function HomeNewInHeroInner({ width }: Props) {
   const pathname = usePathname();
   const height = useMemo(() => homeNewInHeroHeight(width), [width]);
   const hero = useAppHomeHeroContent(width, pathname);
+  const hasKicker = hero.kicker.length > 0;
+  const hasCta = hero.ctaLabel.length > 0;
+  const hasCopy = hasKicker || hasCta;
   const ctaTarget = hero.ctaTarget;
+  const isUnderlineCta = hero.buttonStyle === 'underline';
   const ctaPressable = (onPress?: () => void) => (
     <Pressable
       onPressIn={() => hapticLight()}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={hero.ctaLabel}
-      android_ripple={{ color: 'rgba(0,0,0,0.08)', borderless: false }}
-      style={({ pressed }) => [styles.ctaHit, pressed && styles.ctaPressed]}>
-      <View
-        style={[styles.ctaPill, { backgroundColor: hero.buttonBackgroundColor }]}
-        collapsable={false}>
-        <Text style={[styles.ctaLabel, { color: hero.buttonTextColor }]}>{hero.ctaLabel}</Text>
-      </View>
+      android_ripple={
+        isUnderlineCta ? undefined : { color: 'rgba(0,0,0,0.08)', borderless: false }
+      }
+      style={({ pressed }) => [
+        isUnderlineCta ? styles.ctaTextHit : styles.ctaHit,
+        pressed && styles.ctaPressed,
+      ]}>
+      {isUnderlineCta ? (
+        <Text style={styles.ctaTextLink}>{hero.ctaLabel}</Text>
+      ) : (
+        <View
+          style={[styles.ctaPill, { backgroundColor: hero.buttonBackgroundColor }]}
+          collapsable={false}>
+          <Text style={[styles.ctaLabel, { color: hero.buttonTextColor }]}>{hero.ctaLabel}</Text>
+        </View>
+      )}
     </Pressable>
   );
 
@@ -51,21 +65,29 @@ function HomeNewInHeroInner({ width }: Props) {
         {...catalogImageCache}
         priority="high"
       />
-      <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.heroScrim]} />
-      <View
-        style={[styles.copyBlock, { paddingBottom: HERO_COPY_BOTTOM }]}
-        pointerEvents="box-none">
-        <View style={[styles.copyStack, { gap: HERO_KICKER_CTA_GAP }]}>
-          <Text style={[styles.kicker, { color: hero.textColor }]}>{hero.kicker}</Text>
-          {ctaTarget.kind === 'internal' ? (
-            <Link href={ctaTarget.href} asChild>
-              {ctaPressable()}
-            </Link>
-          ) : (
-            ctaPressable(() => openExternalHomeHeroLink(ctaTarget.url))
-          )}
+      {hasCopy ? (
+        <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.heroScrim]} />
+      ) : null}
+      {hasCopy ? (
+        <View
+          style={[styles.copyBlock, { paddingBottom: HERO_COPY_BOTTOM }]}
+          pointerEvents="box-none">
+          <View style={[styles.copyStack, { gap: HERO_KICKER_CTA_GAP }]}>
+            {hasKicker ? (
+              <Text style={[styles.kicker, { color: hero.textColor }]}>{hero.kicker}</Text>
+            ) : null}
+            {hasCta ? (
+              ctaTarget.kind === 'internal' ? (
+                <Link href={ctaTarget.href} asChild>
+                  {ctaPressable()}
+                </Link>
+              ) : (
+                ctaPressable(() => openExternalHomeHeroLink(ctaTarget.url))
+              )
+            ) : null}
+          </View>
         </View>
-      </View>
+      ) : null}
     </View>
   );
 }
@@ -99,13 +121,18 @@ const styles = StyleSheet.create({
   },
   ctaHit: {
     alignSelf: 'center',
-    borderRadius: 999,
+    borderRadius: LUXURY_RADIUS.none,
     overflow: 'hidden',
+  },
+  ctaTextHit: {
+    alignSelf: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   ctaPill: {
     paddingVertical: 14,
     paddingHorizontal: 32,
-    borderRadius: 999,
+    borderRadius: LUXURY_RADIUS.none,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -116,5 +143,15 @@ const styles = StyleSheet.create({
     fontFamily: 'InstrumentSans-SemiBold',
     fontSize: 12,
     letterSpacing: 2.2,
+  },
+  ctaTextLink: {
+    fontFamily: 'InstrumentSans-SemiBold',
+    fontSize: 12,
+    letterSpacing: 2.2,
+    color: '#FFFFFF',
+    textDecorationLine: 'underline',
+    textShadowColor: 'rgba(0, 0, 0, 0.35)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 12,
   },
 });

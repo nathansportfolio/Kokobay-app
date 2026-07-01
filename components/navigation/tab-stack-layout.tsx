@@ -1,7 +1,6 @@
 import { StackActions } from '@react-navigation/native';
 import { Stack, useNavigation } from 'expo-router';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
 
 import { palette } from '@/constants/theme';
 
@@ -39,16 +38,7 @@ export default function TabStackLayout() {
           flex: 1,
           backgroundColor: palette.canvas,
         },
-        ...(Platform.OS === 'ios' ? { fullScreenGestureEnabled: true } : null),
       }}>
-      {/*
-        Full-screen back swipe steals horizontal pans on the PDP gallery.
-        Edge swipe-back still works with gestureEnabled (default).
-      */}
-      <Stack.Screen
-        name="product/[handle]"
-        options={Platform.OS === 'ios' ? { fullScreenGestureEnabled: false } : undefined}
-      />
     </Stack>
   );
 }

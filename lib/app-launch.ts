@@ -5,6 +5,12 @@ import { APP_HOME_HERO_QUERY_KEY } from '@/constants/app-home-hero-cms';
 import { homeNewInHeroImageUri } from '@/constants/home-hero';
 import { getQueryClient } from '@/hooks/use-query-client';
 import { HOME_HERO_STALE_MS } from '@/lib/app-home-hero-query';
+import {
+  appPromotionBannerQueryKey,
+  appPromotionBannerQueryOptions,
+  isAppPromotionBannerQueryEnabled,
+} from '@/lib/app-promotion-banner-query';
+import { logPlpChromeSnap } from '@/lib/plp-chrome-snap-trace';
 import { fetchAppHomeHero } from '@/services/kokobay-web/app-home-hero';
 import { getCollectionsCms } from '@/services/kokobay-web/collections-cms';
 import { initDeliveryThresholdOnStartup } from '@/src/core/query';
@@ -12,6 +18,8 @@ import { fetchHomeCatalogData } from '@/services/home-catalog';
 import { homeHeroDisplayImageUri } from '@/utils/home-hero-image';
 import { resolveHomeNewInCollectionHandle } from '@/utils/home-new-in-collection-handle';
 import { shopifyCdnUriForPlatform } from '@/utils/shopify-cdn-image';
+import { DEFAULT_MARKET_COUNTRY } from '@/services/shopify/market-context';
+import { loadMarketPreference } from '@/store/market-persist';
 
 export const APP_LAUNCH_MIN_DURATION_MS = 600;
 export const APP_LAUNCH_FADE_DURATION_MS = 400;
@@ -27,6 +35,7 @@ let launchRevealComplete = false;
 
 export function markAppLaunchRevealComplete(): void {
   launchRevealComplete = true;
+  logPlpChromeSnap('app_launch_reveal_complete');
 }
 
 export function isAppLaunchRevealComplete(): boolean {
@@ -41,10 +50,40 @@ export async function schedulePostRevealWarmup(screenWidth?: number): Promise<vo
   scheduleLaunchWarmup(marketKey, width);
 }
 
+async function prefetchAppPromotionBanner(marketKey: string, source: string): Promise<void> {
+  if (!isAppPromotionBannerQueryEnabled()) return;
+
+  const queryClient = getQueryClient();
+  const prefetchStartedAt = Date.now();
+  logPlpChromeSnap('promotion_banner_prefetch_start', { marketKey, source });
+  try {
+    await queryClient.prefetchQuery(appPromotionBannerQueryOptions(marketKey));
+    logPlpChromeSnap('promotion_banner_prefetch_done', {
+      marketKey,
+      source,
+      durationMs: Date.now() - prefetchStartedAt,
+      hasData: queryClient.getQueryData(appPromotionBannerQueryKey(marketKey)) != null,
+    });
+  } catch {
+    logPlpChromeSnap('promotion_banner_prefetch_failed', {
+      marketKey,
+      source,
+      durationMs: Date.now() - prefetchStartedAt,
+    });
+  }
+}
+
+async function resolveLaunchMarketKey(): Promise<string> {
+  const saved = await loadMarketPreference();
+  return saved?.countryCode.toUpperCase() ?? DEFAULT_MARKET_COUNTRY;
+}
+
 function scheduleLaunchWarmup(marketKey: string, screenWidth: number): void {
   const queryClient = getQueryClient();
 
   void (async () => {
+    await prefetchAppPromotionBanner(marketKey, 'post_reveal_warmup');
+
     try {
       await queryClient.prefetchQuery({
         queryKey: [...APP_HOME_HERO_QUERY_KEY, marketKey],
@@ -91,9 +130,14 @@ function scheduleLaunchWarmup(marketKey: string, screenWidth: number): void {
  */
 export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
   const startedAt = Date.now();
+  logPlpChromeSnap('prepare_app_launch_start');
   const width = screenWidth ?? Dimensions.get('window').width;
+  const marketKeyPromise = resolveLaunchMarketKey();
 
-  await Image.prefetch(shopifyCdnUriForPlatform(homeNewInHeroImageUri(width))).catch(() => {});
+  await Promise.all([
+    Image.prefetch(shopifyCdnUriForPlatform(homeNewInHeroImageUri(width))).catch(() => {}),
+    marketKeyPromise.then((marketKey) => prefetchAppPromotionBanner(marketKey, 'splash')),
+  ]);
 
   const elapsed = Date.now() - startedAt;
   if (elapsed < APP_LAUNCH_MIN_DURATION_MS) {
@@ -101,4 +145,5 @@ export async function prepareAppLaunch(screenWidth?: number): Promise<void> {
       setTimeout(resolve, APP_LAUNCH_MIN_DURATION_MS - elapsed);
     });
   }
+  logPlpChromeSnap('prepare_app_launch_done', { durationMs: Date.now() - startedAt });
 }

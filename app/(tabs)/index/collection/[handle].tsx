@@ -1,9 +1,9 @@
 import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { type FlashListRef } from '@shopify/flash-list';
 import { useQuery } from '@tanstack/react-query';
-import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, useWindowDimensions, View } from 'react-native';
+import { useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CollectionPlpFilterModal } from '@/components/plp/collection-plp-filter-modal';
@@ -30,7 +30,7 @@ import {
 } from '@/constants/plp-scroll';
 import { palette } from '@/constants/theme';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
-import { useScrollBottomPadding } from '@/contexts/chrome-context';
+import { useChrome, useScrollBottomPadding } from '@/contexts/chrome-context';
 import { useCollectionPlpRenderTrace } from '@/hooks/use-collection-plp-render-trace';
 import { useKokobayCollectionCatalog } from '@/hooks/use-kokobay-catalog-pages';
 import { useKokobayCatalogQueryCleanup } from '@/hooks/use-kokobay-catalog-query-cleanup';
@@ -47,6 +47,7 @@ import { useReturnToGoBack } from '@/hooks/use-return-to-go-back';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
 import { trackViewItemList } from '@/lib/gtm';
 import { resetPlpPerfTrace } from '@/lib/plp-perf-trace';
+import { logPlpChromeSnap, logPlpChromeSnapTransition } from '@/lib/plp-chrome-snap-trace';
 import { resetPlpScrollDebug } from '@/lib/plp-scroll-debug';
 import { isKokobayWebProductsConfigured } from '@/services/kokobay-web/client';
 import { getKokobayWebCollections } from '@/services/kokobay-web/collections-catalog';
@@ -80,6 +81,7 @@ export default function CollectionScreen() {
   const productLinkFor = usePlpProductLink();
   const prefetchProduct = usePrefetchProduct();
   const listBottomPad = useScrollBottomPadding(PLP_LIST_BOTTOM_PAD);
+  const { topChromeHeight } = useChrome();
   const { width } = useWindowDimensions();
   const safeHandle = typeof handle === 'string' ? handle : '';
   const apiHandle = resolveCollectionHandleForApi(safeHandle);
@@ -365,19 +367,6 @@ export default function CollectionScreen() {
     dataEpoch: catalogDataUpdatedAt,
   });
 
-  const plpWasBlurredRef = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (plpWasBlurredRef.current) {
-        listRef.current?.scrollToOffset({ offset: 0, animated: false });
-      }
-      plpWasBlurredRef.current = false;
-      return () => {
-        plpWasBlurredRef.current = true;
-      };
-    }, []),
-  );
-
   useLayoutEffect(() => {
     navigation.setOptions({ headerShown: false, title: collection?.title ?? '' });
     return () => {
@@ -447,6 +436,7 @@ export default function CollectionScreen() {
       <PlpScrollListHeader
         onBack={goBack}
         backAccessibilityLabel="Go back"
+        traceListKind="flash-list"
         title={
           <>
             <Text
@@ -494,6 +484,17 @@ export default function CollectionScreen() {
   ]);
 
   const listEmpty = useMemo(() => {
+    if (showPlpSkeleton) {
+      return (
+        <ProductGridSkeleton
+          columns={numColumns}
+          rows={numColumns === 2 ? 4 : 3}
+          itemWidth={itemWidth}
+          cellHeight={cellHeight}
+          columnGap={columnGap}
+        />
+      );
+    }
     if (totalFiltered === 0 && (hasSelectedFilters || (allProducts?.length ?? 0) > 0)) {
       return (
         <PlpNoResultsSuggestions
@@ -504,7 +505,20 @@ export default function CollectionScreen() {
       );
     }
     return null;
-  }, [totalFiltered, allProducts?.length, hasSelectedFilters, clearFilters, safeHandle]);
+  }, [
+    allProducts?.length,
+    cellHeight,
+    clearFilters,
+    columnGap,
+    hasSelectedFilters,
+    itemWidth,
+    numColumns,
+    safeHandle,
+    showPlpSkeleton,
+    totalFiltered,
+  ]);
+
+  const gridData = showPlpSkeleton ? [] : flatItems;
 
   const listFooter = useMemo(() => {
     if (!isWebCatalog) return null;
@@ -518,6 +532,65 @@ export default function CollectionScreen() {
   else if (!catalogPending && allProducts !== undefined && allProducts.length === 0 && !hasSelectedFilters) {
     renderBranch = 'empty';
   }
+
+  const prevPlpTraceRef = useRef({
+    renderBranch,
+    showPlpSkeleton,
+    topChromeHeight,
+    flatItemsCount: flatItems.length,
+  });
+
+  useEffect(() => {
+    const prev = prevPlpTraceRef.current;
+    logPlpChromeSnapTransition('collection', 'render_branch', prev.renderBranch, renderBranch, {
+      handle: safeHandle,
+      showPlpSkeleton,
+      flatItemsCount: flatItems.length,
+      topChromeHeight,
+      scrollTopPadding: topChromeHeight + 12,
+      unifiedFlashListShell: true,
+      headerRemountRisk: false,
+    });
+    logPlpChromeSnapTransition('collection', 'show_skeleton', prev.showPlpSkeleton, showPlpSkeleton, {
+      handle: safeHandle,
+      listLoading,
+      catalogQueryFetching,
+      catalogPending,
+    });
+    logPlpChromeSnapTransition('collection', 'top_chrome_height', prev.topChromeHeight, topChromeHeight, {
+      handle: safeHandle,
+      renderBranch,
+    });
+    logPlpChromeSnapTransition('collection', 'flat_items_count', prev.flatItemsCount, flatItems.length, {
+      handle: safeHandle,
+      renderBranch,
+    });
+    prevPlpTraceRef.current = {
+      renderBranch,
+      showPlpSkeleton,
+      topChromeHeight,
+      flatItemsCount: flatItems.length,
+    };
+  }, [
+    catalogPending,
+    catalogQueryFetching,
+    flatItems.length,
+    listLoading,
+    renderBranch,
+    safeHandle,
+    showPlpSkeleton,
+    topChromeHeight,
+  ]);
+
+  useEffect(() => {
+    logPlpChromeSnap('collection_screen_focus', {
+      handle: safeHandle,
+      isFocused,
+      renderBranch,
+      showPlpSkeleton,
+      topChromeHeight,
+    });
+  }, [isFocused, renderBranch, safeHandle, showPlpSkeleton, topChromeHeight]);
 
   useScreenLoadTrace({
     screen: 'collection',
@@ -600,29 +673,6 @@ export default function CollectionScreen() {
     );
   }
 
-  if (showPlpSkeleton) {
-    return (
-      <SafeAreaView style={plpScreenShell} edges={['left', 'right']}>
-        <ScrollView
-          style={plpScreenShell}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: horizontalPad,
-            paddingBottom: listBottomPad,
-          }}>
-          {listHeader}
-          <ProductGridSkeleton
-              columns={numColumns}
-              rows={numColumns === 2 ? 4 : 3}
-              itemWidth={itemWidth}
-              cellHeight={cellHeight}
-              columnGap={columnGap}
-            />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   if (isEmptyCollection) {
     return null;
   }
@@ -633,7 +683,7 @@ export default function CollectionScreen() {
         <CollectionPlpProductGrid
           ref={listRef}
           style={{ flex: 1 }}
-          data={flatItems}
+          data={gridData}
           numColumns={numColumns}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
@@ -649,10 +699,11 @@ export default function CollectionScreen() {
           {...(PLP_MAINTAIN_VISIBLE_CONTENT_POSITION
             ? { maintainVisibleContentPosition: { autoscrollToBottomThreshold: 0.2 } }
             : {})}
-          onEndReached={onEndReached}
+          onEndReached={showPlpSkeleton ? undefined : onEndReached}
           onEndReachedThreshold={0.35}
           onScroll={onPlpScroll}
           scrollEventThrottle={16}
+          scrollEnabled={plpScrollEnabled}
           contentContainerStyle={{
             paddingHorizontal: horizontalPad,
             paddingBottom: listBottomPad,

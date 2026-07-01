@@ -11,6 +11,7 @@ import { PdpImageCarousel } from '@/components/pdp/pdp-image-carousel';
 import { PdpQtyStepper } from '@/components/pdp/pdp-qty-stepper';
 import { PdpRelatedProducts } from '@/components/pdp/pdp-related-products';
 import { PdpRelatedProductsSkeleton } from '@/components/pdp/pdp-related-products-skeleton';
+import { PdpSizeGuideModal } from '@/components/pdp/pdp-size-guide-modal';
 import { PdpSizeSelector } from '@/components/pdp/pdp-size-selector';
 import { Button } from '@/components/ui/button';
 import { AppErrorBoundary } from '@/components/ui/error-boundary';
@@ -20,6 +21,7 @@ import { ProductDetailSkeleton } from '@/components/ui/product-detail-skeleton';
 import { Screen } from '@/components/ui/screen';
 import { Text } from '@/components/ui/text';
 import { PdpProductInfoSections } from '@/components/pdp/pdp-product-info-sections';
+import { ProductFitWidget } from '@/components/product/product-fit-widget';
 import { useChrome, useFloatingBottomPadding } from '@/contexts/chrome-context';
 import { useBindScrollToTop } from '@/contexts/scroll-to-top-context';
 import { useBagActions } from '@/contexts/bag-context';
@@ -31,15 +33,18 @@ import { useLifecycleRenderCount } from '@/hooks/use-lifecycle-render-count';
 import { useMarketQueryKey } from '@/hooks/use-market-query-key';
 import { useRenderTrace } from '@/hooks/use-render-trace';
 import { useScreenLoadTrace } from '@/hooks/use-screen-load-trace';
+import { useSizeGuideQuery } from '@/hooks/use-size-guide-query';
 import { trackViewItem } from '@/lib/gtm';
 import { getProductRecommendations } from '@/services/product-recommendations';
 import { recordProductPageView } from '@/services/kokobay-web/page-views';
 import { getProduct } from '@/services/shopify';
 import { useAuth } from '@/hooks/use-auth';
 import { useBackInStockSubscription } from '@/hooks/use-back-in-stock-subscription';
+import { useBackInStockAlertEmail } from '@/hooks/use-back-in-stock-alert-email';
 import { imageUrlForCartLine, variantLabelForCart } from '@/utils/cart-display';
 import { resolveVariantQuantityCap } from '@/utils/cart-inventory';
 import { isLikelyRemoteImageUrl } from '@/utils/catalog-image';
+import { showBackInStockResultToast, deferBackInStockToast } from '@/utils/back-in-stock-toast';
 import { hapticLight, hapticSuccess } from '@/utils/haptics';
 import { formatMoney, parseMoneyAmount } from '@/utils/money';
 import { productPdpLightboxImageUri } from '@/utils/product-pdp-image-uri';
@@ -112,6 +117,7 @@ export default function ProductScreen() {
   /** Never render PDP content until cache data matches the route handle (avoids previous-product flicker). */
   const displayProduct = product?.handle === safeHandle ? product : undefined;
   const productReady = Boolean(displayProduct);
+  useSizeGuideQuery(productReady);
   const showProductSkeleton = Boolean(safeHandle) && !displayProduct && !isError;
 
   const sizeOptions = useMemo(
@@ -130,6 +136,7 @@ export default function ProductScreen() {
   const [addingToBag, setAddingToBag] = useState(false);
   const [lightbox, setLightbox] = useState<{ open: boolean; index: number }>({ open: false, index: 0 });
   const [backInStockOpen, setBackInStockOpen] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const { user } = useAuth();
   const customerEmail = user?.email;
   const customerId = user?.id;
@@ -145,6 +152,7 @@ export default function ProductScreen() {
     setQty(1);
     setLightbox({ open: false, index: 0 });
     setBackInStockOpen(false);
+    setSizeGuideOpen(false);
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [safeHandle]);
 
@@ -300,18 +308,29 @@ export default function ProductScreen() {
     Linking.openURL(`mailto:${PDP_QUESTIONS_EMAIL}?subject=${subject}`).catch(() => {});
   }, [displayProduct?.title]);
 
+  const backInStockAlertEmail = useBackInStockAlertEmail({
+    variantId: selectedVariant?.id,
+    customerEmail,
+  });
+
   const { subscribed: backInStockSubscribed, markSubscribed: markBackInStockSubscribed } = useBackInStockSubscription({
     variantId: selectedVariant?.id,
-    email: customerEmail,
+    email: backInStockAlertEmail,
     customerId,
-    enabled: showBackInStockCta && Boolean(customerEmail?.trim() && selectedVariant?.id),
+    enabled: showBackInStockCta && Boolean(selectedVariant?.id) && Boolean(backInStockAlertEmail),
   });
 
   const onBackInStock = useCallback(() => {
     if (!displayProduct || !selectedVariant) return;
     hapticLight();
+    if (backInStockSubscribed) {
+      deferBackInStockToast(() =>
+        showBackInStockResultToast({ ok: true, alreadySubscribed: true }),
+      );
+      return;
+    }
     setBackInStockOpen(true);
-  }, [displayProduct, selectedVariant]);
+  }, [backInStockSubscribed, displayProduct, selectedVariant]);
 
   const [pdpScrollEnabled, setPdpScrollEnabled] = useState(true);
   const onGalleryScrollStart = useCallback(() => setPdpScrollEnabled(false), []);
@@ -495,10 +514,13 @@ export default function ProductScreen() {
             value={selectedSize ?? sizeOptions[0] ?? ''}
             onChange={setSelectedSize}
             sizeAvailable={sizeAvailability}
+            onOpenSizeGuide={() => setSizeGuideOpen(true)}
           />
           <View className="mt-2">
             <PdpQtyStepper value={qty} onChange={setQty} disabled={!canAdd} />
           </View>
+
+          <ProductFitWidget fitData={displayProduct.fitData} />
 
           <View className="mt-10">
             <PdpAccordion title="Description" defaultOpen={false}>
@@ -550,6 +572,8 @@ export default function ProductScreen() {
           onSubscribed={markBackInStockSubscribed}
         />
       ) : null}
+
+      <PdpSizeGuideModal visible={sizeGuideOpen} onClose={() => setSizeGuideOpen(false)} />
 
       <View className="absolute bottom-0 left-0 right-0 bg-transparent">
         <View className="px-5 pt-1" style={{ paddingBottom: ctaBottomPad }}>

@@ -4,6 +4,7 @@ import { getExpoNotifications, isExpoGoClient, isExpoNotificationsNativeModuleAv
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Switch, View } from 'react-native';
 
+import { AccountBackInStockAlertsSection } from '@/components/account/account-back-in-stock-alerts-section';
 import { AccountCardDivider } from '@/components/account/account-layout';
 import { AccountSettingsRow } from '@/components/account/account-settings-row';
 import { MarketCurrencySection } from '@/components/settings/market-currency-section';
@@ -70,6 +71,11 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
   const [marketingBusy, setMarketingBusy] = useState(false);
   const [marketingRateLimited, setMarketingRateLimited] = useState(false);
   const marketingRefreshInFlightRef = useRef(false);
+  const backInStockRefreshRef = useRef<(() => Promise<void>) | null>(null);
+
+  const registerBackInStockRefresh = useCallback((refresh: (() => Promise<void>) | null) => {
+    backInStockRefreshRef.current = refresh;
+  }, []);
 
   const refreshPermission = useCallback(async () => {
     if (isExpoGoClient()) {
@@ -142,6 +148,7 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
   const refreshPreferences = useCallback(async () => {
     await refreshPermission();
     await refreshMarketing();
+    await backInStockRefreshRef.current?.();
   }, [refreshMarketing, refreshPermission]);
 
   useEffect(() => {
@@ -297,7 +304,7 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
       />
 
       {user ?
-        <>
+        <View>
           <AccountSettingsRow
             label="Marketing emails"
             description={formatMarketingStatus(
@@ -323,7 +330,11 @@ export function AccountPreferencesPanel({ onRegisterRefresh }: AccountPreference
               Could not refresh status — you can still change your preference.
             </Text>
           : null}
-        </>
+          <AccountBackInStockAlertsSection
+            userEmail={user.email}
+            registerRefresh={registerBackInStockRefresh}
+          />
+        </View>
       : <View className="px-4 py-3">
           <Text variant="caption" className="text-mist">
             Sign in to manage email marketing preferences.

@@ -17,7 +17,9 @@ export function isCatalogListingPath(path: string): boolean {
   return (
     p.startsWith('/collection/') ||
     p.startsWith('/categories/collection/') ||
-    p.startsWith('/search')
+    p.startsWith('/index/collection/') ||
+    p.startsWith('/search') ||
+    p.startsWith('/index/search')
   );
 }
 
