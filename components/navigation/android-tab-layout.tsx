@@ -38,7 +38,7 @@ const cartBadgeStyle: TextStyle = {
   ...(Platform.OS === 'android' ? { includeFontPadding: false } : {}),
 };
 
-export default function AndroidTabLayout() {
+export default function AndroidTabLayout({ embedHeader = true }: { embedHeader?: boolean }) {
   useRenderTrace('BottomTabs');
   const { bagUnitCount } = useBagState();
   const { wishlistCount } = useWishlist();
@@ -147,11 +147,13 @@ export default function AndroidTabLayout() {
           }}
         />
       </Tabs>
-      <View
-        pointerEvents="box-none"
-        style={[StyleSheet.absoluteFillObject, { zIndex: 10_000, elevation: 10_000 }]}>
-        <LuxuryTabHeader />
-      </View>
+      {embedHeader ? (
+        <View
+          pointerEvents="box-none"
+          style={[StyleSheet.absoluteFillObject, { zIndex: 10_000, elevation: 10_000 }]}>
+          <LuxuryTabHeader />
+        </View>
+      ) : null}
     </View>
   );
 }

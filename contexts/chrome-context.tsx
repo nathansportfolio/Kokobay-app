@@ -24,6 +24,11 @@ import { isTabRoutePathname } from '@/lib/tab-route-pathname';
 /** UITabBar chrome above the home indicator — iOS NativeTabs does not expose measured height. */
 const IOS_NATIVE_TAB_BAR_CHROME = 56;
 
+/** iPad uses JS Tabs (`app/(tabs)/_layout.tsx`); tab scenes sit above the bar, not behind it. */
+function usesJsTabBarLayout(): boolean {
+  return Platform.OS === 'ios' && Platform.isPad;
+}
+
 export type ChromeContextValue = {
   /** Bottom edge of fixed top chrome (status bar + Koko Bay row + promo/incident strips). */
   topChromeHeight: number;
@@ -43,6 +48,13 @@ function measureBottomChromeHeight(
   measuredTabBar: number | undefined,
   bottomInset: number,
 ): number {
+  if (usesJsTabBarLayout()) {
+    if (typeof measuredTabBar === 'number' && measuredTabBar > 0) {
+      return measuredTabBar;
+    }
+    return 0;
+  }
+
   if (Platform.OS === 'ios') {
     const nativeTabsStack = IOS_NATIVE_TAB_BAR_CHROME + bottomInset;
     const reported = typeof measuredTabBar === 'number' ? measuredTabBar : 0;
@@ -140,11 +152,15 @@ export function useScrollBottomPadding(extraPad: number): number {
 
 /**
  * Bottom inset for floating chrome (PDP add-to-bag, cart checkout card).
- * iOS NativeTabs scenes are full-bleed behind the glass tab bar; Android JS tabs sit above it.
+ * iPhone NativeTabs scenes are full-bleed behind the glass tab bar; iPad/Android JS tabs sit above it.
  */
 export function useFloatingBottomPadding(): number {
   const { bottomChromeHeight } = useChrome();
   const bottomInset = useStableBottomInset();
+
+  if (usesJsTabBarLayout()) {
+    return LUXURY_TAB_CONTENT_EXTRA_BOTTOM;
+  }
 
   if (Platform.OS === 'ios') {
     return bottomChromeHeight + LUXURY_TAB_CONTENT_EXTRA_BOTTOM;

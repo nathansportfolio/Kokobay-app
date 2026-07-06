@@ -43,6 +43,8 @@ export default function IOSTabLayout() {
     <NativeTabs
       backgroundColor={null}
       blurEffect="systemChromeMaterial"
+      disableTransparentOnScrollEdge
+      minimizeBehavior="never"
       tintColor={tabColors.tint}
       iconColor={tabColors.icon}
       labelVisibilityMode="unlabeled">
